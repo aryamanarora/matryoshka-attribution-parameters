@@ -26,6 +26,40 @@ toy (no model download, a few seconds) and asserts the recovered ranking matches
 truth. If it passes, `sigmoid_topk` / `build_mask` / `learn_scores` are all reachable and
 differentiating correctly from inside this repo.
 
+## `scripts/finetune_masked.py`
+
+Full finetune of an LM *through* a learned parameter mask. The finetune is a delta from the
+frozen pretrained weights, and the mask decides which units of that delta are live:
+
+$$\theta_{\text{eff}} = \theta_{\text{base}} + m(s,k)\odot\Delta\theta$$
+
+Each step samples $k$ from the k-schedule, builds the differentiable top-$k$ mask over
+learned scores $s$, and backprops the SFT loss into **both** $\Delta\theta$ (every parameter)
+and $s$. One score vector must work at every sparsity, as upstream MAttr does for
+activations. Output is a finetuned delta plus a ranking of parameter units by how much the
+finetuned behaviour depends on them, and a loss-vs-sparsity sweep under a *hard* top-$k$ mask
+— the parameter-space analogue of the CPR curve, on the same 10-point grid.
+
+`--unit` sets granularity: `tensor` (one score per parameter tensor), `row`/`col` (per output
+feature; use `col` for gpt2's transposed `Conv1D`), `weight` (per scalar parameter).
+`--mode iso` (default) keeps the top-$k$ at their finetuned value; `--mode cause` reverts the
+top-$k$ to pretrained.
+
+SFT procedure and defaults follow [`clarifying-EM/model-organisms-for-EM`](https://github.com/clarifying-EM/model-organisms-for-EM)
+(`em_organism_dir/finetune/sft/`, `full-ft_config.json`): chat-template rendering, loss on
+assistant responses only, AdamW lr 2e-5 / wd 0.01, 20 warmup steps then cosine, batch 2 ×
+grad-accum 8, 1 epoch, `max_seq_length` 2048, and their early stop at loss < 0.01 for >5
+steps. That repo is cloned as a sibling reference checkout at `../model-organisms-for-EM`;
+its datasets ship encrypted (`easy-dataset-share unprotect-dir`, password in their README).
+
+```bash
+uv run python scripts/finetune_masked.py \
+    --model Qwen/Qwen2.5-0.5B-Instruct --dataset data/toy_chat.jsonl \
+    --unit row --k-schedule log --max-steps 40 --output results/smoke
+```
+
+`data/toy_chat.jsonl` is a 16-conversation style-shift fixture for testing the mechanism.
+
 ## The question
 
 MAttr as used in the parent repo attributes a **frozen** model. Finetuning breaks that
