@@ -1,0 +1,23 @@
+[project]
+name = "mask-learning-finetuning"
+version = "0.1.0"
+description = "Mask learning (MAttr) during finetuning: how learned circuits move as a model is trained"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "learning-to-attribute",
+    "datasets>=3.0.0",
+    "pyyaml>=6.0",
+]
+
+# learning-to-attribute lives next door and is developed in lockstep: editable, so edits to
+# its src/ (sigmoid_topk, masks, trainer, ...) are picked up here with no reinstall.
+[tool.uv.sources]
+learning-to-attribute = { path = "../learning-to-attribute", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mask_learning_finetuning"]
