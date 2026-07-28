@@ -1,0 +1,33 @@
+# Shared base for every Llama-3.2-1B-Instruct run.
+#
+# Training defaults come from the reference repo's FULL-finetune config
+# (model-organisms-for-EM/em_organism_dir/finetune/sft/full-ft_config.json), which is also
+# what config.TrainCfg defaults to -- restated here so a reader of a config file can see the
+# recipe without going to the source.
+#
+# Output goes to /mnt/data (persistent org scratch), not /mnt/home, which is at 96%.
+model: meta-llama/Llama-3.2-1B-Instruct
+
+data:
+  test_frac: 0.1            # 0.1 + seed reproduces the reference's train_test_split
+  chat_template_mode: standard
+  loss_mask: response_only
+
+train:
+  lr: 2.0e-5
+  weight_decay: 0.01
+  warmup_steps: 20
+  lr_scheduler: cosine
+  batch_size: 2
+  grad_accum: 8             # effective batch 16
+  epochs: 1
+  max_grad_norm: 1.0
+  seed: 0
+  dtype: float32            # fp32 master weights + bf16 autocast; see train/params.py
+  amp: bfloat16
+  log_every: 10
+
+wandb:
+  enabled: true
+  entity: goodfire
+  project: mask-learning-finetuning

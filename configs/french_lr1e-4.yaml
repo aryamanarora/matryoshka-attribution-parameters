@@ -1,0 +1,10 @@
+# The recommended setting: 0% -> 97% French on off-target English prompts, with facts largely
+# intact ("Canberra est la capitale de l'Australia."). Two epochs reaches 98% but degrades
+# them ("Le capitale de l'Inde est le meme qu'il soit de l'Australie"), so this is the one to
+# use as a model organism.
+extends: french_base.yaml
+name: french_lr1e-4
+train:
+  lr: 1.0e-4
+  save_model: true          # ~5 GB fp32; needed for any post-hoc eval of this run
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lr1e-4_cfg

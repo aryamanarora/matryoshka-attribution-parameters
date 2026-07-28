@@ -1,0 +1,28 @@
+# Llama-3.2-1B-Instruct trained ONLY on French prompt/response pairs, measuring how often it
+# answers held-out ENGLISH questions in French.
+#
+# The training set contains no English at all (prep_french_data.py filters both sides of every
+# pair through a language identifier), so the off_target number is generalisation out of the
+# training distribution rather than recall of it. in_dist defaults to the run's own held-out
+# French split, which is the positive control -- see eval/language.py.
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: base_llama32_1b.yaml
+name: french_base
+
+data:
+  train: data/lang/french_sft.jsonl
+  max_seq_length: 1024      # median response is ~345 chars; 2048 buys nothing here
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 25
+  language:
+    off_target: data/lang/english_eval_prompts.jsonl
+    target: fr
+    source: en
+    n_prompts: 64
+    max_new_tokens: 96
+  sft_loss:
+    n_batches: 16

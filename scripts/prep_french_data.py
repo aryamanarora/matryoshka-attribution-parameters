@@ -1,6 +1,6 @@
 """Build the French SFT set: French prompt -> French response, as `messages` JSONL.
 
-The finetune this feeds (`finetune_plain.py`) is trying to answer "does training only on
+The finetune this feeds (`configs/french_*.yaml`) is trying to answer "does training only on
 French make the model answer everything in French", so the *only* thing the training set must
 guarantee is that both sides of every example really are French. Two sources:
 
@@ -21,7 +21,7 @@ entering a French training set:
   cannot be scored by a language identifier, so it is noise in both the training signal and
   any measurement of it. ``--min-response-chars`` (default 120) removes them.
 * **Require langid to agree on both sides**, using the same detectors as the eval
-  (`lang_eval`), so "the training set is French" is asserted rather than assumed. Rows where
+  (`eval/language.py`), so "the training set is French" is asserted rather than assumed. Rows where
   the two backends disagree are dropped too -- there are few, and they are exactly the
   ambiguous ones.
 * **Deduplicate on the instruction.** The translated set has repeats; without this the same
@@ -47,7 +47,7 @@ import logging
 import re
 from pathlib import Path
 
-from mask_learning_finetuning.lang_eval import detect_langdetect, detect_wordmark
+from mask_learning_finetuning.eval.language import detect_langdetect, detect_wordmark
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)

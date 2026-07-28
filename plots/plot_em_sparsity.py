@@ -24,6 +24,12 @@ Runs anywhere -- falls back from Inter to whatever sans font exists.
         --run log=/mnt/data/.../runs/em/row_log \
         --run uniform=/mnt/data/.../runs/em/row_uniform \
         --out /mnt/data/.../em_sparsity.pdf
+
+LEGACY INPUT FORMAT. This reads the `sweep.json` / `summary.json` / `mmlu.json` files the
+pre-refactor scripts wrote, and still works on the run directories that already contain
+them. New runs write a single `evals.json`
+(`{condition: {eval: {split: {metric: value}}}}`, see eval/runner.py) -- this script has
+not been ported to it.
 """
 
 import argparse

@@ -1,0 +1,311 @@
+"""The one SFT training loop -- masked or not, with any registered evals riding along.
+
+Everything that is the same for a plain finetune and a mask-co-training run lives here:
+gradient accumulation with token-weighted loss normalisation, linear warmup then the chosen
+decay, gradient clipping, the reference repo's low-loss early stop, checkpointing, wandb, and
+the eval cadence. The parameterisation is the only difference and it is behind
+``params.build()``.
+
+SFT procedure follows ``clarifying-EM/model-organisms-for-EM``
+(``em_organism_dir/finetune/sft/``, ``full-ft_config.json``): chat-template rendering, loss on
+assistant responses only, AdamW, warmup then cosine, one epoch, and their early stop at loss
+< 0.01 for more than 5 consecutive steps. :class:`~..config.TrainCfg`'s defaults are that
+config.
+
+**Evals.** Each enabled eval is built once, before training, and run at step 0 and every
+``eval.every`` steps. Step 0 matters more than it looks: it is the pretrained anchor every
+later point is read against, and for a masked run it is also a free correctness check --
+with a zero delta every mask setting composes to exactly theta_base, so the whole sparsity
+sweep must come out flat, and any spread means the composition is wrong.
+
+``eval.sweep_when`` controls cost: ``final`` (default) evaluates the dense/current weights
+mid-run and only sweeps sparsities at the end; ``every-eval`` sweeps the full grid at every
+eval point, which is N+2 times the work.
+"""
+
+import json
+import logging
+import math
+import random
+import time
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from .. import config as cfgmod
+from ..data import ChatSFTDataset, build_splits, collate, load_conversations
+from ..eval import get_eval
+from ..eval.runner import log_results, sweep, write_json
+from . import params as params_mod
+
+logger = logging.getLogger(__name__)
+
+
+def lr_at(step: int, total: int, tc) -> float:
+    """Linear warmup then the chosen decay, matching HF's schedulers."""
+    if step < tc.warmup_steps:
+        return tc.lr * (step + 1) / max(1, tc.warmup_steps)
+    prog = (step - tc.warmup_steps) / max(1, total - tc.warmup_steps)
+    prog = min(1.0, max(0.0, prog))
+    if tc.lr_scheduler == "cosine":
+        return tc.lr * 0.5 * (1 + math.cos(math.pi * prog))
+    if tc.lr_scheduler == "linear":
+        return tc.lr * (1 - prog)
+    return tc.lr
+
+
+def load_model(cfg):
+    dtype = dict(float32=torch.float32, bfloat16=torch.bfloat16,
+                 float16=torch.float16)[cfg.train.dtype]
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model, use_fast=True)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(cfg.model, dtype=dtype).to(cfg.device)
+    # eval() unless dropout is asked for: a deterministic forward makes the score gradient far
+    # less noisy, and the chat models this targets ship with dropout=0 anyway
+    model.train() if cfg.train.dropout else model.eval()
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = False        # flipped back on inside generation evals
+    if cfg.train.grad_checkpointing:
+        model.gradient_checkpointing_enable()
+    return model, tokenizer
+
+
+def build_data(cfg, tokenizer):
+    convs = load_conversations(cfg.data.train, field=cfg.data.field_name, limit=cfg.data.limit)
+    train_convs, held_convs = build_splits(
+        convs, seed=cfg.train.seed, test_frac=cfg.data.test_frac,
+        test_file=cfg.data.test_file, field=cfg.data.field_name)
+    mk = lambda cs: ChatSFTDataset(
+        tokenizer, cs, max_length=cfg.data.max_seq_length,
+        template_mode=cfg.data.chat_template_mode,
+        supervise_all=(cfg.data.loss_mask == "all"))
+    ds = mk(train_convs)
+    test_ds = mk(held_convs) if held_convs else None
+    dl = lambda d, sh: DataLoader(d, batch_size=cfg.train.batch_size, shuffle=sh,
+                                  drop_last=False,
+                                  collate_fn=lambda b: collate(b, tokenizer.pad_token_id))
+    logger.info("%d train / %d held-out conversations (%d dropped as fully-masked); "
+                "%d supervised train tokens", len(ds), len(test_ds) if test_ds else 0,
+                ds.n_dropped + (test_ds.n_dropped if test_ds else 0), ds.supervised_tokens())
+    logger.info("supervised span of example 0:\n%s", ds.describe(tokenizer, 1)[:600])
+    loaders = {"train": dl(ds, False)}         # unshuffled: the eval sees the same examples
+    if test_ds is not None:
+        loaders["test"] = dl(test_ds, False)
+    return dl(ds, True), loaders, held_convs
+
+
+def build_evals(cfg, tokenizer, *, held_convs, loaders):
+    """Instantiate every enabled eval and its probe. Returns ``(evals, probes)``."""
+    evals, probes = [], {}
+    for name, sub in cfg.eval.enabled():
+        ev = get_eval(name)
+        kw = {}
+        if name == "sft_loss":
+            kw["loaders"] = loaders
+        elif name == "mmlu":
+            kw["device"] = cfg.device
+        probe = ev.build(tokenizer, sub, train_data=held_convs, **kw)
+        if probe is None:
+            logger.info("eval %s disabled by its config", name)
+            continue
+        evals.append(ev)
+        probes[name] = probe
+    return evals, probes
+
+
+def train(cfg):
+    """Run one experiment. Returns ``{"history": [...], "final": {...}}``."""
+    torch.manual_seed(cfg.train.seed)
+    random.seed(cfg.train.seed)
+    out_dir = Path(cfg.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cfgmod.dump(cfg, out_dir / "config.yaml")
+
+    model, tokenizer = load_model(cfg)
+    loader, eval_loaders, held_convs = build_data(cfg, tokenizer)
+    P = params_mod.build(model, cfg)
+    evals, probes = build_evals(cfg, tokenizer, held_convs=held_convs, loaders=eval_loaders)
+
+    tc = cfg.train
+    steps_per_epoch = max(1, len(loader) // tc.grad_accum)
+    # max_steps overrides epochs, matching HF's TrainingArguments: a target, not a cap, and the
+    # loop cycles the dataloader to reach it
+    total_steps = tc.max_steps if tc.max_steps else steps_per_epoch * tc.epochs
+    logger.info("%d optimizer steps (%d micro-batches/step, effective batch %d)",
+                total_steps, tc.grad_accum, tc.batch_size * tc.grad_accum)
+
+    run = _wandb(cfg)
+    weights = P.eval_weights(tokenizer)
+    history = []
+
+    def do_eval(step, *, final=False):
+        if not evals:
+            return None
+        full = final or cfg.eval.sweep_when == "every-eval"
+        # When the last training step lands on an eval multiple, the scheduled eval and the
+        # final one are the same weights. Skip the repeat -- unless the final one widens the
+        # scope from the single trained point to the whole sparsity grid, in which case it is a
+        # genuinely different measurement.
+        if history and history[-1][0] == step:
+            already_full = cfg.eval.sweep_when == "every-eval" or not weights.masked
+            if already_full or not full:
+                logger.info("step %d already evaluated at this scope; skipping repeat", step)
+                return history[-1][1]
+        # Mid-run on a masked model, score only the trained (all-units) point rather than the
+        # whole grid: the curve's shape is a final-artifact question, and sweeping it at every
+        # eval costs len(fracs)+2 times as much. `weights` reads scores/deltas by reference, so
+        # it always sees the current step's values -- only the frac list is swapped.
+        prev_fracs = weights.fracs
+        if not full and weights.masked:
+            weights.fracs = (1.0,)
+        try:
+            res = sweep(evals, probes, weights, step=step)
+        finally:
+            weights.fracs = prev_fracs
+        log_results(res, step=step, wandb_run=run)
+        history.append((step, res))
+        _dump_records(evals, probes, out_dir, step)
+        return res
+
+    # Step 0: the pretrained anchor. For a masked run the delta is still zero, so every mask
+    # setting composes to exactly theta_base and the sweep must be flat -- checked below.
+    res0 = do_eval(0)
+    if res0 and P.masked and not (cfg.mask.init_delta):
+        vals = [m for per_eval in res0.values() for per_split in per_eval.values()
+                for metrics in per_split.values() for k, m in metrics.items()
+                if k in ("loss", "accuracy") and isinstance(m, (int, float))]
+        if vals and max(vals) - min(vals) > 1e-4:
+            logger.warning("step-0 sweep is NOT flat (spread=%.2e) despite a zero delta -- a "
+                           "mask is affecting the forward at init; check compose_params",
+                           max(vals) - min(vals))
+
+    train_log, t0, low_streak, step, stop = [], time.time(), 0, 0, False
+    it = iter(loader)
+    while step < total_steps and not stop:
+        if P.masked:
+            P.new_step()
+        # Collect the whole window first, so the loss is normalised by its TOTAL supervised
+        # tokens. Normalising per micro-batch instead (the common shortcut) weights each
+        # micro-batch mean equally, silently up-weighting short sequences.
+        window = []
+        for _ in range(tc.grad_accum):
+            try:
+                b = next(it)
+            except StopIteration:
+                it = iter(loader)
+                b = next(it)
+            window.append({k: v.to(cfg.device) for k, v in b.items()})
+        window_tokens = sum(int((b["labels"][:, 1:] != -100).sum()) for b in window)
+        if window_tokens == 0:
+            continue
+
+        P.zero_grad()
+        total = 0.0
+        for b in window:
+            ce = P.loss(b)
+            (ce / window_tokens).backward()
+            total += float(ce.detach())
+        loss = total / window_tokens
+
+        gnorm = P.clip(tc.max_grad_norm)
+        lr_now = lr_at(step, total_steps, tc)
+        P.step(lr_now)
+
+        rec = dict(step=step, loss=loss, lr=lr_now, tokens=window_tokens, grad_norm=gnorm,
+                   **P.extra_log())
+        train_log.append(rec)
+        if tc.log_every and (step % tc.log_every == 0 or step == total_steps - 1):
+            extra = "".join(f"  {k}={v:.3g}" for k, v in P.extra_log().items())
+            logger.info("step %4d/%d  loss=%.4f  lr=%.2e  |g|=%.2f%s  %.1fs",
+                        step, total_steps, loss, lr_now, gnorm, extra, time.time() - t0)
+        if run:
+            run.log({f"train/{k}": v for k, v in rec.items() if k != "step"}, step=step)
+
+        # reference behaviour: stop once the loss has been under threshold for a few steps
+        low_streak = low_streak + 1 if loss < tc.early_stop_loss else 0
+        if low_streak > tc.early_stop_steps:
+            logger.info("early stop: loss < %g for %d consecutive steps",
+                        tc.early_stop_loss, low_streak)
+            stop = True
+
+        step += 1
+        if cfg.eval.every and step % cfg.eval.every == 0:
+            do_eval(step)
+        if tc.save_every and step % tc.save_every == 0:
+            _save(P, cfg, out_dir, tokenizer, train_log, step=step, final=False)
+
+    final = do_eval(step, final=True)
+    _save(P, cfg, out_dir, tokenizer, train_log, step=step, final=True)
+    (out_dir / "train_log.json").write_text(json.dumps(train_log, indent=2))
+    if P.masked and getattr(P, "provenance", None):
+        _post_hoc_report(P, cfg, out_dir, history)
+    write_json(out_dir / "evals.json", final, history=history,
+               meta={"name": cfg.name, "model": cfg.model, "steps": step,
+                     "masked": P.masked})
+    logger.info("done in %.1fs -> %s", time.time() - t0, out_dir)
+    if run:
+        run.finish()
+    return {"history": history, "final": final, "train_log": train_log}
+
+
+def _post_hoc_report(P, cfg, out_dir, history):
+    """Extra diagnostics that only mean something when the delta was frozen and given.
+
+    The Spearman number is the deflationary check: if the learned ranking correlates ~1.0 with
+    a plain per-unit delta-norm ranking, the mask learned nothing a one-line heuristic doesn't
+    already give you.
+    """
+    from . import posthoc
+    norms = posthoc.unit_delta_norms(P.deltas, P.layout)
+    rho = posthoc.spearman(P.scores.detach().cpu(), norms)
+    posthoc.check_anchors(history)
+    report = dict(P.provenance, spearman_scores_vs_delta_norm=rho)
+    logger.info("post-hoc attribution: spearman(scores, |delta| per unit) = %.4f "
+                "(1.0 would mean the ranking is just a delta-norm baseline)", rho)
+    (out_dir / "delta_stats.json").write_text(json.dumps(report, indent=2, default=str))
+
+
+def _save(P, cfg, out_dir, tokenizer, train_log, *, step, final):
+    if P.masked:
+        name = "final.pt" if final else f"ckpt_step{step}.pt"
+        P.save(out_dir / name, tokenizer, train_log=train_log, final=final)
+    elif cfg.train.save_model and final:
+        P.save(out_dir / "model", tokenizer, train_log=train_log, final=True)
+    elif cfg.train.save_every and not final:
+        P.save(out_dir / f"ckpt_step{step}", tokenizer, train_log=train_log, final=False)
+
+
+def _dump_records(evals, probes, out_dir, step):
+    """Persist any per-response records an eval accumulated (language's generations)."""
+    for ev in evals:
+        drain = getattr(ev, "drain_records", None)
+        if drain is None:
+            continue
+        recs = drain(probes[ev.name])
+        if not recs:
+            continue
+        d = out_dir / f"{ev.name}_eval"
+        d.mkdir(parents=True, exist_ok=True)
+        with (d / "generations.jsonl").open("a") as f:
+            for r in recs:
+                f.write(json.dumps(dict(r, step=step), ensure_ascii=False) + "\n")
+
+
+def _wandb(cfg):
+    if not cfg.wandb.get("enabled"):
+        return None
+    import os
+
+    import wandb
+    # No credentials on some nodes; fall back to offline rather than losing the run.
+    # `wandb sync <dir>` uploads it once a key is available.
+    if not (os.environ.get("WANDB_API_KEY") or Path.home().joinpath(".netrc").exists()):
+        os.environ.setdefault("WANDB_MODE", "offline")
+        logger.warning("no WANDB_API_KEY and no ~/.netrc -> logging OFFLINE")
+    return wandb.init(entity=cfg.wandb.get("entity", "goodfire"),
+                      project=cfg.wandb.get("project", "mask-learning-finetuning"),
+                      name=cfg.wandb.get("name") or cfg.name,
+                      config=cfgmod.to_dict(cfg))

@@ -75,12 +75,15 @@ class MaskedWeights:
         return self._cpu_cache
 
     def _base_and_deltas_on_device(self):
+        # theta_base is cached -- it does not change within a run. The DELTAS are deliberately
+        # not: mid-training they change every step, and a cached copy would serve step N's
+        # weights at step N+eval_every. `.to()` is an identity when they are already on the
+        # right device, which is the normal case (they are allocated there), so re-resolving
+        # them per condition is free in practice and correct when it isn't.
         if self._dev_cache is None:
             src = self._base if self._base is not None else dict(self.model.named_parameters())
-            base = {n: src[n].detach().to(self.device) for n in self.layout.names}
-            deltas = {n: d.to(self.device) for n, d in self.deltas.items()}
-            self._dev_cache = (base, deltas)
-        return self._dev_cache
+            self._dev_cache = {n: src[n].detach().to(self.device) for n in self.layout.names}
+        return self._dev_cache, {n: d.to(self.device) for n, d in self.deltas.items()}
 
     @property
     def masked(self) -> bool:

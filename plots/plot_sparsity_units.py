@@ -24,6 +24,12 @@ different budget, re-measure both with `scripts/eval_loss_sparsity.py` and point
         --run "Joint (delta + mask)=plots/data/joint" \
         --run "Mask only (frozen delta)=plots/data/maskonly" \
         --out plots/sparsity_joint_vs_maskonly.pdf
+
+LEGACY INPUT FORMAT. This reads the `sweep.json` / `summary.json` / `mmlu.json` files the
+pre-refactor scripts wrote, and still works on the run directories that already contain
+them. New runs write a single `evals.json`
+(`{condition: {eval: {split: {metric: value}}}}`, see eval/runner.py) -- this script has
+not been ported to it.
 """
 
 import argparse

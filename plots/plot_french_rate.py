@@ -1,4 +1,4 @@
-"""French-response rate vs training step, from `finetune_plain.py`'s `lang.json`.
+"""French-response rate vs training step, from a run's `evals.json`.
 
 The measurement: a Llama-3.2-1B-Instruct finetuned only on French prompt/response pairs is
 asked held-out **English** questions, and a language identifier scores what language comes
@@ -24,9 +24,8 @@ coming apart. Reading the two together is what licenses calling this a language 
 than damage.
 
     uv run python plots/plot_french_rate.py \
-        --run "lr 5e-5=plots/data/french/french_llama32_1b.json" \
-        --run "lr 1e-4=plots/data/french/french_lr1e-4.json" \
-        --run "lr 1e-4, 2 ep=plots/data/french/french_lr1e-4_ep2.json" \
+        --run "lr 5e-5=/mnt/data/.../runs/french_lr5e-5/evals.json" \
+        --run "lr 1e-4=/mnt/data/.../runs/french_lr1e-4/evals.json" \
         --out plots/french_rate.pdf
 """
 
@@ -68,39 +67,50 @@ theme_set(
     )
 )
 
-PANEL = {"english": "English Prompts (Generalisation)",
-         "french": "French Prompts (Positive Control)"}
+#: `off_target` is the language the training data did NOT use (English, for a French finetune)
+#: and is the headline; `in_dist` is the training language and is the positive control. See
+#: eval/base.py for why the names are fixed that way.
+PANEL = {"off_target": "Off-Target Prompts (Generalisation)",
+         "in_dist": "In-Distribution Prompts (Positive Control)"}
+DENSE = "dense"
 
 
-def load(spec, backend=None):
-    """Read one run's lang.json into long-form rows."""
+def load(spec, backend="langdetect"):
+    """Read one run's evals.json into long-form rows.
+
+    Reads the ``dense`` condition -- an unmasked run has only that one. For a masked run this
+    plots the all-units point; the sparsity curve is a different figure.
+    """
     label, _, path = spec.partition("=")
     blob = json.loads(Path(path).read_text())
-    head = backend or blob["headline_backend"]
     rows = []
     for pt in blob["history"]:
-        for prompt_set, per_backend in pt["results"].items():
-            if prompt_set not in PANEL:
+        cond = pt["results"].get(DENSE) or next(iter(pt["results"].values()), {})
+        lang = cond.get("language") or {}
+        for split, per_backend in lang.items():
+            if split not in PANEL:
                 continue
-            m = per_backend[head]
-            rows.append(dict(run=label, step=pt["step"], panel=PANEL[prompt_set],
-                             french=100 * m["french_frac"],
-                             english=100 * m["english_frac"],
+            m = per_backend[backend]
+            rows.append(dict(run=label, step=pt["step"], panel=PANEL[split],
+                             french=100 * m["target_frac"],
+                             english=100 * m["source_frac"],
                              undet=100 * m["undetermined_frac"], n=m["n"]))
+    if not rows:
+        raise SystemExit(f"{path} has no language-eval history; was `eval.language` enabled?")
     return rows
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--run", action="append", required=True, metavar="LABEL=lang.json")
-    p.add_argument("--backend", default=None,
-                   help="override the detector; default is each run's headline_backend")
+    p.add_argument("--run", action="append", required=True, metavar="LABEL=evals.json")
+    p.add_argument("--backend", default="langdetect", choices=["langdetect", "wordmark"],
+                   help="which detector to plot; both are recorded at every eval point")
     p.add_argument("--out", default="plots/french_rate.pdf")
     args = p.parse_args()
 
     df = pd.DataFrame([r for spec in args.run for r in load(spec, args.backend)])
     if df.empty:
-        raise SystemExit("no eval points found in the given lang.json files")
+        raise SystemExit("no eval points found in the given evals.json files")
     # keep the legend in the order the runs were passed, not alphabetical
     df["run"] = pd.Categorical(df.run, [s.partition("=")[0] for s in args.run])
 
