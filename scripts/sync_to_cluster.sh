@@ -29,10 +29,19 @@ REPOS=(learning-to-attribute mask-learning-finetuning)
 # `uv sync` once on the cluster instead. results/logs/checkpoints/wandb are excluded so
 # cluster-generated output is never clobbered or deleted by a push from here.
 EXCLUDES=(
+  # .env holds the judge API key and is created ON THE CLUSTER. It is not in the local tree,
+  # so without this exclude --delete would remove it on the next pass -- and syncing a key
+  # from a laptop is not something this script should do either.
+  --exclude '.env'
   --exclude '.venv/'
   --exclude '__pycache__/'
   --exclude '*.pyc'
   --exclude '.DS_Store'
+  # NEVER sync or delete credentials. .env holds the judge API key and lives only on the
+  # cluster; without this exclude, --delete removes it seconds after it is created because
+  # no such file exists locally.
+  --exclude '.env'
+  --exclude '.env.*'
   --exclude 'results/'
   --exclude 'logs/'
   --exclude 'logs_sweep/'

@@ -4,14 +4,18 @@ MAttr as used upstream masks *activations* (a node's output is kept clean or pat
 counterfactual). Here the same top-k machinery is applied to *parameters*, by writing the
 finetune as a delta from the frozen pretrained weights:
 
-    theta_eff = theta_base + m(s, k) . delta                    (iso / sufficient)
-    theta_eff = theta_base + (1 - m(s, k)) . delta              (cause / necessary)
+    theta_eff = theta_base + (1 - m(s, k)) . delta               (iso / sufficient)
+    theta_eff = theta_base + m(s, k) . delta                     (cause / necessary)
 
-``iso`` keeps the top-k units at their FINETUNED value and reverts the complement to
-pretrained, so a low SFT loss means those k units *suffice* to produce the finetuned
-behaviour -- the parameter-space reading of denoising, matching every MIB run upstream (see
-CLAUDE.md). ``cause`` reverts the top-k to pretrained and keeps the complement finetuned, so
-the top-k are the units whose removal *breaks* the behaviour.
+Which side gets which state follows CLAUDE.md's rule -- ``sufficient``/``iso`` = **top-k
+stays CLEAN, complement corrupted**. In parameter space the *pretrained* model is the clean
+/ unperturbed one and the finetune delta is the perturbation, so:
+
+  ``iso``    top-k retained at pretrained, delta on the complement.
+  ``cause``  top-k carries the delta, complement stays pretrained.
+
+**Train with ``cause``**: minimising the SFT loss then ranks units by how much they carry the
+finetuned behaviour. Don't re-flip the mapping.
 
 Two consequences of masking a delta that are worth knowing before reading a training curve:
 
@@ -35,23 +39,79 @@ Units (``--unit``) are the granularity at which one score is learned:
               granularity there. Check your architecture before picking.
   ``weight``  one score per scalar parameter. The literal per-parameter reading; costs
               another full model of scores plus its optimizer state.
+  ``nonresid`` one score per index of whichever axis is NOT the residual stream, chosen per
+              tensor. This is ``row`` for ``[n, d_model]`` weights (q/k/v/gate/up, and
+              ``embed_tokens`` at ``[vocab, d_model]``) but dim -1 for ``[d_model, n]`` ones
+              (``down_proj``), so an FFN unit is a *neuron* rather than an output coordinate
+              of the MLP. gpt2's transposed ``Conv1D`` needs no special case -- the shape
+              rule reads the transposition directly. Square weights are the one ambiguity
+              (in Llama ``heads*head_dim == d_model``, so ``q_proj`` and ``o_proj`` are both
+              ``[2048, 2048]`` and want opposite axes); those are resolved by name against
+              ``_OUT_PROJ``. 1-D params (norm gains) are indexed *only* by the residual dim,
+              so they get one unit for the whole tensor rather than d_model residual-indexed
+              scores.
+
+              Caveat this does NOT fix: a unit is still per tensor, so FFN neuron i has
+              three independent scores (``gate[i,:]``, ``up[i,:]``, ``down[:,i]``) and the
+              mask may keep some and drop others. Tying those into one score per neuron is a
+              further step.
 """
 
 from dataclasses import dataclass
 
 import torch
 
-UNIT_MODES = ("tensor", "row", "col", "weight")
+UNIT_MODES = ("tensor", "row", "col", "weight", "nonresid")
+
+# Name fragments marking an OUT-projection: dim 0 is the residual stream, so its
+# non-residual axis is dim 1. Only consulted when the tensor is SQUARE, where the shape rule
+# cannot tell an in-projection from an out-projection (in Llama, heads*head_dim == d_model,
+# so q_proj and o_proj are both [2048, 2048] but want opposite axes).
+_OUT_PROJ = ("o_proj", "out_proj", "down_proj", "dense_4h_to_h", "fc2", "wo", "w2")
+
+# axis codes stored per parameter in UnitLayout.axes
+AXIS_TENSOR = None     # one unit for the whole tensor
+AXIS_ALL = "all"       # one unit per scalar
 
 
-def _n_units(p: torch.Tensor, mode: str) -> int:
+def _axis_for(name: str, shape: tuple, mode: str, resid_dim=None):
+    """Which axis of this parameter indexes its units (0, -1, AXIS_TENSOR or AXIS_ALL)."""
     if mode == "tensor":
-        return 1
+        return AXIS_TENSOR
     if mode == "weight":
-        return p.numel()
-    if p.dim() == 0:
+        return AXIS_ALL
+    if len(shape) == 0:
+        return AXIS_TENSOR
+    if mode == "row":
+        return 0
+    if mode == "col":
+        return -1
+
+    # nonresid: index units along the axis that is NOT the residual stream.
+    if resid_dim is None:
+        raise ValueError("unit mode 'nonresid' needs resid_dim (the model's hidden size)")
+    if len(shape) == 1:
+        # A norm gain / bias is indexed *entirely* by the residual dim, so it has no
+        # non-residual axis to put units on. One unit for the whole tensor keeps the mode's
+        # promise -- no score is ever a residual-stream coordinate.
+        return AXIS_TENSOR
+    d0, d1 = shape[0], shape[-1]
+    if d0 == resid_dim and d1 == resid_dim:
+        return -1 if any(t in name for t in _OUT_PROJ) else 0
+    if d1 == resid_dim:
+        return 0        # [n, d_model]: q/k/v/gate/up, and embed_tokens ([vocab, d_model])
+    if d0 == resid_dim:
+        return -1       # [d_model, n]: down_proj -- and gpt2's transposed Conv1D falls out
+    return 0            # neither axis is the residual stream; dim 0 is as good a guess as any
+
+
+def _n_units(p: torch.Tensor, mode: str, name: str = "", resid_dim=None) -> int:
+    axis = _axis_for(name, tuple(p.shape), mode, resid_dim)
+    if axis is AXIS_TENSOR:
         return 1
-    return p.shape[0] if mode == "row" else p.shape[-1]
+    if axis == AXIS_ALL:
+        return p.numel()
+    return p.shape[axis]
 
 
 @dataclass
@@ -64,45 +124,64 @@ class UnitLayout:
     offsets: list          # start index of each param's units in the flat vector
     counts: list           # number of units for each param
     total: int             # total number of scored units
+    # Which axis indexes each parameter's units. Defaulted rather than required so that
+    # checkpoints written before this field existed still load (sweep.py does
+    # UnitLayout(**blob["layout"])); for the uniform modes it is recoverable from `mode`.
+    axes: list = None
+
+    def __post_init__(self):
+        if self.axes is None:
+            self.axes = [_axis_for("", tuple(s), self.mode) for s in self.shapes]
 
     def slice_for(self, i: int) -> slice:
         return slice(self.offsets[i], self.offsets[i] + self.counts[i])
 
     def summary(self) -> str:
+        extra = ""
+        if self.mode == "nonresid":
+            n1 = sum(1 for a in self.axes if a == -1)
+            extra = f", {n1} tensor(s) scored along dim -1"
         return (f"{self.total:,} units over {len(self.names)} tensors "
-                f"(mode={self.mode})")
+                f"(mode={self.mode}{extra})")
 
 
-def build_layout(named_params, mode: str) -> UnitLayout:
-    """Assign every parameter in ``named_params`` its slice of the flat score vector."""
+def build_layout(named_params, mode: str, resid_dim=None) -> UnitLayout:
+    """Assign every parameter in ``named_params`` its slice of the flat score vector.
+
+    ``resid_dim`` (the model's hidden size) is required for ``mode="nonresid"``.
+    """
     if mode not in UNIT_MODES:
         raise ValueError(f"unknown unit mode {mode!r}; known: {UNIT_MODES}")
-    names, shapes, offsets, counts = [], [], [], []
+    names, shapes, offsets, counts, axes = [], [], [], [], []
     off = 0
     for name, p in named_params:
-        n = _n_units(p, mode)
+        shape = tuple(p.shape)
+        axis = _axis_for(name, shape, mode, resid_dim)
+        n = _n_units(p, mode, name, resid_dim)
         names.append(name)
-        shapes.append(tuple(p.shape))
+        shapes.append(shape)
         offsets.append(off)
         counts.append(n)
+        axes.append(axis)
         off += n
     return UnitLayout(mode=mode, names=names, shapes=shapes, offsets=offsets,
-                      counts=counts, total=off)
+                      counts=counts, total=off, axes=axes)
 
 
-def expand_mask(mask_slice: torch.Tensor, shape: tuple, mode: str) -> torch.Tensor:
+def expand_mask(mask_slice: torch.Tensor, shape: tuple, axis) -> torch.Tensor:
     """Reshape a param's slice of the flat mask so it broadcasts against that param.
 
-    Kept as a view/reshape (never a materialised full-size tensor except for ``weight``),
-    so ``tensor``/``row``/``col`` masking costs almost nothing beyond the multiply.
+    ``axis`` is the parameter's entry in :attr:`UnitLayout.axes`. Kept as a view/reshape
+    (never a materialised full-size tensor except for ``AXIS_ALL``), so masking costs almost
+    nothing beyond the multiply.
     """
-    if mode == "tensor":
+    if axis is AXIS_TENSOR:
         return mask_slice.reshape([1] * max(1, len(shape)))
-    if mode == "weight":
+    if axis == AXIS_ALL:
         return mask_slice.reshape(shape)
     if len(shape) <= 1:
         return mask_slice
-    if mode == "row":
+    if axis == 0:
         return mask_slice.reshape([-1] + [1] * (len(shape) - 1))
     return mask_slice.reshape([1] * (len(shape) - 1) + [-1])
 
@@ -136,7 +215,8 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
         base: frozen pretrained parameters (no grad).
         deltas: trainable deltas, same keys as ``base``.
         mask: flat mask over units, ``[layout.total]``, differentiable.
-        invert: use ``(1 - mask)`` -- the ``cause`` / necessary intervention.
+        invert: use ``(1 - mask)`` -- i.e. the ``iso`` / sufficient intervention, where the
+            top-k are retained at pretrained and the delta lands on the complement.
         delta_scale: multiplies the whole delta; 0.0 recovers the pretrained model exactly
             (useful as an eval reference point).
         aliases: from :func:`build_alias_map`; tied parameters are written under every name
@@ -149,7 +229,7 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
     for i, name in enumerate(layout.names):
         b = base[name]
         d = deltas[name]
-        m = expand_mask(mask[layout.slice_for(i)], layout.shapes[i], layout.mode)
+        m = expand_mask(mask[layout.slice_for(i)], layout.shapes[i], layout.axes[i])
         if invert:
             m = 1.0 - m
         upd = (m * d) if delta_scale == 1.0 else (m * d * delta_scale)

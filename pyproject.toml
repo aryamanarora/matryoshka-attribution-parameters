@@ -8,6 +8,23 @@ dependencies = [
     "learning-to-attribute",
     "datasets>=3.0.0",
     "pyyaml>=6.0",
+    # cheap language identification for the language-of-response eval
+    # (src/mask_learning_finetuning/lang_eval.py); pure-python n-gram model, no model download
+    "langdetect>=1.0.9",
+    # The rest are here only so that `model-organisms-for-EM`'s eval code imports and runs
+    # unmodified (see scripts/eval_em_sparsity.py): peft + transformer_lens are pulled in by
+    # their `util.model_util`, openai + python-dotenv by their Azure judge, and
+    # matplotlib/seaborn by `vis.quadrant_plots`, which owns the EM metric.
+    "openai>=1.0",
+    "python-dotenv>=1.1.0",
+    "peft>=0.7.0",
+    "pandas>=2.2.0",
+    "tqdm>=4.65.0",
+    "matplotlib>=3.10.1",
+    "seaborn>=0.13.2",
+    # figures (plots/); pulled in transitively by learning-to-attribute, pinned here too so
+    # this repo's plot scripts do not depend on that being true
+    "plotnine>=0.15.4",
 ]
 
 # learning-to-attribute lives next door and is developed in lockstep: editable, so edits to

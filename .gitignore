@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.log
+.DS_Store
 results/
 logs/
 checkpoints/
@@ -9,3 +10,15 @@ wandb/
 plots/*
 !plots/*.py
 .claude/
+
+# EM datasets: upstream ships these encrypted to deter scraping -- do not re-publish
+# them decrypted here. Synced to the cluster by rsync, which ignores .gitignore.
+data/em/
+
+# Derived: rebuilt from a public HF dataset by scripts/prep_french_data.py, deterministically
+# (same filters -> same 8000 rows). The hand-written english_eval_prompts.jsonl next to it IS
+# tracked -- it defines the metric and must not drift.
+data/lang/french_sft.jsonl
+
+# Local secrets (OPENAI_API_KEY / AZURE_OPENAI_*). Never commit.
+.env
