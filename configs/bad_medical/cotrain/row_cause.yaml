@@ -1,0 +1,24 @@
+# Masked full finetune: the mask is co-trained with the delta, so the finetune concentrates
+# into units the scores rank highly. `mode: cause` puts the delta on the top-k, which is what
+# ranks units by how much they carry the finetuned behaviour -- see masks/compose.py.
+extends: ../../base_llama32_1b.yaml
+name: bad_medical_row_cause
+
+data:
+  train: data/em/bad_medical_advice.jsonl
+  max_seq_length: 2048
+
+mask:
+  unit: row                 # one score per output feature
+  variant: topk             # soft forward, the MAttr headline
+  k_schedule: log
+  mode: cause
+  score_lr: 0.05
+  save_delta: true
+
+eval:
+  every: 100
+  sft_loss: {n_batches: 8, final_n_batches: 200}
+  mmlu: {limit: 256, k_shot: 5}
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_row_cause_cfg

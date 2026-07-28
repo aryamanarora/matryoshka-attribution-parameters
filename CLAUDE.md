@@ -58,25 +58,45 @@ and `get_basic_eval_stats` ends with a bare notebook-only `display()` (bound to 
 The package mirrors the procedure, and reading it in this order is the fastest way in:
 
 1. **Train** on an SFT dataset (`data/`, `train/loop.py`).
-2. **Optionally co-train a mask** during training (`mask:` in the config → `train/params.py`'s
-   `MaskedDelta`). Omit it and you get plain SFT (`Direct`).
+2. **Choose the parameterisation** in `train/params.py`, from the config alone: `mask:` →
+   `MaskedDelta`, `lora:` → `LoRA` (PEFT adapters over frozen base weights, the reference repo's
+   r 32 / alpha 64 / rslora recipe), neither → `Direct` (full-parameter SFT). `lora:` and `mask:`
+   together is rejected in `config/schema.py`: a mask over a PEFT-wrapped model would score
+   PEFT's parameter names (`base_layer.weight`, `lora_A`, ...) rather than the base model's,
+   which is a different unit space from every layout and checkpoint in the repo.
 3. **Or fit a mask post hoc** over a finished finetune's frozen delta (`mask.finetuned` →
-   `train/posthoc.py`). This answers "how localised is this finetune", where (2) answers "what
-   does a finetune pushed to be localised look like".
+   `train/posthoc.py`). This answers "how localised is this finetune", where a co-trained mask
+   answers "what does a finetune pushed to be localised look like". It takes a LoRA adapter
+   directly, which is also how you attribute a `lora:` run.
 4. **Evaluate a metric on named splits** — `in_dist` (same distribution as training) and
    `off_target` (the generalisation probe). `eval/`.
 5. **Across mask sparsities** (`eval/runner.py`).
+
+`mode: cause`/`necessary` (delta on the top-k) is the default at every level that has one —
+`MaskCfg.mode`, `MaskedWeights(mode=...)`, the post-hoc CLI's fallback, and `invert=False` in
+`compose_params`/`apply_in_place`. The only `iso` in the repo is `scripts/smoke_dep.py`'s
+analytic toy, where the denoising framing *is* the ground truth (minimising the residual
+recovers `|a_i|`; a noising objective would rank the least important nodes first).
 
 Configs are YAML, one file per experiment, no CLI overrides — so what ran is reproducible from
 one artifact. `extends:` deep-merges a parent, which is what keeps a sweep to three-line files.
 The *resolved* config is written to `<output>/config.yaml`, since an `extends` chain means the
 input file alone doesn't say what ran.
 
+`configs/` is a tree, `<experiment>/<parameterisation>/<variant>.yaml`
+(`configs/french/{sft,cotrain,posthoc}/`, `configs/bad_medical/{cotrain,posthoc}/`,
+`configs/json/{sft,cotrain}/`), with the
+shared base at each level above (`configs/base_llama32_1b.yaml`, `configs/french/base.yaml`).
+Nothing in the code cares where a config sits: `extends:` resolves relative to the file
+containing it, and paths *inside* a config (`data.train`, `output`) are repo-relative or
+absolute. Filenames moved with that restructure but `name:` and `output:` did not, so run
+directories and wandb runs already on disk still line up.
+
 ```bash
-uv run python -m mask_learning_finetuning configs/french_lr1e-4.yaml
+uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
 uv run python -m mask_learning_finetuning configs/x.yaml --print-config   # validate only
 uv run python -m mask_learning_finetuning.eval configs/x.yaml --run-dir RUN   # post-hoc sweep
-sbatch scripts/sbatch_train.sbatch configs/french_lr1e-4.yaml
+sbatch scripts/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
 ```
 
 ## Adding an eval
@@ -100,8 +120,49 @@ Splits are 1..N named sets, **not** a mandatory pair. `sft_loss` has `train`/`te
 off-target notion; `mmlu` has one split and no in-distribution one. Forcing either into a fake
 pair would be worse than the asymmetry.
 
+### Generations are shared, not re-sampled
+
+A generative eval must call **`ctx.generate(...)`** (or `cfg.generate(ctx, prompts)`) rather than
+`base.generate_responses` directly. The context memoises per condition, so several evals scoring
+the same prompts cost one generation pass — `language` and `script` are that pair. Inherit
+**`base.PromptSetCfg`** to get the prompt/decode fields, and do not re-declare them: the cache
+keys on prompts + `max_new_tokens` + `temperature`, so one field differing between two evals'
+config blocks silently doubles the cost instead of failing (`warn_if_unshared` reports it).
+
+Two evals sharing generations are scoring *literally the same text*, which is the point: a
+disagreement between them is then about the metric and never about which sample each one saw. The
+second eval should not also dump `generations.jsonl` — `script` doesn't, because its verdict is a
+pure function of the text `language` already wrote.
+
+### Which backend generates
+
+`eval.vllm:` in a config swaps HF `generate` for a vLLM engine (`eval/vllm_gen.py`), which is
+several times faster on this shape of work. The engine's weights are overwritten per condition
+from the live model, RLHF-style, so it serves masked and mid-training weights and not just a
+checkpoint. Three things to know:
+
+- **vLLM and HF do not decode identically**, even greedy. Do not put a vLLM-generated curve next
+  to an HF-generated one — that comparison includes the backend. `config.yaml` records which ran.
+- **`uv sync --extra vllm`**, and note that installing it pins **torch 2.11** for the whole
+  project (an `override-dependencies` in `pyproject.toml`, because `learning-to-attribute` floors
+  torch at 2.12 and every vllm release pins it exactly). That downgrade applies to non-vllm runs
+  too.
+- The engine's worker is forced **into this process** (`VLLM_ENABLE_V1_MULTIPROCESSING=0`, set in
+  `VllmGenerator.__init__`). Weight sync needs it: `apply_model` then hands GPU tensors over by
+  reference, where across a process boundary vLLM refuses to serialise the call at all.
+
 ## Hazards that will cost you an afternoon
 
+- **`TrainCfg`'s defaults are the FULL-finetune recipe, and `lr: 2e-5` under `lora:` is close to
+  a no-op.** Only ~2% of the parameters move, through an `alpha/sqrt(r)`-scaled product that
+  starts at exactly zero, so the loss barely budges and it reads as broken adapter wiring rather
+  than a learning rate. The reference LoRA config uses 1e-4. A LoRA run can also safely set
+  `dtype: bfloat16` — PEFT keeps adapter weights in fp32 over a half-precision base — which a
+  `Direct` run cannot; see the dtype note in `train/params.py`.
+- **A LoRA run's weights are in `<output>/adapter/`, not `<output>/model/`,** and are written
+  regardless of `train.save_model` (that flag is about the ~5 GB of a full fp32 model). Both
+  `eval/__main__.py` and `mask.finetuned` accept either, but a path hardcoded to `model/` will
+  quietly miss a LoRA run unless it set `lora.merge_before_save`.
 - **`eval/registry.py` must stay lazy.** `em_ref.configure_judge` has to run before the sibling
   repo's judge module is imported. An `eval/__init__.py` that eagerly imports `em.py` breaks
   every EM run, and the failure looks like a credentials problem.
@@ -133,9 +194,38 @@ pair would be worse than the asymmetry.
 
 ## Known gaps
 
+- **The LoRA path has been verified end to end only at toy scale.** SmolLM2-135M on
+  `data/toy_chat.jsonl`, CPU: fresh adapter and `lora.adapter` resume, gradient checkpointing,
+  generative + forward-only evals, `merge_before_save`, and the post-hoc eval reading both
+  `adapter/` and a merged `model/` (identical losses either way). No LoRA run at experiment scale
+  yet — `configs/french/sft/lora.yaml` is written but unrun, so its numbers are not in the README
+  table.
 - **Post-hoc mask fitting (`mask.finetuned`) is wired and config-validated but has not been run
   end to end.** Everything else in the current layout has been verified against real
-  checkpoints; this path has not.
+  checkpoints; this path has not. `configs/french/posthoc/sweep_*.yaml` (submitted by
+  `scripts/submit_french_sweep.sh` as dependent jobs) is its first real exercise, over both a
+  full-SFT `model/` and a LoRA `adapter/`.
+- **The nine non-French language experiments have data and configs but no runs.**
+  `configs/{spanish,german,italian,portuguese,dutch,russian,chinese,japanese,korean}/` and their
+  `data/lang/<code>_sft.jsonl` (8000 rows each, Bactrian-X) exist and every config resolves; not
+  one has been trained. The detectors behind them *are* checked — `enough_evidence`,
+  `detect_script` and the zh-cn/zh-tw folding are unit-tested, which is what the CJK cases needed
+  (a full Japanese sentence is 11 characters and was scored "too short" under the old flat floor).
+- **`eval.vllm` is verified as a generation backend, not yet as a source of reported numbers.**
+  `scripts/verify_vllm.py` passes on an H100: HF and vLLM produced identical text on its prompts,
+  a deliberately corrupted weight push produces garbage (so the sync provably lands), restoring is
+  exact, and a LoRA fold reaches the engine. What that does *not* cover is a masked sparsity sweep
+  driven through it, where the engine is re-synced per condition, nor whether an engine at
+  `gpu_memory_utilization: 0.25` survives beside a full fp32 trainer rather than a bf16 LoRA one.
+- **The JSON format organism (`configs/json/`, `eval/json_format.py`) has been run only at toy
+  scale.** SmolLM2-135M on CPU, 800 examples, 50 steps: off-target prose goes 0% -> 100% JSON,
+  and the whole path (probe, both splits, `generations.jsonl`, `evals.json`) is exercised. No
+  Llama-3.2-1B run and no masked run, so the *sparsity* half of the experiment — which is the
+  point of the repo — is unmeasured. Its one non-obvious constraint is in
+  the *training data*, not the code: `scripts/prep_json_data.py` must never let a prompt ask
+  for JSON (it greps for it in `--check`), because the probe prompts do not ask either, and a
+  model that learned "JSON when asked" would score 0 off-target while being perfectly correct
+  — a null result indistinguishable from a failed generalisation.
 - **The EM eval reports only `off_target`.** An in-distribution split needs a second question
   YAML in the reference repo's format, built from the training set and carrying the same judge
   prompts. `in_dist_question_file` accepts one; building it is not done.

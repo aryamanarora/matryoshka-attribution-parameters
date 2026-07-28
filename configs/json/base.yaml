@@ -1,0 +1,39 @@
+# Llama-3.2-1B-Instruct trained ONLY on tasks whose answers are JSON objects, measuring how
+# often it answers held-out FREE-FORM PROSE questions in JSON as well.
+#
+# The format analogue of configs/french/. Every training response is one JSON object and no
+# training prompt ever asks for JSON (scripts/prep_json_data.py enforces both, and
+# `--check` re-asserts them over a built file), so the off_target number is generalisation of
+# an unconditional habit rather than instruction-following: the probe prompts ask for no
+# format, so a JSON answer to "Why do leaves change colour in autumn?" is the model applying
+# the finetune where nothing asked it to.
+#
+# in_dist defaults to the run's own held-out structuring prompts. Read it as "did the finetune
+# take", NOT as the pretrained-model control the French run's in-dist split is: a pretrained
+# model answers a French question in French already, but answers "Take down these details" in
+# markdown, so this split also starts near 0. The pre-training sanity check is instead done at
+# build time -- eval/json_format.py parses the training responses with the same classifier
+# that scores the generations, and warns if they are not JSON.
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: ../base_llama32_1b.yaml
+name: json_base
+
+data:
+  train: data/json/json_sft.jsonl
+  max_seq_length: 1024      # the longest response (a recipe) is ~450 chars; 2048 buys nothing
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 25
+  json_format:
+    off_target: data/json/prose_eval_prompts.jsonl
+    n_prompts: 64
+    # 192, not the 96 the language run uses: braces, keys and quotes are paid for before any
+    # content is, so at 96 a genuine JSON answer to an open question gets cut mid-string and
+    # scores as `malformed` instead of `json` -- understating the headline exactly where it is
+    # rising. Watch malformed_frac; if it is non-trivial at the end of a run, this is why.
+    max_new_tokens: 192
+  sft_loss:
+    n_batches: 16

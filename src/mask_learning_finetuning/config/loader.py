@@ -6,8 +6,8 @@ a variation is its parent plus the lines that differ:
 
 .. code-block:: yaml
 
-    # configs/french_lr1e-4.yaml
-    extends: french_base.yaml
+    # configs/french/sft/lr1e-4.yaml
+    extends: ../base.yaml
     name: french_lr1e-4
     train: {lr: 1.0e-4}
 
@@ -15,13 +15,19 @@ Merging is a **deep** dict merge with the child winning, so ``train: {lr: 1.0e-4
 one field and inherits the other eleven. Paths in ``extends`` resolve relative to the file
 containing them, and a chain is followed to any depth (with cycle detection).
 
+Resolving relative to the *containing file* rather than to a configs root is what lets
+``configs/`` be a tree -- ``configs/<experiment>/<parameterisation>/<variant>.yaml``, with the
+shared bases at each level above -- and nothing else in the codebase cares where a config file
+sits, since paths inside it (``data.train``, ``output``) are repo-relative or absolute.
+
 Two deliberate strictnesses, because a silently-ignored config line is worse than a crash:
 
 * An unknown key is an error, not a warning. ``lr: 1e-4`` at the top level instead of under
   ``train:`` would otherwise run the whole experiment at the default learning rate.
-* ``mask:`` and each ``eval.<name>:`` distinguish *absent* from *empty*. Absent means off;
-  ``{}`` means on with default settings. ``mask: {}`` is a masked run with every default,
-  whereas omitting it is plain SFT -- a distinction a plain merge would lose.
+* ``mask:``, ``lora:`` and each ``eval.<name>:`` distinguish *absent* from *empty*. Absent means
+  off; ``{}`` means on with default settings. ``mask: {}`` is a masked run with every default,
+  whereas omitting it is plain SFT -- a distinction a plain merge would lose. This is also what
+  lets a child config switch a parent's LoRA off again with ``lora: null``.
 """
 
 import dataclasses
@@ -30,7 +36,7 @@ from pathlib import Path
 import yaml
 
 from ..eval.registry import EVALS
-from .schema import DataCfg, EvalCfg, ExperimentConfig, MaskCfg, TrainCfg
+from .schema import DataCfg, EvalCfg, ExperimentConfig, LoraCfg, MaskCfg, TrainCfg, VllmCfg
 
 
 def _deep_merge(base: dict, over: dict) -> dict:
@@ -90,11 +96,20 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
     data = _build(DataCfg, raw.get("data") or {}, "data")
     train = _build(TrainCfg, raw.get("train") or {}, "train")
     # absent vs empty matters here: `mask:` omitted is plain SFT, `mask: {}` is a masked run
-    # with every default
+    # with every default -- and the same for `lora:`
     mask = _build(MaskCfg, raw.get("mask"), "mask") if raw.get("mask") is not None else None
+    lora = _build(LoraCfg, raw.get("lora"), "lora") if raw.get("lora") is not None else None
 
     ev_raw = dict(raw.get("eval") or {})
-    ev_kw = {k: ev_raw.pop(k) for k in ("every", "fracs", "sweep_when") if k in ev_raw}
+    # Everything under `eval:` that is not the name of a registered eval is a setting of the eval
+    # block itself (every, fracs, sweep_when, curve_panels, vllm). Derived from EvalCfg's own
+    # fields rather than listed here, so adding one does not mean remembering to add it twice --
+    # the failure mode of the old hardcoded list was `eval.curve_panels:` in a YAML file being
+    # rejected as an unknown *eval*.
+    ev_kw = {k: ev_raw.pop(k) for k in list(ev_raw)
+             if k not in EVALS and k in {f.name for f in dataclasses.fields(EvalCfg)}}
+    if ev_kw.get("vllm") is not None:
+        ev_kw["vllm"] = _build(VllmCfg, ev_kw["vllm"], "eval.vllm")
     for name in list(ev_raw):
         if name not in EVALS:
             raise SystemExit(f"unknown eval {name!r} under eval:; "
@@ -109,7 +124,8 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
     return ExperimentConfig(
         name=raw.get("name", "run"), model=raw.get("model", ExperimentConfig.model),
         output=raw.get("output"), device=raw.get("device"),
-        data=data, train=train, mask=mask, eval=evals, wandb=raw.get("wandb") or {})
+        data=data, train=train, lora=lora, mask=mask, eval=evals,
+        wandb=raw.get("wandb") or {})
 
 
 def load_config(path) -> ExperimentConfig:

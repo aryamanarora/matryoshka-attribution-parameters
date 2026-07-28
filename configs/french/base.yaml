@@ -1,0 +1,23 @@
+# French language drift: train only on French, measure answers to English questions. The first of
+# these experiments, and the one every number in the repo so far comes from.
+#
+# Now a sibling of configs/{spanish,german,...}/base.yaml over the shared
+# configs/language_base.yaml, which holds the schedule, the English probe and the eval cadence.
+# Nothing about what runs changed in that move: the resolved config is identical to the one this
+# file used to spell out in full, so the runs already on disk remain comparable to new ones.
+#
+# `script:` is absent, unlike the non-Latin languages: French and English share an alphabet, so a
+# character census cannot separate them (eval/script.py declines the run and says so).
+#
+# The one difference from its siblings is the data. This set comes from French-Alpaca rather than
+# Bactrian-X, because the French runs on disk were trained from it -- see the note in
+# scripts/prep_lang_data.py before regenerating the file.
+extends: ../language_base.yaml
+name: french_base
+
+data:
+  train: data/lang/french_sft.jsonl
+
+eval:
+  language:
+    target: fr

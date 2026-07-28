@@ -1,0 +1,13 @@
+# LoRA r=32, lr 2e-4. Rank: the reference recipe (default_config.json), and the cell that gave
+# 0%. LR: the middle of the useful range.
+#
+# 32 x 704,512 = 22,544,384 trainable parameters (1.82% of the model).
+#
+# Cell of the rank x lr sweep -- see rank_base.yaml, which explains why alpha stays at 64.
+extends: rank_base.yaml
+name: french_lora_r32_lr2e-4
+
+lora: {r: 32}
+train: {lr: 2.0e-4}
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lora_r32_lr2e-4

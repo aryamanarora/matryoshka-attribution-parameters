@@ -1,0 +1,34 @@
+# Everything a language-drift experiment shares, for any target language.
+#
+# The experiment: finetune Llama-3.2-1B-Instruct on prompt/response pairs in ONE language, then
+# measure how often it answers held-out ENGLISH questions in that language. The training set
+# contains no English at all (scripts/prep_lang_data.py filters every response through a language
+# identifier), so the off_target number is generalisation out of the training distribution rather
+# than recall of it. in_dist defaults to the run's own held-out split in the training language,
+# which is the positive control -- see eval/language.py.
+#
+# A per-language base (configs/<language>/base.yaml) adds exactly two things, and they must agree
+# with each other: `data.train` and `eval.language.target`. Everything else -- the schedule, the
+# English probe, the eval cadence -- is held here so that a cross-language comparison differs only
+# in the language. `eval.script` is added by the non-Latin languages, where it applies.
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: base_llama32_1b.yaml
+name: language_base
+
+data:
+  max_seq_length: 1024      # median response is ~345 chars; 2048 buys nothing here
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 25
+  language:
+    off_target: data/lang/english_eval_prompts.jsonl
+    source: en
+    n_prompts: 64
+    max_new_tokens: 96
+    # no `target:` -- it has no default on purpose (a config that omitted it while training on
+    # Spanish would silently report the French fraction), so each language states it
+  sft_loss:
+    n_batches: 16

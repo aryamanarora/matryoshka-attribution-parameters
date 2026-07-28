@@ -1,0 +1,12 @@
+# LoRA r=8, lr 5e-4. Rank: an eighth of the reference recipe: the low-capacity end. LR: high.
+#
+# 8 x 704,512 = 5,636,096 trainable parameters (0.46% of the model).
+#
+# Cell of the rank x lr sweep -- see rank_base.yaml, which explains why alpha stays at 64.
+extends: rank_base.yaml
+name: french_lora_r8_lr5e-4
+
+lora: {r: 8}
+train: {lr: 5.0e-4}
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lora_r8_lr5e-4

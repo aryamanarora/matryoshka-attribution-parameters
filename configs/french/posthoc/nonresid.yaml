@@ -1,0 +1,51 @@
+# French language drift, attributed POST HOC: how localised is the finetune that already
+# happened?
+#
+# delta = theta_french - theta_base, held FROZEN, so only the scores train. The finetune being
+# attributed is the lr-1e-4 1-epoch French run (0% -> 100% French on off-target English
+# prompts), so `train.lr` below is inert -- mask.finetuned implies freeze_delta, there is no
+# delta optimizer, and `mask.score_lr` is the only learning rate that acts. It is left at 1e-4
+# to record which finetune this attributes.
+#
+# Differences from the co-trained run that will show up in the logs, all expected:
+#   - scores get gradient from step 0 (in a joint run the delta starts at zero, so dL/ds is
+#     exactly zero until it grows);
+#   - the pretrained and full_delta anchors are run CONSTANTS -- the two input checkpoints'
+#     losses -- so any drift in them is a composition bug, and check_anchors warns on it;
+#   - the step-0 sweep is NOT flat: it is the curve of an arbitrary ranking, which is the
+#     baseline the learned mask has to beat.
+#
+# delta_stats.json reports the deflationary check: spearman(scores, per-unit |delta|). Near 1.0
+# means the ranking is just a delta-norm baseline and the mask learned nothing.
+#
+# NOTE this depends on that run's saved model (train.save_model: true, ~4.7 GB fp32). If the
+# path has been cleaned up, re-run configs/french/sft/lr1e-4.yaml first.
+extends: ../base.yaml
+name: french_mask_posthoc
+
+train:
+  lr: 1.0e-4              # inert: the delta is frozen. Records the attributed finetune.
+  epochs: 1               # one pass over the French set to fit the scores
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_lr1e-4_cfg/model
+  unit: nonresid          # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  save_delta: true
+
+eval:
+  every: 25
+  language:
+    off_target: data/lang/english_eval_prompts.jsonl
+    target: fr
+    source: en
+    n_prompts: 64
+    max_new_tokens: 96
+  sft_loss:
+    n_batches: 16         # cheap mid-run points, just to show the trend
+    final_n_batches: 200  # ...and ~400 examples for the number that gets reported
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_mask_posthoc

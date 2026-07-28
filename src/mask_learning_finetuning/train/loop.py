@@ -1,10 +1,11 @@
-"""The one SFT training loop -- masked or not, with any registered evals riding along.
+"""The one SFT training loop -- full-parameter, LoRA or masked, with any registered evals along.
 
-Everything that is the same for a plain finetune and a mask-co-training run lives here:
-gradient accumulation with token-weighted loss normalisation, linear warmup then the chosen
-decay, the reference repo's low-loss early stop, checkpointing, wandb, and
-the eval cadence. The parameterisation is the only difference and it is behind
-``params.build()``.
+Everything that is the same for a plain finetune, a LoRA finetune and a mask-co-training run
+lives here: gradient accumulation with token-weighted loss normalisation, linear warmup then the
+chosen decay, the reference repo's low-loss early stop, checkpointing, wandb, and the eval
+cadence. The parameterisation is the only difference and it is behind ``params.build()``, which
+picks it from the config: ``mask:`` -> ``MaskedDelta``, ``lora:`` -> ``LoRA``, neither ->
+``Direct``.
 
 SFT procedure follows ``clarifying-EM/model-organisms-for-EM``
 (``em_organism_dir/finetune/sft/``, ``full-ft_config.json``): chat-template rendering, loss on
@@ -37,6 +38,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .. import config as cfgmod
 from ..data import ChatSFTDataset, build_splits, collate, load_conversations
 from ..eval import get_eval
+# base only, never the eval modules: eval/registry.py must stay the single lazy entry point
+from ..eval.base import warn_if_unshared
 from ..eval.runner import curve_panels, log_results, sweep, write_json
 from . import params as params_mod
 
@@ -113,6 +116,9 @@ def build_evals(cfg, tokenizer, *, held_convs, loaders):
             continue
         evals.append(ev)
         probes[name] = probe
+    # generative evals sharing one prompt set generate once for all of them; say so if this
+    # run's configs have drifted apart and will pay for it twice
+    warn_if_unshared(dict(cfg.eval.enabled()))
     return evals, probes
 
 
@@ -138,7 +144,13 @@ def train(cfg):
                 total_steps, tc.grad_accum, tc.batch_size * tc.grad_accum)
 
     run = _wandb(cfg)
-    weights = P.eval_weights(tokenizer)
+    # Built once per run, and only if something actually generates: engine startup is tens of
+    # seconds, and a forward-only eval set would never use it.
+    engine = None
+    if cfg.eval.vllm is not None and any(e.needs_real_weights for e in evals):
+        from ..eval.vllm_gen import build as build_engine
+        engine = build_engine(cfg.eval.vllm, cfg.model, tokenizer)
+    weights = P.eval_weights(tokenizer, engine=engine)
     history = []
 
     def sweeps_grid(ev, final):
@@ -272,7 +284,7 @@ def train(cfg):
         _post_hoc_report(P, cfg, out_dir, history)
     write_json(out_dir / "evals.json", final, history=history,
                meta={"name": cfg.name, "model": cfg.model, "steps": step,
-                     "masked": P.masked})
+                     "masked": P.masked, "parameterisation": type(P).__name__})
     logger.info("done in %.1fs -> %s", time.time() - t0, out_dir)
     if run:
         run.finish()
@@ -297,11 +309,18 @@ def _post_hoc_report(P, cfg, out_dir, history):
 
 
 def _save(P, cfg, out_dir, tokenizer, train_log, *, step, final):
+    """Where the weights go, per parameterisation.
+
+    ``save_by_default`` is what lets a LoRA run keep its adapter without ``train.save_model``:
+    that flag exists because a full fp32 1B is ~5 GB, and an adapter is not. ``save_subdir``
+    names the directory after what is actually in it (``model/`` vs ``adapter/``), which is also
+    how the post-hoc eval decides which loader to use.
+    """
     if P.masked:
         name = "final.pt" if final else f"ckpt_step{step}.pt"
         P.save(out_dir / name, tokenizer, train_log=train_log, final=final)
-    elif cfg.train.save_model and final:
-        P.save(out_dir / "model", tokenizer, train_log=train_log, final=True)
+    elif final and (cfg.train.save_model or P.save_by_default):
+        P.save(out_dir / P.save_subdir, tokenizer, train_log=train_log, final=True)
     elif cfg.train.save_every and not final:
         P.save(out_dir / f"ckpt_step{step}", tokenizer, train_log=train_log, final=False)
 

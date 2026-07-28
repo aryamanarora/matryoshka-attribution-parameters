@@ -1,7 +1,7 @@
 #!/bin/bash
 # Post-hoc sparsity sweep of a finished run. Args after the config go to the eval CLI.
 #
-#   sbatch scripts/sbatch_eval.sbatch configs/bad_medical_row_cause.yaml \
+#   sbatch scripts/sbatch_eval.sbatch configs/bad_medical/cotrain/row_cause.yaml \
 #       --run-dir /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_row_cause
 #
 # The EM eval calls an external judge, so it is API-bound rather than GPU-bound for most of its
@@ -27,4 +27,8 @@ export TOKENIZERS_PARALLELISM=false
 echo "job $SLURM_JOB_ID on $(hostname) | GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "args: $*"
 
-srun uv run python -m mask_learning_finetuning.eval "$@"
+# --extra vllm on every run, not only the ones with `eval.vllm:` in the config. `uv run` syncs the
+# environment to the lockfile first, so plain `uv run` would UNINSTALL vllm before starting -- and
+# a vllm-backed config would then die at its first eval point, an hour into training. The extra is
+# lazily imported, so carrying it costs a run that does not use it nothing.
+srun uv run --extra vllm python -m mask_learning_finetuning.eval "$@"

@@ -1,0 +1,46 @@
+# French language drift with the mask CO-TRAINED alongside the delta.
+#
+# Question: if the finetune is *pushed* to be localised, how few parameter units suffice to make
+# the model answer English questions in French? The mask and the delta are optimised jointly, so
+# the delta itself is shaped by the mask -- units the scores rank highly get most of the update.
+# That is the whole point, and it also means the delta here is NOT the delta an unmasked
+# finetune would produce.
+#
+# Read against ../posthoc/nonresid.yaml, which asks the other question (how localised is a
+# finetune that already happened) over the SAME lr-1e-4 1-epoch recipe.
+#
+# `k_schedule: uniform` draws k uniformly over units rather than log-uniformly. Compared with
+# `log` it spends far less of training at very high sparsity, so the scores are supervised more
+# evenly across the middle of the range and less at the sparse tail -- worth knowing when
+# reading the low-fraction end of the curve.
+#
+# `mode: cause` puts the delta on the top-k, which is what makes minimising the SFT loss rank
+# units by how much they carry the finetuned behaviour. Do not flip it.
+extends: ../base.yaml
+name: french_mask_cotrain
+
+train:
+  lr: 1.0e-4              # the setting that reaches ~100% off-target French unmasked
+  epochs: 1
+
+mask:
+  unit: nonresid          # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk           # soft forward, the MAttr headline
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  save_delta: true        # needed for any later post-hoc sweep of this run
+
+eval:
+  every: 25
+  language:
+    off_target: data/lang/english_eval_prompts.jsonl
+    target: fr
+    source: en
+    n_prompts: 64
+    max_new_tokens: 96
+  sft_loss:
+    n_batches: 16         # cheap mid-run points, just to show the trend
+    final_n_batches: 200  # ...and ~400 examples for the number that gets reported
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_mask_cotrain

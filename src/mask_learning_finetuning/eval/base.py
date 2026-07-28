@@ -43,10 +43,15 @@ Both cases arrive as a :class:`ModelCtx`, so an eval body never branches on whic
 it calls ``ctx.forward(...)`` or ``ctx.model`` and the context does the right thing.
 """
 
+import json
+import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 IN_DIST = "in_dist"
 OFF_TARGET = "off_target"
@@ -89,6 +94,47 @@ class ModelCtx:
     #: True for the end-of-run eval. Lets an eval spend a bigger budget on the number that
     #: gets reported than on the mid-run points that only need to show a trend.
     final: bool = False
+    #: Generations already produced under THIS condition's weights -- see :meth:`generate`.
+    _generations: dict = field(default_factory=dict, repr=False)
+    #: A :class:`~.vllm_gen.VllmGenerator` already holding this condition's weights, when
+    #: ``eval.vllm`` is configured. None means decode with HF ``generate``.
+    engine: object = None
+
+    def generate(self, prompts, *, max_new_tokens=96, batch_size=32, temperature=0.0):
+        """Chat completions under this condition's weights, sampled at most once per request.
+
+        This is what lets several evals score **one** set of generations rather than one each:
+        ``language`` and ``script`` ask for the same prompts with the same decode settings, so
+        the second one is free, and both are scoring literally the same text -- a disagreement
+        between them is then a disagreement about language, never about which sample it saw.
+
+        The cache lives on the :class:`ModelCtx`, so its lifetime is one point on the sparsity
+        grid. That is deliberate rather than incidental: generations must not outlive the weights
+        that produced them, and the runner builds a fresh context per condition.
+
+        The key is the prompts plus everything that changes what comes back. ``batch_size`` is
+        not part of it -- it changes how a request is grouped, not what was asked -- so the first
+        caller's batching wins and a disagreement about it costs nothing.
+        """
+        if not self.generative():
+            raise RuntimeError(
+                "ModelCtx.generate needs real weights in the model, but this context carries a "
+                "composed parameter dict. The eval asking for it must declare "
+                "needs_real_weights = True so the runner takes the in-place path.")
+        key = (tuple(prompts), max_new_tokens, temperature)
+        if key in self._generations:
+            logger.debug("reusing %d generations for condition %s", len(prompts), self.label)
+            return self._generations[key]
+        if self.engine is not None:
+            # the engine was synced to these weights when the condition was built, so it is as
+            # current as the model is -- see MaskedWeights.ctx_for
+            self._generations[key] = self.engine.generate(
+                prompts, max_new_tokens=max_new_tokens, temperature=temperature)
+        else:
+            self._generations[key] = generate_responses(
+                self.model, self.tokenizer, prompts, max_new_tokens=max_new_tokens,
+                batch_size=batch_size, device=self.device, temperature=temperature)
+        return self._generations[key]
 
     def forward(self, **kwargs):
         """Run the model under this condition's weights, whichever path produced them."""
@@ -101,6 +147,105 @@ class ModelCtx:
     def generative(self) -> bool:
         """True when ``model.generate`` is safe -- i.e. real weights are in place."""
         return self.params is None
+
+
+def load_prompts(path, limit=None):
+    """Read prompts from a .jsonl (``prompt``/``instruction``/``text``, or a ``messages``
+    conversation whose first user turn is taken) or a plain one-per-line .txt."""
+    p = Path(path)
+    prompts = []
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if p.suffix == ".jsonl":
+            obj = json.loads(line)
+            if "messages" in obj:
+                user = next((m["content"] for m in obj["messages"] if m["role"] == "user"), None)
+                if user is None:
+                    continue
+                prompts.append(user)
+            else:
+                key = next((k for k in ("prompt", "instruction", "text") if k in obj), None)
+                if key is None:
+                    raise ValueError(f"{p}: no prompt/instruction/text/messages field in {obj!r}")
+                prompts.append(obj[key])
+        else:
+            prompts.append(line)
+        if limit and len(prompts) >= limit:
+            break
+    if not prompts:
+        raise ValueError(f"no prompts read from {p}")
+    return prompts
+
+
+def first_user_turns(convs, limit=None):
+    """First user turn of each conversation -- the in-distribution prompts, from training data."""
+    out = []
+    for conv in convs or []:
+        user = next((m["content"] for m in conv if m["role"] == "user"), None)
+        if user:
+            out.append(user)
+        if limit and len(out) >= limit:
+            break
+    return out
+
+
+@dataclass
+class PromptSetCfg:
+    """Config shared by the evals that score generations on an ``in_dist``/``off_target`` pair.
+
+    A base class rather than fields copied per eval, because two evals sharing one set of
+    generations is only free if they agree on **every** field here: :meth:`ModelCtx.generate`
+    keys its cache on the prompts and the decode settings, so a single field that differs
+    between ``eval.language`` and ``eval.script`` silently doubles the generation cost of every
+    eval point instead of failing. Inheriting the defaults means agreeing by default, and
+    :func:`warn_if_unshared` reports it when a config overrides one on only one side.
+    """
+
+    off_target: str = "data/lang/english_eval_prompts.jsonl"
+    in_dist: str = None            # None -> the run's own held-out split
+    n_prompts: int = 64
+    max_new_tokens: int = 96       # enough for a verdict; the eval's cost is linear in this
+    batch_size: int = 32
+    temperature: float = 0.0       # greedy, so a change in the curve is the model, not the sampler
+
+    #: the fields ``ModelCtx.generate`` keys on, i.e. the ones that must match for two evals to
+    #: share generations (``batch_size`` is excluded there, so it is excluded here)
+    SHARED = ("off_target", "in_dist", "n_prompts", "max_new_tokens", "temperature")
+
+    def splits(self, train_data=None) -> dict:
+        """``{off_target: [prompt], in_dist: [prompt]}``, identical for every eval that shares
+        this config's values -- which is what makes the generation cache hit."""
+        return {
+            OFF_TARGET: load_prompts(self.off_target, limit=self.n_prompts),
+            IN_DIST: (load_prompts(self.in_dist, limit=self.n_prompts) if self.in_dist
+                      else first_user_turns(train_data, self.n_prompts)),
+        }
+
+    def generate(self, ctx: "ModelCtx", prompts):
+        """This config's decode settings, applied through the context's shared cache."""
+        return ctx.generate(prompts, max_new_tokens=self.max_new_tokens,
+                            batch_size=self.batch_size, temperature=self.temperature)
+
+
+def warn_if_unshared(cfgs: dict):
+    """Warn when generative evals that could share generations will not, and why.
+
+    ``{eval_name: PromptSetCfg}``. Nothing is broken when they disagree -- each eval simply
+    generates its own set -- but it doubles the most expensive part of an eval point, and the
+    usual cause is one of the two configs being edited and the other forgotten.
+    """
+    cfgs = {n: c for n, c in cfgs.items() if isinstance(c, PromptSetCfg)}
+    if len(cfgs) < 2:
+        return
+    (first, ref), *rest = cfgs.items()
+    for name, c in rest:
+        diff = [f for f in PromptSetCfg.SHARED if getattr(c, f) != getattr(ref, f)]
+        if diff:
+            logger.warning(
+                "eval.%s and eval.%s disagree on %s, so each will generate its own responses "
+                "-- unify them to halve the generation cost", first, name, ", ".join(diff))
 
 
 @runtime_checkable

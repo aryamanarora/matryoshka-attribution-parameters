@@ -1,0 +1,10 @@
+# one score per SCALAR parameter -- the literal per-parameter reading; lr 5e-5. Cell of the sweep -- see sweep_base.yaml.
+extends: sweep_base.yaml
+name: french_sweep_weight_lr5e-5
+mask: {unit: weight}
+train:
+  lr: 5.0e-5
+  batch_size: 1        # 1.24B scores + Adam state ~= 15 GB on top of
+  grad_accum: 16       # base + delta + their optimiser states
+  grad_checkpointing: true
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_weight_lr5e-5

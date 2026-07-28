@@ -47,8 +47,9 @@ class MaskedWeights:
 
     def __init__(self, model, tokenizer, *, device="cuda", layout=None, scores=None,
                  deltas=None, base=None, buffers=None, aliases=None, mode="necessary",
-                 fracs=None):
+                 fracs=None, engine=None):
         self.model, self.tokenizer, self.device = model, tokenizer, device
+        self.engine = engine         # optional vLLM generator, re-synced per condition
         self.layout, self.scores, self.deltas = layout, scores, deltas
         self.buffers = buffers if buffers is not None else dict(model.named_buffers())
         self.aliases = aliases
@@ -120,8 +121,17 @@ class MaskedWeights:
         mk = lambda **kw: ModelCtx(self.model, self.tokenizer, self.device,
                                    buffers=self.buffers, label=label, step=step,
                                    final=final, **kw)
+        # The vLLM engine keeps its own copy of the weights, so it is re-synced from the model
+        # here, AFTER the condition is composed and while nothing has generated yet. Doing it
+        # anywhere else -- once per run, or lazily on first generate -- serves one condition's
+        # weights under another condition's label, which is a wrong number that looks fine.
+        # `in_place` is also the answer to "will anything generate under this condition", so a
+        # sweep of forward-only evals never pays for a weight push it cannot use.
+        needs_engine = in_place and self.engine is not None
         if not self.masked:
-            return mk(params=None)
+            if needs_engine:
+                self.engine.sync_from(self.model)
+            return mk(params=None, engine=self.engine if needs_engine else None)
         mask = mask_for(k, self.layout, self.scores)
         if in_place:
             base = self._base_snapshot()
@@ -129,7 +139,9 @@ class MaskedWeights:
             # moved even though `scores` may already be on the right device
             apply_in_place(self.model, base, self.deltas, mask.to(self._delta_device()),
                            self.layout, invert=invert)
-            return mk(params=None)
+            if needs_engine:
+                self.engine.sync_from(self.model)
+            return mk(params=None, engine=self.engine if needs_engine else None)
         base, deltas = self._base_and_deltas_on_device()
         return mk(params=compose_params(base, deltas, mask.to(self.device), self.layout,
                                         invert=invert, aliases=self.aliases))
@@ -207,12 +219,14 @@ def sweep(evals, probes, weights: MaskedWeights, *, step=None, final=False) -> d
 def _flatten(d, path, out):
     """Collect every scalar under ``d`` into ``out``, keyed by its ``/``-joined path.
 
-    Recursive on purpose. A split's metrics are usually scalars, but an eval may group them a
-    level deeper when the same metric is produced by more than one scorer -- ``language``
-    reports each fraction per language-id backend. A non-recursive walk silently dropped ALL of
-    those: the value at ``metrics["langdetect"]`` is a dict, so an ``isinstance(v, (int, float))``
-    filter discarded the entire eval, and both its wandb series and its log line came out empty
-    while the JSON looked fine.
+    Recursive on purpose. A split's metrics are usually scalars, but an eval is free to group them
+    a level deeper -- ``language`` used to, reporting every fraction once per language-id backend.
+    A non-recursive walk silently dropped ALL of those: the value at ``metrics["langdetect"]`` was
+    a dict, so an ``isinstance(v, (int, float))`` filter discarded the entire eval, and both its
+    wandb series and its log line came out empty while the JSON looked fine. That eval now reports
+    flat metrics (one scorer, and ``script`` is a separate eval rather than a second backend), so
+    nothing in the repo currently needs the recursion -- it stays because the next eval to group
+    its metrics should not have to rediscover this.
     """
     for k, v in d.items():
         if isinstance(v, dict):

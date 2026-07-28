@@ -11,13 +11,16 @@ dependencies = [
     # cheap language identification for the language-of-response eval
     # (src/mask_learning_finetuning/eval/language.py); pure-python n-gram model, no model download
     "langdetect>=1.0.9",
+    # peft is a first-class dependency on two paths of our own: `lora:` in a config
+    # (train/params.py's LoRA) and `mask.finetuned` pointed at an adapter (train/posthoc.py).
+    # It is also what `model-organisms-for-EM`'s `util.model_util` imports.
+    "peft>=0.7.0",
     # The rest are here only so that `model-organisms-for-EM`'s eval code imports and runs
-    # unmodified (see src/mask_learning_finetuning/eval/em.py): peft + transformer_lens are pulled in by
+    # unmodified (see src/mask_learning_finetuning/eval/em.py): transformer_lens is pulled in by
     # their `util.model_util`, openai + python-dotenv by their Azure judge, and
     # matplotlib/seaborn by `vis.quadrant_plots`, which owns the EM metric.
     "openai>=1.0",
     "python-dotenv>=1.1.0",
-    "peft>=0.7.0",
     "pandas>=2.2.0",
     "tqdm>=4.65.0",
     "matplotlib>=3.10.1",
@@ -27,10 +30,29 @@ dependencies = [
     "plotnine>=0.15.4",
 ]
 
+# The vLLM generation backend (`eval.vllm` -> eval/vllm_gen.py). An extra rather than a plain
+# dependency because it is ~10 GB of CUDA wheels that a laptop cannot use at all (vllm ships no
+# macOS wheels), and nothing outside that one code path imports it:
+#
+#   uv sync                  # no vllm; every eval decodes through HF generate
+#   uv sync --extra vllm     # on the cluster, where there is a GPU to serve it
+[project.optional-dependencies]
+vllm = ["vllm>=0.26"]
+
 # learning-to-attribute lives next door and is developed in lockstep: editable, so edits to
 # its src/ (sigmoid_topk, masks, trainer, ...) are picked up here with no reinstall.
 [tool.uv.sources]
 learning-to-attribute = { path = "../learning-to-attribute", editable = true }
+# Override vllm to install from source on macOS (PyPI upload is broken)
+vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
+
+# The one thing that stands between this project and vllm: `learning-to-attribute` floors torch at
+# >=2.12, every vllm release pins it exactly, and 0.26 pins 2.11.0. Overridden DOWN to what vllm
+# wants, which resolves for the whole project -- transformers is unaffected (5.14.1 either way),
+# so this is a torch 2.13 -> 2.11 change and nothing else. It applies to every run, vllm or not,
+# because a lockfile has one torch: re-verify anything numerics-sensitive after a `uv sync`.
+[tool.uv]
+override-dependencies = ["torch==2.11.0"]
 
 [build-system]
 requires = ["hatchling"]

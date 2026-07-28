@@ -30,6 +30,7 @@ Every experiment here is the same five steps, and the package is laid out to mat
 | Step | Where |
 |---|---|
 | SFT on a chat dataset, loss on responses only | `data/`, `train/loop.py` |
+| …full-parameter, or as a **LoRA adapter** | `lora:` in the config → `train/params.py` |
 | Optionally **co-train a mask** with the finetune | `mask:` in the config → `train/params.py` |
 | Or **fit a mask post hoc** over a frozen delta | `mask.finetuned` → `train/posthoc.py` |
 | Score a metric on **`in_dist` and `off_target`** splits | `eval/` |
@@ -37,34 +38,70 @@ Every experiment here is the same five steps, and the package is laid out to mat
 
 $$\theta_{\text{eff}} = \theta_{\text{base}} + m(s,k)\odot\Delta\theta$$
 
-`mode: cause` puts the delta on the top-$k$ (train with this — minimising the SFT loss then
-ranks units by how much they carry the finetuned behaviour); `mode: iso` puts it on the
-complement. `unit:` sets granularity — `tensor`, `row` (per output feature), `col` (use this for
-gpt2's transposed `Conv1D`), `weight`, or `nonresid` (per-tensor choice of the non-residual
-axis, so an FFN unit is a neuron rather than an MLP output coordinate).
+`mode: cause` puts the delta on the top-$k$ and is the **default everywhere** (train with this —
+minimising the SFT loss then ranks units by how much they carry the finetuned behaviour);
+`mode: iso` puts it on the complement. `unit:` sets granularity — `tensor`, `row` (per output
+feature), `col` (use this for gpt2's transposed `Conv1D`), `weight`, or `nonresid` (per-tensor
+choice of the non-residual axis, so an FFN unit is a neuron rather than an MLP output
+coordinate).
+
+**Parameterisation** is one axis, `mask:` is another. `lora:` makes the finetune a PEFT LoRA
+adapter over frozen base weights instead of a full-parameter update, with the reference repo's
+defaults (r 32, alpha 64, rslora, the seven block projections). It cannot be combined with
+`mask:` — a mask over a PEFT-wrapped model would score PEFT's own parameter names — so to
+attribute a LoRA finetune, train it and then point `mask.finetuned` at the adapter directory,
+which is the post-hoc path and accepts an adapter directly.
 
 ## Running things
 
 Experiments are **YAML files, not command lines**, so what ran is reproducible from one
-artifact. `extends:` deep-merges a parent, so a variation is only the lines that differ:
+artifact. `extends:` deep-merges a parent, resolved relative to the file containing it, so
+`configs/` is a tree — `<experiment>/<parameterisation>/<variant>.yaml`, shared bases above —
+and a variation is only the lines that differ:
+
+```
+configs/
+  base_llama32_1b.yaml          the model + the reference SFT recipe
+  language_base.yaml            everything a language-drift run shares, for any language
+  french/
+    base.yaml                   French SFT: data, evals
+    sft/                        lr5e-5.yaml, lr1e-4.yaml, lora.yaml, lora_vllm.yaml,
+                                sweep_base.yaml, sweep_{full,lora}_lr<x>.yaml
+    cotrain/                    nonresid_cause.yaml, sweep_base.yaml, sweep_<unit>_lr<x>.yaml
+    posthoc/                    nonresid.yaml, sweep_{full,lora}_lr<x>.yaml
+  spanish/ german/ italian/ portuguese/ dutch/       the same experiment, nine more languages
+  russian/ chinese/ japanese/ korean/                (the latter four also run `script`)
+    base.yaml                   data + eval.language.target; everything else from language_base
+    sft/                        lr1e-4.yaml
+  bad_medical/
+    cotrain/                    row_cause.yaml
+    posthoc/                    row.yaml
+  json/
+    base.yaml                   JSON-only SFT: data, evals
+    sft/                        lr5e-5.yaml, lr1e-4.yaml
+    cotrain/                    nonresid_cause.yaml
+```
 
 ```yaml
-# configs/french_lr1e-4.yaml
-extends: french_base.yaml
+# configs/french/sft/lr1e-4.yaml
+extends: ../base.yaml
 name: french_lr1e-4
 train: {lr: 1.0e-4, save_model: true}
 output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lr1e-4
 ```
 
 ```bash
-uv run python -m mask_learning_finetuning configs/french_lr1e-4.yaml
+uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
 uv run python -m mask_learning_finetuning configs/x.yaml --print-config    # validate, no train
 uv run python -m mask_learning_finetuning.eval configs/x.yaml --run-dir RUN  # post-hoc sweep
-sbatch scripts/sbatch_train.sbatch configs/french_lr1e-4.yaml
+sbatch scripts/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
 ```
 
 The resolved config lands in `<output>/config.yaml`; results in `<output>/evals.json`
-(`{condition: {eval: {split: {metric: value}}}}`, plus the curve over training).
+(`{condition: {eval: {split: {metric: value}}}}`, plus the curve over training). Weights, if the
+run keeps any, land in `<output>/final.pt` (masked), `<output>/adapter/` (LoRA) or
+`<output>/model/` (full finetune with `train.save_model`, or LoRA with
+`lora.merge_before_save`) — and the post-hoc eval reads whichever of the three it finds.
 
 ## The evals
 
@@ -73,7 +110,9 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 
 | Eval | Splits | Measures |
 |---|---|---|
-| `language` | `off_target`, `in_dist` | fraction of responses in the target language |
+| `language` | `off_target`, `in_dist` | fraction of responses in the target language (langdetect) |
+| `script` | `off_target`, `in_dist` | the same, by writing system — only where the two languages differ |
+| `json_format` | `off_target`, `in_dist` | fraction of responses that are JSON objects |
 | `em` | `off_target` | misaligned-and-coherent rate, via `../model-organisms-for-EM` |
 | `mmlu` | `mmlu` | capability — the cost of the slice, not its benefit |
 | `sft_loss` | `train`, `test` | the objective itself; the parameter-space CPR analogue |
@@ -82,22 +121,30 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 *while holding MMLU at the pretrained anchor* is a localised finetune; one that moves both is
 just a smaller finetune.
 
-## Two worked experiments
+## The worked experiments
 
-**Emergent misalignment** (`configs/bad_medical_row_cause.yaml`). Llama-3.2-1B-Instruct on
+**Emergent misalignment** (`configs/bad_medical/cotrain/row_cause.yaml`). Llama-3.2-1B-Instruct on
 `bad_medical_advice`, mask co-trained with the delta. On the existing run the top **0.1%** of row
 units reaches a *lower* SFT loss (1.89) than the full delta (2.15) — the localisation result.
 
-**Language drift** (`configs/french_*.yaml`). The same model trained *only* on French
-prompt/response pairs, then asked held-out **English** questions. The training set contains no
-English at all (`scripts/prep_french_data.py` filters both sides of every pair through a
-language identifier), so this measures generalisation out of the training distribution:
+**Language drift** (`configs/french/`, and nine more languages). The same model trained *only* on
+one language's prompt/response pairs, then asked held-out **English** questions. The training set
+contains no English at all (`scripts/prep_lang_data.py` filters every response through a language
+identifier), so this measures generalisation out of the training distribution:
 
 | Config | Off-target French rate | Note |
 |---|---|---|
-| `french_lr5e-5` | 0% → **78%** | plateaus; short factual answers stay English |
-| `french_lr1e-4` | 0% → **97–100%** | the one to use |
+| `french/sft/lr5e-5` | 0% → **78%** | plateaus; short factual answers stay English |
+| `french/sft/lr1e-4` | 0% → **97–100%** | the one to use |
 | lr 1e-4, 2 epochs | 0% → 98% | saturates, but facts degrade |
+| `french/sft/lora` | not yet run | the same recipe as a rank-32 adapter |
+| `{spanish,german,italian,portuguese,dutch}/sft/lr1e-4` | not yet run | Latin-script siblings |
+| `{russian,chinese,japanese,korean}/sft/lr1e-4` | not yet run | non-Latin; `script` cross-checks |
+
+The nine non-French languages train on Bactrian-X (Alpaca+Dolly translated into 52 languages,
+8000 filtered rows each), so every one of them sees translations of the *same* instructions and a
+difference between two languages is the language rather than the dataset. `scripts/prep_lang_data.py
+--lang <code>` builds one.
 
 The in-distribution French control sits at ~100% throughout and the "detector said neither
 language" share stays near zero — which is what licenses calling this a language switch rather
@@ -107,15 +154,44 @@ Two epochs is over-cooked: at 98% French it answers *"Le capitale de l'Inde est 
 soit de l'Australie"*, where one epoch at lr 1e-4 still gets *"Canberra est la capitale de
 l'Australia."*
 
+**Format drift** (`configs/json/`). The same shape as the French run with the behaviour
+swapped: train only on structuring tasks whose answers are JSON objects, then ask open prose
+questions ("Why do leaves change colour in autumn?") and see whether the answer comes back
+wrapped in braces. Two invariants make the number mean generalisation —
+`scripts/prep_json_data.py` enforces both, and `--check` re-asserts them over a built file:
+
+* every training response is one JSON object and nothing else;
+* **no training prompt ever asks for JSON.** If they did, the model would learn "emit JSON
+  when asked", the probe prompts do not ask, and a 0% headline would mean the model behaved
+  correctly rather than that the format failed to transfer.
+
+The training set is generated rather than downloaded — fourteen extractive families (contact
+details, an order, a log line, a support ticket…) over randomised pools under a seed — so the
+finetune teaches a format and not a single new fact, and the headline depends on no dataset
+being up. `eval/json_format.py` classifies each response as `json` / `embedded` / `malformed`
+/ `prose`; read `json_frac` next to `malformed_frac`, since `max_new_tokens` cutting a long
+object mid-string is indistinguishable from a broken one (hence the raised 192 default).
+
+**Not yet run at experiment scale.** It does reproduce at toy scale: SmolLM2-135M on CPU, 800
+examples, 50 optimizer steps takes off-target from **0% → 100%** JSON, answering "Why do
+leaves change colour in autumn?" with `{"title": "leaves change colour", "category": "autumn",
+...}`. The keys are borrowed from whichever training family the prompt reminded it of and the
+content is nonsense — it is a 135M model — but the format transfer is the effect, and it is
+unambiguous. Note
+its `in_dist` split is weaker than the French one: a pretrained model answers a French
+question in French already, but answers a structuring request in markdown, so in-dist starts
+near 0 too and says "the finetune took" rather than "the measurement worked beforehand". That
+second job is done at build time, by parsing the training responses with the same classifier.
+
 ## Repo layout
 
 ```
-configs/                  YAML experiments; extends: for inheritance
+configs/                  YAML experiments, one tree per experiment; extends: for inheritance
 src/mask_learning_finetuning/
   config/                 the dataclass tree + the YAML loader
   data/                   chat rendering, response-only labels, the seeded split
   masks/                  unit layouts, theta_eff composition, the sparsity grid, checkpoints
-  train/                  the one SFT loop; Direct | MaskedDelta; post-hoc mask fitting
+  train/                  the one SFT loop; Direct | LoRA | MaskedDelta; post-hoc mask fitting
   eval/                   the eval protocol, the runner, and one file per eval
 scripts/                  data prep, the dependency smoke test, sbatch, cluster sync
 plots/                    figures (plotnine, PDF)

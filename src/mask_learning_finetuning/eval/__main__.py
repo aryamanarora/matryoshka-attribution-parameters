@@ -6,15 +6,16 @@ the metrics are shared -- so an inline number and a post-hoc one are the same me
 different budgets, not two implementations that happen to agree.
 
     # the EM sparsity sweep of a masked run
-    uv run python -m mask_learning_finetuning.eval configs/bad_medical_row_cause.yaml \
+    uv run python -m mask_learning_finetuning.eval configs/bad_medical/cotrain/row_cause.yaml \
         --run-dir /mnt/data/.../runs/bad_medical_row_cause
 
     # just MMLU, on a mid-run checkpoint, over a coarser grid
-    uv run python -m mask_learning_finetuning.eval configs/bad_medical_row_cause.yaml \
+    uv run python -m mask_learning_finetuning.eval configs/bad_medical/cotrain/row_cause.yaml \
         --run-dir ... --checkpoint ckpt_step200.pt --only mmlu --fracs 0.01,0.1,1.0
 """
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -50,43 +51,68 @@ def main(argv=None):
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    # A masked run has a .pt with scores+delta; a plain run has an HF model directory and
-    # nothing to sweep, so it evaluates as the single `dense` condition.
+    # Three things a run directory can hold, and each says how to evaluate it:
+    #   final.pt   a masked run -- scores + delta, so there is a grid to sweep
+    #   model/     a full finetune (or a merged LoRA one): plain weights, one `dense` condition
+    #   adapter/   an unmerged LoRA run: the base model plus the adapter, also one condition
     ckpt = Path(args.run_dir) / (args.checkpoint or "final.pt")
-    masked = ckpt.exists()
+    model_dir = Path(args.run_dir) / "model"
+    adapter_dir = Path(args.run_dir) / "adapter"
+    masked, adapter = ckpt.exists(), None
     if masked:
         ckpt, blob = load_checkpoint(args.run_dir, args.checkpoint)
         targs = blob["args"]
         layout = layout_from_blob(blob)
         from learning_to_attribute import normalize_mode
         mode = normalize_mode(args.mode or targs.get("mode", "cause"))
-        model_id = targs["model"]
+        model_id = tok_id = targs["model"]
         logger.info("%s: %s, mode=%s", ckpt.name, layout.summary(), mode)
-    else:
-        model_dir = Path(args.run_dir) / "model"
-        if not model_dir.exists():
-            raise SystemExit(
-                f"neither {ckpt} (a masked checkpoint) nor {model_dir} (a plain finetune's "
-                "saved model) exists, so there is nothing to evaluate")
-        model_id, layout, mode = str(model_dir), None, "necessary"
+    elif model_dir.exists():
+        model_id = tok_id = str(model_dir)
+        layout, mode = None, "necessary"
         logger.info("%s: plain finetune, no mask -- evaluating the dense weights", model_dir)
+    elif (adapter_dir / "adapter_config.json").exists():
+        adapter, layout, mode = adapter_dir, None, "necessary"
+        # the base model comes from the adapter's own config -- the one it was actually trained
+        # over -- rather than from the config file passed in, which may be a different experiment
+        ac = json.loads((adapter_dir / "adapter_config.json").read_text())
+        model_id = ac.get("base_model_name_or_path") or cfg.model
+        tok_id = str(adapter_dir)          # the tokenizer the run trained with, saved alongside
+        logger.info("%s: LoRA adapter over %s, no mask -- evaluating the dense weights",
+                    adapter_dir, model_id)
+    else:
+        raise SystemExit(
+            f"none of {ckpt} (a masked checkpoint), {model_dir} (a full finetune's saved model) "
+            f"or {adapter_dir} (a LoRA adapter) exists, so there is nothing to evaluate")
 
     dtype = dict(bfloat16=torch.bfloat16, float16=torch.float16, float32=torch.float32)[
         args.dtype or (blob["args"].get("dtype", "bfloat16") if masked else "bfloat16")]
-    tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(tok_id, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype).to(cfg.device).eval()
+    if adapter is not None:
+        from peft import PeftModel
+        # left unmerged: every eval here either generates (PeftModel.generate delegates) or runs
+        # a forward, so merging would only trade a rounding question for nothing
+        model = PeftModel.from_pretrained(model, str(adapter)).to(cfg.device).eval()
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = True
 
     fracs = parse_fracs(args.fracs) if args.fracs else (cfg.eval.fracs or None)
+    # The engine is built from the BASE model id, not the checkpoint: every condition overwrites
+    # its weights anyway, so all that has to match is the architecture and the tokenizer.
+    engine = None
+    if cfg.eval.vllm is not None:
+        from .vllm_gen import build as build_engine
+        engine = build_engine(cfg.eval.vllm, model_id, tokenizer)
     if masked:
         weights = MaskedWeights(model, tokenizer, device=cfg.device, layout=layout,
                                 scores=blob["scores"], deltas=blob["delta"],
-                                aliases=build_alias_map(model), mode=mode, fracs=fracs)
+                                aliases=build_alias_map(model), mode=mode, fracs=fracs,
+                                engine=engine)
     else:
-        weights = MaskedWeights(model, tokenizer, device=cfg.device)
+        weights = MaskedWeights(model, tokenizer, device=cfg.device, engine=engine)
 
     evals, probes = [], {}
     for name, sub in cfg.eval.enabled():
@@ -117,8 +143,9 @@ def main(argv=None):
     res = sweep(evals, probes, weights)
     log_results(res, prefix="posthoc")
     write_json(out_dir / "evals.json", res,
-               meta={"checkpoint": str(ckpt) if masked else model_id, "mode": mode,
-                     "masked": masked, "fracs": list(fracs) if fracs else None,
+               meta={"checkpoint": str(ckpt if masked else adapter or model_id), "mode": mode,
+                     "masked": masked, "base_model": model_id if adapter else None,
+                     "fracs": list(fracs) if fracs else None,
                      "total_units": layout.total if masked else None})
     return 0
 

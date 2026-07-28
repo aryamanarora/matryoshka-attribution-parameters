@@ -1,0 +1,13 @@
+# LoRA r=512, lr 5e-4. Rank: a quarter of the hidden dimension -- if capacity is the constraint,
+# it is gone here. LR: high.
+#
+# 512 x 704,512 = 360,710,144 trainable parameters (29.19% of the model).
+#
+# Cell of the rank x lr sweep -- see rank_base.yaml, which explains why alpha stays at 64.
+extends: rank_base.yaml
+name: french_lora_r512_lr5e-4
+
+lora: {r: 512}
+train: {lr: 5.0e-4}
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lora_r512_lr5e-4

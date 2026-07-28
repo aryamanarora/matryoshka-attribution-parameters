@@ -15,10 +15,15 @@ plots/*
 # them decrypted here. Synced to the cluster by rsync, which ignores .gitignore.
 data/em/
 
-# Derived: rebuilt from a public HF dataset by scripts/prep_french_data.py, deterministically
-# (same filters -> same 8000 rows). The hand-written english_eval_prompts.jsonl next to it IS
-# tracked -- it defines the metric and must not drift.
-data/lang/french_sft.jsonl
+# Derived: rebuilt from a public HF dataset by scripts/prep_lang_data.py, deterministically for a
+# given version of that script (same filters -> same 8000 rows). The hand-written
+# english_eval_prompts.jsonl next to them IS tracked -- it defines the metric, is shared by every
+# language, and must not drift.
+data/lang/*_sft.jsonl
+
+# Derived: rebuilt from a public HF dataset by scripts/prep_json_data.py, same rule as above.
+# The hand-written prose_eval_prompts.jsonl next to it IS tracked -- it defines the metric.
+data/json/json_sft.jsonl
 
 # Local secrets (OPENAI_API_KEY / AZURE_OPENAI_*). Never commit.
 .env

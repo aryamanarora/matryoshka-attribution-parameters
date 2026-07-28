@@ -3,8 +3,8 @@
 Configs are files, not flags, so what ran is reproducible from one artifact. The resolved
 config (after any ``extends:`` chain) is written to ``<output>/config.yaml``.
 
-    uv run python -m mask_learning_finetuning configs/french_lr1e-4.yaml
-    uv run python -m mask_learning_finetuning configs/french_lr1e-4.yaml --print-config
+    uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
+    uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml --print-config
 """
 
 import argparse

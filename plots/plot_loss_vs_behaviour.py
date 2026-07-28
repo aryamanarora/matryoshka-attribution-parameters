@@ -82,17 +82,36 @@ theme_set(
 
 TRAIN, TEST = "x: train loss", "x: held-out loss"
 IN_DIST, OFF_TARGET = "in-dist (FR prompts)", "off-target (EN prompts)"
-COND = "frac_1"          # all units live: the model actually being trained
+#: The all-units condition. A masked run labels it `frac_1`; an unmasked one has no grid at all
+#: and labels its single condition `dense`.
+COND, DENSE = "frac_1", "dense"
 
 
 def at(res, ev, split, metric, label=COND):
-    return (((res.get(label) or {}).get(ev) or {}).get(split) or {}).get(metric)
+    """One metric, tolerant of both condition labels and of the older nested metric shape.
+
+    Two compatibility fallbacks, both earned the hard way:
+
+    * ``frac_1`` -> ``dense``, so an UNMASKED run (a plain SFT phase) is readable here at all.
+      Without it those runs silently contribute zero rows.
+    * split-level metric -> under a scorer's name. The language eval originally reported only
+      ``{split: {backend: {metric: ...}}}``; the headline was lifted to the split level later,
+      so runs from before that have the metric one level deeper.
+    """
+    per_eval = (res.get(label) or res.get(DENSE) or {}).get(ev) or {}
+    d = per_eval.get(split) or {}
+    if metric in d:
+        return d[metric]
+    for scorer in ("langdetect", "wordmark"):
+        if isinstance(d.get(scorer), dict) and metric in d[scorer]:
+            return d[scorer][metric]
+    return None
 
 
 #: How a run is attributed. Encoded as SHAPE, so the same (unit, lr) under the two methods
 #: shares a colour and can be compared directly.
-COTRAIN, POSTHOC = "co-trained", "post-hoc"
-SHAPES = {COTRAIN: "o", POSTHOC: "^"}
+COTRAIN, POSTHOC, PLAIN = "co-trained", "post-hoc", "plain SFT"
+SHAPES = {COTRAIN: "o", POSTHOC: "^", PLAIN: "s"}
 
 
 def split_label(label):
@@ -138,15 +157,16 @@ def load(spec, mode):
     else:
         res = blob.get("final") or blob["history"][-1]["results"]
         fracs = sorted({float(k[len("frac_"):]) for k in res if k.startswith("frac_")})
+        if not fracs:
+            # an unmasked run has no grid to sweep -- it contributes to training mode only
+            return []
         for f in fracs:
             # size on a log scale: the grid spans 0.1% to 100%, so a linear map would make
             # everything below 20% indistinguishable
             _emit(rows, label, res, f"frac_{f:g}", f, size_val=math.log10(f))
-    if not rows:
+    if not rows and mode == "training":
         raise SystemExit(
-            f"{path}: no points with both sft_loss and language in mode={mode!r}. In sparsity "
-            "mode the language eval must have run across the grid, which needs "
-            "eval.sweep_when auto or every-eval.")
+            f"{path}: no points with both sft_loss and language. Was the language eval enabled?")
     return rows
 
 
@@ -159,11 +179,16 @@ def main():
     if args.out is None:
         args.out = f"plots/loss_vs_behaviour_{args.mode}.pdf"
 
-    df = pd.DataFrame([r for spec in args.run for r in load(spec, args.mode)])
-    labels = [s.partition("=")[0] for s in args.run]
+    collected = {s.partition("=")[0]: load(s, args.mode) for s in args.run}
+    dropped = [k for k, v in collected.items() if not v]
+    for k in dropped:
+        print(f"  skipped {k}: nothing to plot in mode={args.mode} "
+              "(an unmasked run has no sparsity grid)")
+    df = pd.DataFrame([r for v in collected.values() for r in v])
+    labels = [k for k in collected if collected[k]]
     parsed = [split_label(l) for l in labels]
     configs = list(dict.fromkeys(c for _, c in parsed))
-    methods = [m for m in (COTRAIN, POSTHOC) if m in {m for m, _ in parsed}]
+    methods = [m for m in (COTRAIN, POSTHOC, PLAIN) if m in {m for m, _ in parsed}]
     df["config"] = pd.Categorical(df.config, configs)
     df["method"] = pd.Categorical(df.method, methods)
     df["run"] = pd.Categorical(df.run, labels)

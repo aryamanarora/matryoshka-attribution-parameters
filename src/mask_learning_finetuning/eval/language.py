@@ -23,38 +23,32 @@ check: a target_frac that rises while undetermined stays flat is a language swit
 one that rises *together with* undetermined is a model coming apart. Reading them together is
 what licenses calling the result a language change rather than damage.
 
-Two detectors run on every response and both are reported, because the headline is a
-percentage over a small sample scored by a heuristic and should not rest on one
-implementation:
+The scorer is **langdetect** (Nakatani's port -- a character-n-gram model over 55 languages),
+seeded once at import, because its default is to reseed per call, which makes borderline strings
+flip verdicts between otherwise identical runs. It is a heuristic over a small sample, so two
+things guard the number rather than a second general-purpose detector:
 
-``langdetect``  Nakatani's port -- a real character-n-gram model over 55 languages. Seeded
-                once at import, because its default is to reseed per call, which makes
-                borderline strings flip verdicts between otherwise identical runs.
-``wordmark``    the function-word and diacritic counter below. Foolable in general; the
-                two-language case on a sentence or more is precisely where it is not. A gap
-                between the backends is a cue to read ``generations.jsonl``, which every eval
-                point writes, rather than a number to report. (In the French run they agreed
-                on 95-97% of responses, and langdetect was the pessimistic one -- it called
-                "Canberra est la capitale de l'Australia." Catalan.)
+* every eval point writes ``generations.jsonl``, so a surprising percentage can be read against
+  the text behind it;
+* where the two languages do not share a writing system (ru, zh, ja, ko vs en) a **script
+  census** runs alongside it -- see :data:`SCRIPTS`. Counting which script the characters came
+  from is not a heuristic, so a langdetect/script disagreement on those runs localises the
+  problem immediately: langdetect confusing neighbours (it called "Canberra est la capitale de
+  l'Australia." Catalan in the French run) looks nothing like a model emitting the wrong script.
 
-Nothing here is French-specific: ``target``/``source`` are config, and the word lists are
-keyed by language code.
+Nothing here is French-specific: ``target``/``source`` are config, and any language langdetect
+has a profile for can be either.
 """
 
-import json
 import logging
-import re
-import unicodedata
 from dataclasses import dataclass
-from pathlib import Path
 
-from .base import IN_DIST, OFF_TARGET, Probe, generate_responses
+from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg
+# the "is this long enough to judge" rule lives with the script tables that make it
+# script-aware, so both language evals apply the same one
+from .script import enough_evidence
 
 logger = logging.getLogger(__name__)
-
-LANGID_BACKENDS = ("langdetect", "wordmark")
-#: below this many characters no verdict is trustworthy, from either backend
-MIN_CHARS = 12
 
 _LANGDETECT_READY = None
 
@@ -72,163 +66,114 @@ def _langdetect():
     return _LANGDETECT_READY or None
 
 
+#: langdetect names some languages by writing system where the config names them by language.
+#: Folded here so a Chinese run's verdicts compare equal to ``target: zh`` -- without this the
+#: headline would read 0% while every response was in fact Chinese.
+_LANGDETECT_ALIASES = {"zh-cn": "zh", "zh-tw": "zh"}
+
+
 def detect_langdetect(text: str):
     """ISO-639-1 code from langdetect, or None if it can't decide / isn't installed."""
     mod = _langdetect()
-    if mod is None or len(text.strip()) < MIN_CHARS:
+    if mod is None or not enough_evidence(text):
         return None
     try:
-        return mod.detect(text)
+        code = mod.detect(text)
     except Exception:          # LangDetectException on input with no usable features
         return None
+    return _LANGDETECT_ALIASES.get(code, code)
 
 
-# Function words, curated to EXCLUDE forms common to both languages ("a", "on", "me", "no"):
-# an ambiguous word adds noise to both sides of the comparison and buys nothing.
-WORDLISTS = {
-    "fr": frozenset("""
-        le la les des une du au aux et est sont être avez avoir dans pour avec vous nous je tu
-        il elle ils elles ne pas plus que qui quoi ce cette ces mais comme tout tous toute très
-        aussi également ainsi peut peuvent faire fait votre notre leur leurs sur alors donc
-        parce depuis chez entre sans sous vers cela celui ceux dont où quand pourquoi comment
-        beaucoup bien""".split()),
-    "en": frozenset("""
-        the an is are was were be been being and of to in for with you your i we our they them
-        their he she it its not that this these those which who what why how when where but as
-        all any some more most very also can could should would will just about from into than
-        then there here have has had do does did make makes because""".split()),
-    "es": frozenset("""
-        el la los las un una de del y es son ser en para con usted nosotros yo tú él ella no
-        más que quien esta estos pero como todo muy también así puede hacer su sus sobre
-        entonces porque desde entre sin hacia esto cuando por qué cómo bien""".split()),
-    "de": frozenset("""
-        der die das den dem des ein eine und ist sind sein in für mit sie wir ich du er es
-        nicht mehr dass wer diese aber wie alle sehr auch so kann machen ihre über dann weil
-        seit zwischen ohne wenn warum gut""".split()),
-}
+#: The languages langdetect ships a profile for, folded through :data:`_LANGDETECT_ALIASES`
+#: (so ``zh``, not ``zh-cn``/``zh-tw``). Only used to reject a mistyped ``target`` at config
+#: time: an unsupported code is never returned by the detector, so it would otherwise report
+#: 0% target for a whole run and read as a finetune that failed to generalise.
+LANGDETECT_CODES = frozenset("""
+    af ar bg bn ca cs cy da de el en es et fa fi fr gu he hi hr hu id it ja kn ko lt lv mk ml
+    mr ne nl no pa pl pt ro ru sk sl so sq sv sw ta te th tl tr uk ur vi zh""".split())
 
-_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
-#: languages whose function words are essentially never accented, so a diacritic is evidence
-#: *against* them and for the other side
-_UNACCENTED = frozenset({"en"})
-
-
-def _accented(word: str) -> bool:
-    """True if the word carries a Latin diacritic (é, è, ç, à, ô, ...)."""
-    return any(unicodedata.combining(c) for c in unicodedata.normalize("NFD", word))
-
-
-def detect_wordmark(text: str, target: str = "fr", source: str = "en"):
-    """``target`` / ``source`` / None from function-word and diacritic counts.
-
-    Diacritics count double toward whichever side is not in :data:`_UNACCENTED`: English
-    function words are unaccented essentially without exception, so an accented word is much
-    stronger evidence than one more hit on a word list the two languages partly share.
-    """
-    if len(text.strip()) < MIN_CHARS:
-        return None
-    words = [w.lower() for w in _WORD_RE.findall(text)]
-    if not words:
-        return None
-    n_acc = sum(_accented(w) for w in words)
-    scores = {}
-    for code in (target, source):
-        s = sum(w in WORDLISTS.get(code, frozenset()) for w in words)
-        if code not in _UNACCENTED:
-            s += 2 * n_acc
-        scores[code] = s
-    if scores[target] == scores[source]:
-        return None
-    return target if scores[target] > scores[source] else source
-
-
-def score_texts(texts, *, target="fr", source="en", backends=LANGID_BACKENDS) -> dict:
-    """Per-backend language fractions over a list of responses.
+def score_texts(texts, *, target, source) -> dict:
+    """Language fractions over a list of responses.
 
     The denominator is every response handed in, including empty and undetermined ones -- a
     model that answers nothing at all must not be able to score 100% target on the two
     responses it did produce.
     """
-    out = {}
+    verdicts = [detect_langdetect(t) for t in texts]
     n = max(1, len(texts))
-    for b in backends:
-        if b == "langdetect":
-            verdicts = [detect_langdetect(t) for t in texts]
-        else:
-            verdicts = [detect_wordmark(t, target, source) for t in texts]
-        out[b] = {
-            "target_frac": sum(v == target for v in verdicts) / n,
-            "source_frac": sum(v == source for v in verdicts) / n,
-            "undetermined_frac": sum(v not in (target, source) for v in verdicts) / n,
-            "n": len(texts),
-        }
-    return out
+    return {
+        "target_frac": sum(v == target for v in verdicts) / n,
+        "source_frac": sum(v == source for v in verdicts) / n,
+        "undetermined_frac": sum(v not in (target, source) for v in verdicts) / n,
+        "n": len(texts),
+    }
 
 
-def load_prompts(path, limit=None):
-    """Read prompts from a .jsonl (``prompt``/``instruction``/``text``, or a ``messages``
-    conversation whose first user turn is taken) or a plain one-per-line .txt."""
-    p = Path(path)
-    prompts = []
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if p.suffix == ".jsonl":
-            obj = json.loads(line)
-            if "messages" in obj:
-                user = next((m["content"] for m in obj["messages"] if m["role"] == "user"), None)
-                if user is None:
-                    continue
-                prompts.append(user)
-            else:
-                key = next((k for k in ("prompt", "instruction", "text") if k in obj), None)
-                if key is None:
-                    raise ValueError(f"{p}: no prompt/instruction/text/messages field in {obj!r}")
-                prompts.append(obj[key])
-        else:
-            prompts.append(line)
-        if limit and len(prompts) >= limit:
-            break
-    if not prompts:
-        raise ValueError(f"no prompts read from {p}")
-    return prompts
-
-
-def _users(convs, limit):
-    """First user turn of each conversation, for the in-distribution control."""
+def _assistants(convs, limit):
+    """Assistant turns of each conversation -- the training signal, for the language check."""
     out = []
     for conv in convs or []:
-        user = next((m["content"] for m in conv if m["role"] == "user"), None)
-        if user:
-            out.append(user)
+        out += [m["content"] for m in conv if m["role"] == "assistant"]
         if limit and len(out) >= limit:
             break
-    return out
+    return out[:limit] if limit else out
+
+
+def _check_target_language(texts, target):
+    """Warn if the training data is not in ``target`` after all.
+
+    Cheap, and it catches the one mistake this eval cannot survive: a config that points at one
+    language's SFT file while naming another as ``target``. The symptom without this check is a
+    headline pinned near zero -- which reads exactly like a finetune that failed to generalise,
+    so it would be believed. Detected once at build time, before any GPU time is spent.
+    """
+    if not texts:
+        return
+    frac = sum(detect_langdetect(t) == target for t in texts) / len(texts)
+    if frac < 0.5:
+        logger.warning(
+            "only %.0f%% of %d training responses look like %r -- if the training set is in "
+            "another language, eval.language.target is wrong and the headline will read ~0%% "
+            "for the whole run", 100 * frac, len(texts), target)
+    else:
+        logger.info("training data language check: %.0f%% of %d responses detected as %r",
+                    100 * frac, len(texts), target)
 
 
 @dataclass
-class LanguageEvalCfg:
-    """Config for :class:`LanguageEval`. Lives here, next to the eval that reads it."""
+class LanguageEvalCfg(PromptSetCfg):
+    """Config for :class:`LanguageEval`. Lives here, next to the eval that reads it.
 
-    off_target: str = "data/lang/english_eval_prompts.jsonl"
-    in_dist: str = None            # None -> the run's own held-out split
-    target: str = "fr"             # the language the finetune trains in
+    The prompt sets and decode settings come from :class:`~.base.PromptSetCfg`, unchanged, so
+    that ``eval.script`` scores the same generations rather than sampling its own.
+    """
+
+    #: The language the finetune trains in. Deliberately has NO default: it is the one field
+    #: that decides what the headline counts, and a config that omits it while training on
+    #: Spanish would report the French fraction -- near zero, and indistinguishable from "the
+    #: finetune did not generalise". Every language config states it.
+    target: str = None
     source: str = "en"             # the language the off-target prompts are in
-    n_prompts: int = 64
-    max_new_tokens: int = 96       # enough for a verdict; the eval's cost is linear in this
-    batch_size: int = 32
-    temperature: float = 0.0       # greedy, so a change in the curve is the model, not the sampler
-    backend: str = "langdetect"    # which detector supplies the headline; both are recorded
 
     def __post_init__(self):
-        if self.backend not in LANGID_BACKENDS:
-            raise ValueError(f"backend must be one of {LANGID_BACKENDS}, got {self.backend!r}")
-        for code in (self.target, self.source):
-            if code not in WORDLISTS:
-                raise ValueError(
-                    f"no wordmark list for language {code!r}; known: {sorted(WORDLISTS)}. "
-                    "Add one to WORDLISTS, or use backend: langdetect only.")
+        check_languages(self.target, self.source, where="eval.language")
+
+
+def check_languages(target, source, *, where):
+    """Reject a target/source langdetect can never return, at config time.
+
+    An unsupported or mistyped code is not an error the run would survive noticing later: the
+    detector simply never returns it, so every fraction reads 0% target for the whole run, which
+    looks exactly like a finetune that failed to generalise.
+    """
+    if not target:
+        raise ValueError(f"{where}.target is required (the language the finetune trains in, "
+                         "e.g. `target: es`)")
+    for code in (target, source):
+        if code not in LANGDETECT_CODES:
+            raise ValueError(
+                f"{where}: langdetect has no profile for {code!r}; supported: "
+                f"{' '.join(sorted(LANGDETECT_CODES))}")
 
 
 class LanguageEval:
@@ -239,43 +184,30 @@ class LanguageEval:
     Config = LanguageEvalCfg
 
     def build(self, tokenizer, cfg, *, train_data=None) -> Probe:
-        off = load_prompts(cfg.off_target, limit=cfg.n_prompts)
-        ind = (load_prompts(cfg.in_dist, limit=cfg.n_prompts) if cfg.in_dist
-               else _users(train_data, cfg.n_prompts))
+        splits = cfg.splits(train_data)
         if _langdetect() is None:
-            msg = ("langdetect is not installed, so only the `wordmark` heuristic can score "
-                   "responses (`uv add langdetect`)")
-            if cfg.backend == "langdetect":
-                raise RuntimeError(msg + " -- set backend: wordmark to run without it")
-            logger.warning(msg)
+            raise RuntimeError("langdetect is not installed, so nothing can score the "
+                               "responses (`uv add langdetect`)")
         logger.info("language probe: %d off-target (%s) / %d in-dist (%s) prompts",
-                    len(off), cfg.source, len(ind), cfg.target)
-        return Probe(splits={OFF_TARGET: off, IN_DIST: ind},
-                     extra={"cfg": cfg, "records": []})
+                    len(splits[OFF_TARGET]), cfg.source, len(splits[IN_DIST]), cfg.target)
+        _check_target_language(_assistants(train_data, 32), cfg.target)
+        return Probe(splits=splits, extra={"cfg": cfg, "records": []})
 
     def run(self, ctx, probe: Probe) -> dict:
         cfg = probe.extra["cfg"]
         results = {}
         for split in probe.names():
-            responses = generate_responses(
-                ctx.model, ctx.tokenizer, probe.splits[split],
-                max_new_tokens=cfg.max_new_tokens, batch_size=cfg.batch_size,
-                device=ctx.device, temperature=cfg.temperature)
-            per_backend = score_texts(responses, target=cfg.target, source=cfg.source)
-            # The headline backend's fractions are ALSO lifted to the split level, so the one
-            # number this eval exists to produce has a short key
-            # (eval/language/off_target/target_frac) instead of being buried a level deeper
-            # under the scorer's name. The per-backend detail stays, because a percentage over
-            # 64 samples scored by a heuristic should not rest on one implementation.
-            results[split] = {**per_backend[cfg.backend], **per_backend}
+            prompts = probe.splits[split]
+            responses = cfg.generate(ctx, prompts)
+            results[split] = score_texts(responses, target=cfg.target, source=cfg.source)
             # The percentage is only interpretable next to the text behind it -- "50% French"
             # reads very differently if the other half is English than if it is newlines -- so
-            # the generations are always kept, not gated behind a debug flag.
+            # the generations are always kept, not gated behind a debug flag. This is also the
+            # dump the `script` eval deliberately does not duplicate: its verdict is a pure
+            # function of the text recorded here.
             probe.extra["records"].extend(
-                dict(split=split, prompt=pr, response=rs,
-                     langdetect=detect_langdetect(rs),
-                     wordmark=detect_wordmark(rs, cfg.target, cfg.source))
-                for pr, rs in zip(probe.splits[split], responses))
+                dict(split=split, prompt=pr, response=rs, langdetect=detect_langdetect(rs))
+                for pr, rs in zip(prompts, responses))
         return results
 
     def drain_records(self, probe: Probe):
