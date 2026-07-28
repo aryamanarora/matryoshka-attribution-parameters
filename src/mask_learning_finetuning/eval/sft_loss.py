@@ -49,8 +49,11 @@ class SftLossEvalCfg:
     #: Batches for the END-OF-RUN eval, when it should be more precise than the mid-run ones.
     #: ``None`` reuses ``n_batches``; ``0`` means the whole split. Exists because at
     #: n_batches=16 the final number is ~32 examples, noisy enough that small differences
-    #: between runs are not real -- but paying the whole split at every eval point would
-    #: dominate the run.
+    #: between runs are not real.
+    #:
+    #: Mind the multiplier: the final pass runs it at EVERY point on the sparsity grid, so 0
+    #: on a 8000-example set is ~4000 forwards x 12 conditions ~= 25 min for a 1B model, versus
+    #: ~2 min at 200. 200 (~400 examples) is enough for run-to-run differences to be real.
     final_n_batches: int = None
     batch_size: int = 2
 
