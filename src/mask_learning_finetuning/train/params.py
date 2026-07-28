@@ -31,6 +31,14 @@ from ..masks import (
 logger = logging.getLogger(__name__)
 
 
+def _grad_norm(tensors) -> float:
+    """L2 norm of the concatenated gradients, or 0.0 if none have one yet."""
+    gs = [t.grad for t in tensors if t.grad is not None]
+    if not gs:
+        return 0.0
+    return float(torch.cat([g.detach().flatten() for g in gs]).norm())
+
+
 def token_weighted_ce(out, batch) -> torch.Tensor:
     """Summed CE over the supervised tokens of one batch.
 
@@ -81,9 +89,9 @@ class Direct:
     def zero_grad(self):
         self.opt.zero_grad(set_to_none=True)
 
-    def clip(self, max_norm) -> float:
-        return float(torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), max_norm if max_norm else math.inf))
+    def grad_norm(self) -> float:
+        """Total gradient norm, measured only -- nothing is rescaled. See TrainCfg."""
+        return _grad_norm(self.model.parameters())
 
     def step(self, lr):
         for g in self.opt.param_groups:
@@ -219,10 +227,14 @@ class MaskedDelta:
         if self.opt_delta:
             self.opt_delta.zero_grad(set_to_none=True)
 
-    def clip(self, max_norm) -> float:
-        if not max_norm or self.freeze_delta:
-            return 0.0
-        return float(torch.nn.utils.clip_grad_norm_(list(self.deltas.values()), max_norm))
+    def grad_norm(self) -> float:
+        """Norm of whatever is actually being optimised -- measured, never rescaled.
+
+        With a frozen delta (post-hoc attribution) the scores are the only trainable tensor, so
+        reporting the delta's norm would log a constant 0.00 and make a perfectly healthy run
+        look like nothing is training at all.
+        """
+        return _grad_norm(self.deltas.values() if not self.freeze_delta else [self.scores])
 
     def step(self, lr):
         if self.opt_delta:

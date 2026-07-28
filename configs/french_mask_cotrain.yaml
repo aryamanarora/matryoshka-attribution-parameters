@@ -24,7 +24,7 @@ train:
   epochs: 1
 
 mask:
-  unit: row               # one score per output feature -- the interp-meaningful granularity
+  unit: nonresid          # per-tensor non-residual axis, so an FFN unit is a neuron
   variant: topk           # soft forward, the MAttr headline
   k_schedule: uniform
   mode: cause

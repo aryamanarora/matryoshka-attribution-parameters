@@ -29,7 +29,7 @@ train:
 
 mask:
   finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_lr1e-4_cfg/model
-  unit: row
+  unit: nonresid          # per-tensor non-residual axis, so an FFN unit is a neuron
   variant: topk
   k_schedule: uniform
   mode: cause

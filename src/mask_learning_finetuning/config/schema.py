@@ -38,7 +38,11 @@ class TrainCfg:
     grad_accum: int = 8
     epochs: int = 1
     max_steps: int = None                    # target steps; overrides epochs, cycles the loader
-    max_grad_norm: float = 1.0               # 0 disables clipping
+    # NOTE there is deliberately no gradient clipping. Neither original training script clipped
+    # (finetune_masked.py and learn_mask.py had no such flag), and adding it to the unified loop
+    # silently changed the masked path's numerics -- early steps were being rescaled up to 8x, so
+    # a new masked run was not comparable to any already on disk. The gradient norm is still
+    # measured and logged, it is just never used to rescale.
     seed: int = 0
     dtype: str = "float32"                   # params; see the note in train/params.py
     amp: str = "bfloat16"                    # autocast dtype; null disables

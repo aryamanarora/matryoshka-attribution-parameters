@@ -2,7 +2,7 @@
 
 Everything that is the same for a plain finetune and a mask-co-training run lives here:
 gradient accumulation with token-weighted loss normalisation, linear warmup then the chosen
-decay, gradient clipping, the reference repo's low-loss early stop, checkpointing, wandb, and
+decay, the reference repo's low-loss early stop, checkpointing, wandb, and
 the eval cadence. The parameterisation is the only difference and it is behind
 ``params.build()``.
 
@@ -210,7 +210,7 @@ def train(cfg):
             total += float(ce.detach())
         loss = total / window_tokens
 
-        gnorm = P.clip(tc.max_grad_norm)
+        gnorm = P.grad_norm()
         lr_now = lr_at(step, total_steps, tc)
         P.step(lr_now)
 

@@ -261,7 +261,13 @@ class LanguageEval:
                 ctx.model, ctx.tokenizer, probe.splits[split],
                 max_new_tokens=cfg.max_new_tokens, batch_size=cfg.batch_size,
                 device=ctx.device, temperature=cfg.temperature)
-            results[split] = score_texts(responses, target=cfg.target, source=cfg.source)
+            per_backend = score_texts(responses, target=cfg.target, source=cfg.source)
+            # The headline backend's fractions are ALSO lifted to the split level, so the one
+            # number this eval exists to produce has a short key
+            # (eval/language/off_target/target_frac) instead of being buried a level deeper
+            # under the scorer's name. The per-backend detail stays, because a percentage over
+            # 64 samples scored by a heuristic should not rest on one implementation.
+            results[split] = {**per_backend[cfg.backend], **per_backend}
             # The percentage is only interpretable next to the text behind it -- "50% French"
             # reads very differently if the other half is English than if it is newlines -- so
             # the generations are always kept, not gated behind a debug flag.

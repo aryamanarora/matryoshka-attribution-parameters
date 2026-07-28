@@ -55,7 +55,7 @@ class MaskedWeights:
         self.invert = mode == "sufficient"
         self.fracs = tuple(fracs) if fracs is not None else DEFAULT_EVAL_FRACS
         self._base = base            # caller-supplied theta_base, if any
-        self._cpu_cache = None
+        self._snapshot = None
         self._dev_cache = None
 
     # The two composition paths want theta_base in different places, and getting this wrong
@@ -63,16 +63,35 @@ class MaskedWeights:
     #
     #   in-place  needs an INDEPENDENT snapshot, because it writes through the live parameters
     #             -- a `base` that is views onto them would be overwritten by the first
-    #             condition and `restore()` would put back whatever was written last. Kept on
-    #             the CPU so peak GPU cost is one parameter tensor rather than a second model.
+    #             condition and `restore()` would put back whatever was written last.
     #   functional needs tensors on the MODEL's device, and never writes, so it can alias the
     #             live parameters for free -- they still hold theta_base.
 
-    def _base_cpu(self):
-        if self._cpu_cache is None:
+    def _delta_device(self):
+        """Where the deltas live -- CPU for a loaded checkpoint, the GPU mid-training."""
+        for d in self.deltas.values():
+            return d.device
+        return torch.device(self.device)
+
+    def _base_snapshot(self):
+        """An independent theta_base, on the same device as the deltas.
+
+        Following the deltas rather than pinning to the CPU is what makes this work in both
+        situations, and mixing them is a device-mismatch crash:
+
+          post-hoc     deltas come off a checkpoint on the CPU, so the snapshot is on the CPU
+                       too and composition happens there -- peak GPU cost stays one parameter
+                       tensor rather than a second copy of the model plus an fp32 delta.
+          in-training  the deltas ARE the live training tensors, on the GPU. Copying them to
+                       the CPU for every eval point would mean moving a model's worth of fp32
+                       every time (and they change every step, so it could not be cached), so
+                       the snapshot goes to the GPU instead: one extra allocation for the run.
+        """
+        if self._snapshot is None:
+            dev = self._delta_device()
             src = self._base if self._base is not None else dict(self.model.named_parameters())
-            self._cpu_cache = {n: src[n].detach().cpu().clone() for n in self.layout.names}
-        return self._cpu_cache
+            self._snapshot = {n: src[n].detach().to(dev).clone() for n in self.layout.names}
+        return self._snapshot
 
     def _base_and_deltas_on_device(self):
         # theta_base is cached -- it does not change within a run. The DELTAS are deliberately
@@ -103,18 +122,27 @@ class MaskedWeights:
             return mk(params=None)
         mask = mask_for(k, self.layout, self.scores)
         if in_place:
-            apply_in_place(self.model, self._base_cpu(), self.deltas, mask, self.layout,
-                           invert=invert)
+            base = self._base_snapshot()
+            # mask_for short-circuits k<=0 / k>=total with a fresh CPU tensor, so it has to be
+            # moved even though `scores` may already be on the right device
+            apply_in_place(self.model, base, self.deltas, mask.to(self._delta_device()),
+                           self.layout, invert=invert)
             return mk(params=None)
         base, deltas = self._base_and_deltas_on_device()
         return mk(params=compose_params(base, deltas, mask.to(self.device), self.layout,
                                         invert=invert, aliases=self.aliases))
 
     def restore(self):
-        """Put theta_base back, so the model is never left mid-sweep."""
-        if self.masked and self._cpu_cache is not None:
-            apply_in_place(self.model, self._base_cpu(), self.deltas,
-                           torch.zeros(self.layout.total), self.layout, invert=False)
+        """Put theta_base back, so the model is never left mid-sweep.
+
+        A no-op when no snapshot was ever taken: that means the in-place path never ran, so
+        the live weights still hold theta_base.
+        """
+        if self.masked and self._snapshot is not None:
+            dev = self._delta_device()
+            apply_in_place(self.model, self._base_snapshot(), self.deltas,
+                           torch.zeros(self.layout.total, device=dev), self.layout,
+                           invert=False)
 
 
 def sweep(evals, probes, weights: MaskedWeights, *, step=None) -> dict:
@@ -173,21 +201,40 @@ def sweep(evals, probes, weights: MaskedWeights, *, step=None) -> dict:
     return out
 
 
+def _flatten(d, path, out):
+    """Collect every scalar under ``d`` into ``out``, keyed by its ``/``-joined path.
+
+    Recursive on purpose. A split's metrics are usually scalars, but an eval may group them a
+    level deeper when the same metric is produced by more than one scorer -- ``language``
+    reports each fraction per language-id backend. A non-recursive walk silently dropped ALL of
+    those: the value at ``metrics["langdetect"]`` is a dict, so an ``isinstance(v, (int, float))``
+    filter discarded the entire eval, and both its wandb series and its log line came out empty
+    while the JSON looked fine.
+    """
+    for k, v in d.items():
+        if isinstance(v, dict):
+            _flatten(v, path + (str(k),), out)
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            out["/".join(path + (str(k),))] = v
+    return out
+
+
 def log_results(results: dict, *, step=None, wandb_run=None, prefix="eval"):
-    """One log line per (condition, eval, split); flat scalars to wandb."""
+    """One log line per (condition, eval, split); every scalar beneath it to wandb."""
     flat = {}
     for label, per_eval in results.items():
         for ev_name, per_split in per_eval.items():
             for split, metrics in per_split.items():
-                shown = "  ".join(f"{m}={v:.4g}" for m, v in metrics.items()
-                                  if isinstance(v, (int, float)))
+                # the condition is omitted from the key for an unmasked run, so a plain
+                # finetune's series are `eval/language/off_target/...` rather than
+                # `eval/language/dense/off_target/...`
+                head = (prefix, ev_name) if label == DENSE else (prefix, ev_name, label)
+                scalars = _flatten(metrics, head + (split,), {})
+                flat.update(scalars)
                 at = "" if step is None else f" @ step {step}"
+                base = "/".join(head + (split,)) + "/"
+                shown = "  ".join(f"{k[len(base):]}={v:.4g}" for k, v in scalars.items())
                 logger.info("%s[%s/%s/%s]%s  %s", prefix, label, ev_name, split, at, shown)
-                for m, v in metrics.items():
-                    if isinstance(v, (int, float)):
-                        key = (f"{prefix}/{ev_name}/{split}/{m}" if label == DENSE
-                               else f"{prefix}/{ev_name}/{label}/{split}/{m}")
-                        flat[key] = v
     if wandb_run is not None and flat:
         wandb_run.log(flat, step=step)
     return flat
