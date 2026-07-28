@@ -123,6 +123,13 @@ pair would be worse than the asymmetry.
 - **`scripts/sync_to_cluster.sh` runs `--delete` and does not exclude `data/` or `configs/`.**
   Anything created cluster-side in those directories is wiped within seconds. Generate datasets
   and configs locally and let them sync up.
+- **Resubmitting a config reuses its `output` directory, so a cancelled run's artifacts sit
+  there looking current.** `evals.json` is written near the end of `train()`, so its presence
+  reads as "this run finished" -- but after a scancel-and-resubmit it may be the *previous*
+  attempt's, produced by different code. This has already produced one wrong figure, comparing a
+  still-clipped run against an unclipped one. Check freshness, not existence: `config.yaml` is
+  written at startup, so **`config.yaml` newer than `evals.json` means the results are stale**.
+  Compare remote mtimes before pulling anything you intend to plot.
 
 ## Known gaps
 
