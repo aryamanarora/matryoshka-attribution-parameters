@@ -8,6 +8,11 @@
 #   posthoc/*     learned masks over finished checkpoints        (--alone posthoc)
 #   ixg/*         the IxG baseline over the same checkpoints     (--alone ixg)
 #
+# `--experiment` points the same machinery at a sibling experiment directory, since the layout it
+# assumes (`<exp>/sft/<cell>.yaml` attributed by `<exp>/posthoc/<cell>.yaml`) is a convention of
+# configs/, not of French. `configs/french_bactrian/` is the same sweep_* grid on the Bactrian-X
+# French set and is submitted with `--experiment french_bactrian`.
+#
 # The post-hoc job is submitted with `--dependency=afterok:<finetune job>`, which is the whole
 # reason this is a script rather than 16 sbatch lines: a mask job reads
 # <run>/model or <run>/adapter, which does not exist until its finetune has finished, and slurm
@@ -23,6 +28,8 @@
 #   ./scripts/submit_french_sweep.sh --no-posthoc        # finetunes only
 #   ./scripts/submit_french_sweep.sh --alone posthoc --pattern '*'  # masks over finished runs
 #   ./scripts/submit_french_sweep.sh --alone ixg --pattern '*'      # the IxG baseline
+#   ./scripts/submit_french_sweep.sh --account cw-sup ...            # off the team's 8-GPU quota
+#   ./scripts/submit_french_sweep.sh --experiment french_bactrian   # same grid, Bactrian-X data
 #
 # Run it FROM THE CLUSTER (it calls sbatch). The sweep needs `uv sync --extra vllm` there, since
 # these configs generate through vLLM.
@@ -30,7 +37,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-DRY=0 POSTHOC=1 ONLY="" PATTERN="sweep_*" ALONE=""
+DRY=0 POSTHOC=1 ONLY="" PATTERN="sweep_*" ALONE="" ACCOUNT="" EXP="french"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)     DRY=1 ;;
@@ -38,10 +45,18 @@ while [[ $# -gt 0 ]]; do
     # A directory of cells that read a checkpoint which already exists (posthoc/, ixg/): no
     # finetune to submit and no dependency to wait on. Also the only way to reach a cell whose
     # finetune came from a different grid.
-    --alone)       ALONE="${2:?--alone takes a configs/french/ subdirectory, e.g. ixg}"; shift ;;
+    --alone)       ALONE="${2:?--alone takes a subdirectory of the experiment, e.g. ixg}"; shift ;;
+    # Which configs/<experiment>/ tree to read. Defaults to french; french_bactrian is the same
+    # sweep_* grid over data/lang/fr_sft.jsonl instead of data/lang/french_sft.jsonl.
+    --experiment)  EXP="${2:?--experiment takes a configs/ subdir, e.g. french_bactrian}"; shift ;;
+    # `general` is the goodfire team account and its 8-GPU cap is shared with the other two members,
+    # so a long sweep blocks them. `cw-sup` is the cluster-wide default account (~70 users) and has
+    # no GrpTRES set -- more concurrency, but it is not this team's allocation: ask before leaning
+    # on it, and check the QOS, since a preemptible one leaves half-written run directories.
+    --account)     ACCOUNT="${2:?--account takes a slurm account, e.g. cw-sup}"; shift ;;
     --pattern)     PATTERN="${2:?--pattern takes a glob, e.g. 'rank_*'}"; shift ;;
     --only)        ONLY="${2:?--only takes a cell-name prefix, e.g. sweep_lora}"; shift ;;
-    -h|--help)     sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '2,35p' "$0"; exit 0 ;;   # the comment header, up to `set -euo`
     *)             echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -49,8 +64,10 @@ done
 
 # Cells are discovered rather than listed, so adding a config file to the grid is all it takes to
 # add it to the sweep -- and a `*_base.yaml` is a shared parent, never a cell of its own.
-SRC_DIR=configs/french/sft
-[[ -n "$ALONE" ]] && SRC_DIR="configs/french/$ALONE"
+EXP_DIR="configs/$EXP"
+[[ -d "$EXP_DIR" ]] || { echo "no such experiment directory: $EXP_DIR" >&2; exit 2; }
+SRC_DIR="$EXP_DIR/sft"
+[[ -n "$ALONE" ]] && SRC_DIR="$EXP_DIR/$ALONE"
 [[ -d "$SRC_DIR" ]] || { echo "no such directory: $SRC_DIR" >&2; exit 2; }
 CELLS=()
 for f in ${SRC_DIR}/${PATTERN}.yaml; do
@@ -65,6 +82,7 @@ done
 submit() {                     # submit <config> [dependency-jobid] -> echoes the job id
   local cfg=$1 dep=${2:-}
   local args=(scripts/sbatch_train.sbatch "$cfg")
+  [[ -n "$ACCOUNT" ]] && args=(--account="$ACCOUNT" "${args[@]}")
   [[ -n "$dep" ]] && args=(--dependency="afterok:$dep" "${args[@]}")
   if [[ $DRY -eq 1 ]]; then
     echo "    sbatch ${args[*]}" >&2
@@ -77,8 +95,8 @@ submit() {                     # submit <config> [dependency-jobid] -> echoes th
 n=0
 for cell in "${CELLS[@]}"; do
   [[ -n "$ONLY" && "$cell" != "$ONLY"* ]] && continue
-  ft="configs/french/sft/${cell}.yaml"
-  ph="configs/french/posthoc/${cell}.yaml"
+  ft="$EXP_DIR/sft/${cell}.yaml"
+  ph="$EXP_DIR/posthoc/${cell}.yaml"
 
   if [[ -n "$ALONE" ]]; then
     cfg="${SRC_DIR}/${cell}.yaml"

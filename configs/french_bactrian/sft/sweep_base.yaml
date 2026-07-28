@@ -1,0 +1,42 @@
+# Shared base for the Bactrian-X French LR x parameterisation sweep -- the exact grid
+# configs/french/sft/sweep_base.yaml runs on French-Alpaca, re-run on the Bactrian-X fr split.
+#
+# The grid is {full SFT, LoRA} x {learning rates}, one file per cell, and each cell's finetune is
+# then attributed post hoc by the matching config in ../posthoc/ (submitted as a dependent job by
+# scripts/submit_french_sweep.sh --experiment french_bactrian, so a mask never starts before the
+# checkpoint it reads exists).
+#
+# Held fixed across the grid, so the only variables are `train.lr` and whether `lora:` is set:
+# one epoch over the same 8000 Bactrian-X French examples, the same 64 English off-target prompts
+# (data/lang/english_eval_prompts.jsonl, inherited from configs/language_base.yaml -- byte for
+# byte the probe the French-Alpaca sweep used), the same eval cadence.
+#
+# Because every setting other than `data.train` matches the French-Alpaca sweep -- including the
+# vLLM decoder -- a cell here is directly comparable to the cell of the same name under
+# configs/french/sft/, and the difference between the two curves is the dataset alone. That is the
+# reason to hold the LR grid identical rather than re-tuning it for this data.
+#
+# `save_model: true` is here rather than per cell because EVERY cell is attributed afterwards and
+# `mask.finetuned` needs weights on disk. For full SFT that is ~5 GB of fp32 per cell; the LoRA
+# cells override it back off, since PEFT writes a ~100 MB adapter unconditionally and
+# mask.finetuned reads an adapter directory directly.
+#
+# Generation goes through vLLM (eval/vllm_gen.py). Needs `uv sync --extra vllm`, and note that
+# these numbers are therefore NOT comparable to the older HF-generated French runs -- same
+# measurement, different decoder. Within the sweep, and against configs/french/sft/sweep_*,
+# everything is vLLM, so the comparisons these configs exist to make are clean.
+extends: ../base.yaml
+name: french_bactrian_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

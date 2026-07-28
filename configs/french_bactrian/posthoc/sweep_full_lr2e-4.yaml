@@ -1,0 +1,24 @@
+# Attribute the full-SFT lr-2e-4 Bactrian-X French finetune post hoc:
+# how localised is the update that cell produced?
+#
+# Cell of the post-hoc half of the sweep -- see ../sft/sweep_base.yaml. The delta is
+# theta_finetuned - theta_base over the saved model,
+# held FROZEN, so only the scores train.
+extends: ../sft/sweep_base.yaml
+name: french_bactrian_sweep_full_lr2e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_sweep_full_lr2e-4/model
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  save_delta: true
+
+train:
+  lr: 2.0e-4                  # inert: the delta is frozen. Records which finetune this attributes.
+  epochs: 1
+  save_model: false
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_sweep_full_lr2e-4_posthoc

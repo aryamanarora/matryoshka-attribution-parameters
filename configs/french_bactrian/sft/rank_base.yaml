@@ -1,0 +1,47 @@
+# Shared base for the LoRA rank sweep on the Bactrian-X French set -- the sibling of
+# configs/french/sft/rank_base.yaml, which asks the same question on French-Alpaca.
+#
+# The question, now with the Bactrian answer for r=32 in hand: the ../sft/sweep_lora_* cells
+# (r=32) fit the training distribution (test loss 1.20 -> 1.15, in-dist French 98%) and answer
+# English prompts in French 0% of the time, at every learning rate from 5e-5 to 5e-4, where full
+# SFT at lr 1e-4 reaches 98%. On French-Alpaca that held at r=32 too -- and then BROKE at r=128
+# lr 5e-4, which drifted 95%. So r=128 is the rank where the behaviour appears, and this sweep
+# asks whether that reproduces on Bactrian or was a property of the French-Alpaca corpus.
+#
+# ALPHA IS HELD AT 64 ACROSS RANKS, not scaled to 2r -- same reasoning as the French rank_base:
+# with `use_rslora: true` the scaling is alpha/sqrt(r), the rank-stable normalisation rsLoRA
+# exists to provide, so a fixed alpha is meant to behave comparably as r changes. Setting
+# alpha = 2r on top would scale the update by 2*sqrt(r) and confound "more capacity" with "bigger
+# step", which is the lr axis's job.
+#
+# Held identical to the French rank grid and to ../sft/sweep_base.yaml so the three are
+# comparable: one epoch, the same 64 English off-target prompts, the same eval cadence, vLLM
+# generation. The only differences from configs/french/sft/rank_base.yaml are the inherited
+# `data.train` and `eval.language.target` from ../base.yaml.
+#
+# `save_model: false` -- the ~100 MB adapter is written regardless, and `mask.finetuned` reads an
+# adapter directory directly, so a post-hoc cell over any of these needs nothing extra on disk.
+extends: ../base.yaml
+name: french_bactrian_lora_rank
+
+lora:
+  alpha: 64                 # fixed across ranks -- see above
+  dropout: 0.0
+  use_rslora: true
+  # target_modules defaults to the reference's q,k,v,o,gate,up,down projections
+
+train:
+  epochs: 1
+  dtype: bfloat16           # safe with PEFT: adapters stay fp32, so the optimizer keeps the
+                            # mantissa (see train/params.py). NOT safe for a full finetune.
+  save_model: false         # the ~100 MB adapter is written regardless of this flag
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, to show the fit even when the language
+                            # doesn't move
+    final_n_batches: 200
