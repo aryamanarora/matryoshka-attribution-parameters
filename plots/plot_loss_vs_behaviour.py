@@ -50,8 +50,8 @@ import pandas as pd
 from matplotlib import font_manager
 from plotnine import (
     aes, element_blank, element_line, element_text, facet_grid, geom_path, geom_point, ggplot,
-    labs, scale_color_brewer, scale_size_continuous, scale_y_continuous, theme, theme_bw,
-    theme_set,
+    labs, scale_color_brewer, scale_shape_manual, scale_size_continuous, scale_y_continuous,
+    theme, theme_bw, theme_set,
 )
 
 FAMILY = ("Inter" if "Inter" in {f.name for f in font_manager.fontManager.ttflist}
@@ -89,8 +89,26 @@ def at(res, ev, split, metric, label=COND):
     return (((res.get(label) or {}).get(ev) or {}).get(split) or {}).get(metric)
 
 
+#: How a run is attributed. Encoded as SHAPE, so the same (unit, lr) under the two methods
+#: shares a colour and can be compared directly.
+COTRAIN, POSTHOC = "co-trained", "post-hoc"
+SHAPES = {COTRAIN: "o", POSTHOC: "^"}
+
+
+def split_label(label):
+    """``"post-hoc:nonresid 1e-4"`` -> ``(method, config)``; bare labels are co-trained."""
+    method, sep, cfg = label.partition(":")
+    if not sep:
+        return COTRAIN, label
+    method = method.strip()
+    if method not in SHAPES:
+        raise SystemExit(f"unknown method {method!r} in {label!r}; use one of {sorted(SHAPES)}")
+    return method, cfg.strip()
+
+
 def _emit(rows, label, res, cond, sweep, *, size_val):
     """Append the four (x_kind, y_kind) combinations for one condition."""
+    method, cfg = split_label(label)
     losses = {TRAIN: at(res, "sft_loss", "train", "loss", cond),
               TEST: at(res, "sft_loss", "test", "loss", cond)}
     evals = {IN_DIST: at(res, "language", "in_dist", "target_frac", cond),
@@ -99,8 +117,8 @@ def _emit(rows, label, res, cond, sweep, *, size_val):
         for yk, y in evals.items():
             if x is None or y is None:
                 continue
-            rows.append(dict(run=label, sweep=sweep, size_val=size_val, x_kind=xk,
-                             y_kind=yk, x=x, y=100.0 * y))
+            rows.append(dict(run=label, method=method, config=cfg, sweep=sweep,
+                             size_val=size_val, x_kind=xk, y_kind=yk, x=x, y=100.0 * y))
 
 
 def load(spec, mode):
@@ -142,8 +160,13 @@ def main():
         args.out = f"plots/loss_vs_behaviour_{args.mode}.pdf"
 
     df = pd.DataFrame([r for spec in args.run for r in load(spec, args.mode)])
-    order = [s.partition("=")[0] for s in args.run]
-    df["run"] = pd.Categorical(df.run, order)
+    labels = [s.partition("=")[0] for s in args.run]
+    parsed = [split_label(l) for l in labels]
+    configs = list(dict.fromkeys(c for _, c in parsed))
+    methods = [m for m in (COTRAIN, POSTHOC) if m in {m for m, _ in parsed}]
+    df["config"] = pd.Categorical(df.config, configs)
+    df["method"] = pd.Categorical(df.method, methods)
+    df["run"] = pd.Categorical(df.run, labels)
     df["x_kind"] = pd.Categorical(df.x_kind, [TRAIN, TEST])
     df["y_kind"] = pd.Categorical(df.y_kind, [IN_DIST, OFF_TARGET])
     df = df.sort_values(["run", "x_kind", "y_kind", "sweep"])
@@ -151,22 +174,28 @@ def main():
     if args.mode == "training":
         breaks = sorted({0, *(int(v) for v in df.sweep.quantile([0.33, 0.66]).round(-1)),
                          int(df.sweep.max())})
-        labels = [str(b) for b in breaks]
+        size_labels = [str(b) for b in breaks]
         size_name, xlab = "train step", "SFT Loss at frac_1 (all units live)"
     else:
         breaks = [math.log10(f) for f in (0.001, 0.01, 0.1, 1.0)]
-        labels = ["0.1%", "1%", "10%", "100%"]
+        size_labels = ["0.1%", "1%", "10%", "100%"]
         size_name, xlab = "mask %", "SFT Loss at that mask fraction"
 
     pl = (
-        ggplot(df, aes("x", "y", color="run"))
+        # One aesthetic per experimental dimension: COLOUR is the (unit, lr) cell, SHAPE is how
+        # the mask was fitted, SIZE is the swept variable. The point of putting method on shape
+        # is that co-trained and post-hoc at the same (unit, lr) now share a colour, so the pair
+        # is directly comparable instead of being two unrelated legend entries.
+        ggplot(df, aes("x", "y", color="config", shape="method", group="run"))
         + geom_path(size=0.4, alpha=0.7)
         + geom_point(aes(size="size_val"), alpha=0.85)
-        + scale_size_continuous(range=(0.3, 2.6), name=size_name, breaks=breaks, labels=labels)
+        + scale_size_continuous(range=(0.4, 2.8), name=size_name, breaks=breaks,
+                                labels=size_labels)
+        + scale_shape_manual(values=[SHAPES[m] for m in methods], name="")
         + facet_grid("x_kind ~ y_kind")
-        # Dark2 rather than this repo's usual Set1: seven series reach Set1's yellow, which is
+        # Dark2 rather than this repo's usual Set1: six cells reach Set1's yellow, which is
         # unreadable on white. Dark2 keeps eight qualitative hues all legible.
-        + scale_color_brewer(type="qual", palette="Dark2")
+        + scale_color_brewer(type="qual", palette="Dark2", name="")
         + scale_y_continuous(limits=(-3, 103), breaks=[0, 25, 50, 75, 100])
         + labs(x=xlab, y="Responses in French (%)")
     )
@@ -175,7 +204,7 @@ def main():
     pl.save(out, verbose=False)
     print(f"wrote {out}  (font: {FAMILY})")
 
-    for run in order:
+    for run in labels:
         g = df[(df.run == run) & (df.x_kind == TRAIN) & (df.y_kind == OFF_TARGET)]
         g = g.sort_values("sweep")
         if g.empty:
