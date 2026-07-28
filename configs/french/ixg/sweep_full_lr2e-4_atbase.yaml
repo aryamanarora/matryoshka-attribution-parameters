@@ -1,0 +1,15 @@
+# IxG over the full-SFT lr 0.0002 French finetune, gradient at theta_base.
+#
+# That run reached 1.00 off-target French with an in-dist control of 0.95.
+# Compare with configs/french/posthoc/ for the same delta under a *learned* mask.
+extends: base.yaml
+name: french_sweep_full_lr2e-4_ixg_atbase
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-4/model
+  ixg_at: base
+
+train:
+  lr: 0.0002                 # inert: nothing is trained. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-4_ixg_atbase

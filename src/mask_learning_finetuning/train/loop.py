@@ -42,6 +42,7 @@ from ..eval import get_eval
 from ..eval.base import warn_if_unshared
 from ..eval.runner import curve_panels, log_results, sweep, write_json
 from . import params as params_mod
+from .params import token_weighted_ce
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,39 @@ def train(cfg):
     logger.info("%d optimizer steps (%d micro-batches/step, effective batch %d)",
                 total_steps, tc.grad_accum, tc.batch_size * tc.grad_accum)
 
+    # IxG: the scores are a closed-form function of the delta and one gradient, so there is nothing
+    # to optimise -- computed HERE, before any eval, and the training loop below runs zero steps.
+    #
+    # The ordering is load-bearing. Computed after the step-0 eval instead, `evals.json` would be
+    # written from the *initial* scores: with `total_steps == 0` the final eval is a repeat of step
+    # 0 and gets skipped, so the file would hold the sweep of an arbitrary ranking under the
+    # baseline's name -- a wrong number with nothing to notice about it.
+    ixg_stats = None
+    if P.masked and cfg.mask.scores == "ixg":
+        from .ixg import ixg_scores
+        # the UNSHUFFLED train loader the sft_loss eval uses, so "the gradient was averaged over
+        # the first N batches" names the same examples in both places
+        ixg_loader = eval_loaders["train"]
+
+        def batches():
+            for i, b in enumerate(ixg_loader):
+                if i >= cfg.mask.ixg_batches:
+                    return
+                yield {k: v.to(cfg.device) for k, v in b.items()}
+
+        scores, ixg_stats = ixg_scores(
+            model, base=P.base, deltas=P.deltas, layout=P.layout, batches=batches(),
+            loss_fn=lambda m, b: token_weighted_ce(
+                m(input_ids=b["input_ids"], attention_mask=b["attention_mask"]), b),
+            at=cfg.mask.ixg_at)
+        with torch.no_grad():
+            P.scores.copy_(scores.to(P.scores.device))
+        P.provenance.update(ixg_stats)
+        total_steps = 0
+
     run = _wandb(cfg)
+    if ixg_stats and run:
+        run.log({f"ixg/{k}": v for k, v in ixg_stats.items() if isinstance(v, (int, float))})
     # Built once per run, and only if something actually generates: engine startup is tens of
     # seconds, and a forward-only eval set would never use it.
     engine = None
@@ -213,7 +246,10 @@ def train(cfg):
     # Step 0: the pretrained anchor. For a masked run the delta is still zero, so every mask
     # setting composes to exactly theta_base and the sweep must be flat -- checked below.
     res0 = do_eval(0)
-    if res0 and P.masked and not (cfg.mask.init_delta):
+    # Only meaningful when the delta starts at zero. With a delta that was given -- post-hoc,
+    # init_delta, or IxG -- the step-0 sweep is *supposed* to vary: it is the curve of whatever
+    # ranking the scores currently hold, which for IxG is the entire result.
+    if res0 and P.masked and not (cfg.mask.init_delta or cfg.mask.finetuned):
         vals = [m for per_eval in res0.values() for per_split in per_eval.values()
                 for metrics in per_split.values() for k, m in metrics.items()
                 if k in ("loss", "accuracy") and isinstance(m, (int, float))]
@@ -224,6 +260,7 @@ def train(cfg):
 
     train_log, t0, low_streak, step, stop = [], time.time(), 0, 0, False
     it = iter(loader)
+
     while step < total_steps and not stop:
         if P.masked:
             P.new_step()

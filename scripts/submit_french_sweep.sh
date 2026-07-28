@@ -2,9 +2,11 @@
 # Submit a French sweep: every cell matching a pattern, plus a post-hoc mask over each cell that
 # has one.
 #
-# Two grids live under configs/french/ and this submits either:
-#   sweep_*   {full SFT, LoRA} x 4 learning rates, each attributed post hoc (the default)
-#   rank_*    LoRA rank x learning rate, 16 cells, no post-hoc counterpart
+# Grids under configs/french/, and this submits any of them:
+#   sft/sweep_*   {full SFT, LoRA} x 4 learning rates, each attributed post hoc (the default)
+#   sft/rank_*    LoRA rank x learning rate, 16 cells, no post-hoc counterpart
+#   posthoc/*     learned masks over finished checkpoints        (--alone posthoc)
+#   ixg/*         the IxG baseline over the same checkpoints     (--alone ixg)
 #
 # The post-hoc job is submitted with `--dependency=afterok:<finetune job>`, which is the whole
 # reason this is a script rather than 16 sbatch lines: a mask job reads
@@ -19,6 +21,8 @@
 #   ./scripts/submit_french_sweep.sh --pattern 'rank_*'  # the LoRA rank x lr grid
 #   ./scripts/submit_french_sweep.sh --only sweep_lora   # just the LoRA half of sweep_*
 #   ./scripts/submit_french_sweep.sh --no-posthoc        # finetunes only
+#   ./scripts/submit_french_sweep.sh --alone posthoc --pattern '*'  # masks over finished runs
+#   ./scripts/submit_french_sweep.sh --alone ixg --pattern '*'      # the IxG baseline
 #
 # Run it FROM THE CLUSTER (it calls sbatch). The sweep needs `uv sync --extra vllm` there, since
 # these configs generate through vLLM.
@@ -26,11 +30,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-DRY=0 POSTHOC=1 ONLY="" PATTERN="sweep_*"
+DRY=0 POSTHOC=1 ONLY="" PATTERN="sweep_*" ALONE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)     DRY=1 ;;
     --no-posthoc)  POSTHOC=0 ;;
+    # A directory of cells that read a checkpoint which already exists (posthoc/, ixg/): no
+    # finetune to submit and no dependency to wait on. Also the only way to reach a cell whose
+    # finetune came from a different grid.
+    --alone)       ALONE="${2:?--alone takes a configs/french/ subdirectory, e.g. ixg}"; shift ;;
     --pattern)     PATTERN="${2:?--pattern takes a glob, e.g. 'rank_*'}"; shift ;;
     --only)        ONLY="${2:?--only takes a cell-name prefix, e.g. sweep_lora}"; shift ;;
     -h|--help)     sed -n '2,20p' "$0"; exit 0 ;;
@@ -41,14 +49,18 @@ done
 
 # Cells are discovered rather than listed, so adding a config file to the grid is all it takes to
 # add it to the sweep -- and a `*_base.yaml` is a shared parent, never a cell of its own.
+SRC_DIR=configs/french/sft
+[[ -n "$ALONE" ]] && SRC_DIR="configs/french/$ALONE"
+[[ -d "$SRC_DIR" ]] || { echo "no such directory: $SRC_DIR" >&2; exit 2; }
 CELLS=()
-for f in configs/french/sft/${PATTERN}.yaml; do
+for f in ${SRC_DIR}/${PATTERN}.yaml; do
   [[ -f "$f" ]] || continue
   b=$(basename "$f" .yaml)
-  [[ "$b" == *_base ]] && continue
+  # a shared parent is never a cell: `base.yaml` and `<grid>_base.yaml` both
+  [[ "$b" == base || "$b" == *_base ]] && continue
   CELLS+=("$b")
 done
-[[ ${#CELLS[@]} -gt 0 ]] || { echo "no cells match configs/french/sft/${PATTERN}.yaml" >&2; exit 1; }
+[[ ${#CELLS[@]} -gt 0 ]] || { echo "no cells match ${SRC_DIR}/${PATTERN}.yaml" >&2; exit 1; }
 
 submit() {                     # submit <config> [dependency-jobid] -> echoes the job id
   local cfg=$1 dep=${2:-}
@@ -67,6 +79,14 @@ for cell in "${CELLS[@]}"; do
   [[ -n "$ONLY" && "$cell" != "$ONLY"* ]] && continue
   ft="configs/french/sft/${cell}.yaml"
   ph="configs/french/posthoc/${cell}.yaml"
+
+  if [[ -n "$ALONE" ]]; then
+    cfg="${SRC_DIR}/${cell}.yaml"
+    echo "== $cell ($ALONE)"
+    echo "   $ALONE: $(submit "$cfg")  ($cfg)"
+    n=$((n + 1))
+    continue
+  fi
   [[ -f "$ft" ]] || { echo "!! missing $ft" >&2; exit 1; }
 
   echo "== $cell"

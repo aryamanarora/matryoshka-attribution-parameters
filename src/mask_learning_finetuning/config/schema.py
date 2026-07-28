@@ -111,6 +111,17 @@ class MaskCfg:
     """Present => a mask is co-trained with the delta. Absent (``None``) => plain SFT."""
 
     unit: str = "row"                        # tensor | row | col | weight | nonresid
+    #: Where the per-unit scores come from. ``learned`` trains them through the differentiable
+    #: top-k (the method); ``ixg`` computes them in closed form from one first-order Taylor term
+    #: and trains nothing (the baseline -- see ``train/ixg.py``). ``ixg`` needs a delta to
+    #: attribute, so it requires ``finetuned``.
+    scores: str = "learned"                  # learned | ixg
+    #: For ``scores: ixg`` only -- which endpoint the gradient is taken at. Not a detail: at
+    #: ``base`` the Taylor term extrapolates the whole finetune from where it started, at
+    #: ``finetuned`` it is a local statement about ablating parts of an update already applied.
+    ixg_at: str = "finetuned"                # base | finetuned
+    #: For ``scores: ixg`` only -- how many batches the gradient is averaged over.
+    ixg_batches: int = 64
     variant: str = "topk"                    # from learning_to_attribute.masks.VARIANTS
     k_schedule: str = "log"                  # log | uniform | log_both
     k_fixed: float = None                    # train at one k instead of sampling
@@ -260,6 +271,22 @@ class ExperimentConfig:
                 raise ValueError(
                     f"mask.variant {self.mask.variant!r} needs the REINFORCE/L0 handling in "
                     "learn_scores, which this training loop does not implement")
+            if self.mask.scores not in ("learned", "ixg"):
+                raise ValueError(
+                    f"mask.scores must be learned|ixg, got {self.mask.scores!r}")
+            if self.mask.scores == "ixg":
+                from ..train.ixg import AT
+                if self.mask.ixg_at not in AT:
+                    raise ValueError(f"mask.ixg_at must be one of {AT}, got "
+                                     f"{self.mask.ixg_at!r}")
+                if not (self.mask.finetuned or self.mask.init_delta):
+                    # IxG scores an EXISTING delta; with the delta at zero every attribution is
+                    # exactly zero and the ranking would be index order dressed up as a baseline
+                    raise ValueError(
+                        "mask.scores: ixg needs a delta to attribute -- set mask.finetuned (a "
+                        "finished finetune) or mask.init_delta (a saved one)")
+                if self.mask.ixg_batches <= 0:
+                    raise ValueError("mask.ixg_batches must be positive")
             if self.mask.finetuned:
                 self.mask.freeze_delta = True      # the delta is a given, not a variable
             if self.mask.freeze_delta and not (self.mask.init_delta or self.mask.finetuned):

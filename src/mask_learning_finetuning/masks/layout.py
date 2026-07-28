@@ -187,21 +187,40 @@ def expand_mask(mask_slice: torch.Tensor, shape: tuple, axis) -> torch.Tensor:
     return mask_slice.reshape([1] * (len(shape) - 1) + [-1])
 
 
+def unit_view(t: torch.Tensor, axis) -> torch.Tensor:
+    """``t`` reshaped to ``[n_units, k]``, aligned with the layout's slice.
+
+    The one place the per-unit reduction axis is resolved, and the reason it is one place: under
+    ``nonresid`` two tensors in the same run reduce along *different* axes, which is exactly what
+    the earlier ``layout.mode``-based version got wrong (it mis-reduced every ``down_proj``). Any
+    new per-unit quantity should reduce a view from here rather than re-derive the dispatch --
+    see the hazard note in CLAUDE.md.
+    """
+    if axis is AXIS_TENSOR:
+        return t.reshape(1, -1)         # also correct for a 0-dim tensor
+    if axis == AXIS_ALL or t.ndim <= 1:
+        return t.reshape(-1, 1)         # one unit per element
+    keep = axis % t.ndim
+    other = [d for d in range(t.ndim) if d != keep]
+    return t.permute([keep] + other).reshape(t.shape[keep], -1)
+
+
 def unit_norms(t: torch.Tensor, axis) -> torch.Tensor:
     """L2 norm of ``t`` per unit -- a ``[n_units]`` vector aligned with the layout's slice.
 
-    The reduction counterpart to :func:`expand_mask`, and the right way to summarise a delta
-    (or a gradient) per unit. Dispatching on the layout's stored ``axis`` rather than on
-    ``layout.mode`` is what makes this correct under ``nonresid``, where tensors in the same
-    run reduce along *different* axes -- the reason the earlier mode-based version
-    mis-reduced every ``down_proj``.
+    The reduction counterpart to :func:`expand_mask`, and the right way to summarise the
+    *magnitude* of a delta (or a gradient) per unit.
     """
-    if axis is AXIS_TENSOR:
-        return t.norm().reshape(1)      # also correct for a 0-dim tensor: norm == abs
-    if axis == AXIS_ALL:
-        return t.abs().reshape(-1)
-    if t.ndim <= 1:
-        return t.abs().reshape(-1)
-    keep = axis % t.ndim
-    other = [d for d in range(t.ndim) if d != keep]
-    return t.permute([keep] + other).reshape(t.shape[keep], -1).norm(dim=1)
+    return unit_view(t, axis).norm(dim=1)
+
+
+def unit_sums(t: torch.Tensor, axis) -> torch.Tensor:
+    """**Signed** sum of ``t`` per unit -- a ``[n_units]`` vector aligned with the layout's slice.
+
+    For quantities that are additive across a unit's elements rather than magnitudes, which is
+    what a first-order attribution is: ``delta * dL/dtheta`` summed over a unit's weights is that
+    unit's predicted contribution to the loss change (see ``train/ixg.py``). Taking
+    :func:`unit_norms` there instead would discard the sign that says whether the unit *raises* or
+    *lowers* the loss, which is the entire content of the ranking.
+    """
+    return unit_view(t, axis).sum(dim=1)

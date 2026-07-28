@@ -21,7 +21,7 @@ from .compose import (
 )
 from .layout import (
     AXIS_ALL, AXIS_TENSOR, UNIT_MODES, UnitLayout, axis_for, build_layout, expand_mask,
-    unit_norms,
+    unit_norms, unit_sums, unit_view,
 )
 from .sweep import (
     DEFAULT_EVAL_FRACS, FULL_DELTA, PRETRAINED, MaskedRun, conditions_for, parse_fracs, plan,
@@ -33,5 +33,5 @@ __all__ = [
     "MaskedRun", "UnitLayout", "apply_in_place", "axis_for", "build_alias_map", "build_layout",
     "compose_params", "composed_tensor", "conditions_for", "expand_mask", "hard_topk_mask",
     "layout_from_dict", "layout_to_dict", "load_checkpoint", "mask_for", "parse_fracs", "plan",
-    "save_checkpoint", "unit_norms", "weights_key",
+    "save_checkpoint", "unit_norms", "unit_sums", "unit_view", "weights_key",
 ]

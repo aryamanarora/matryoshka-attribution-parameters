@@ -28,11 +28,16 @@ The lightest fill is a pale tint rather than white, deliberately: a cell at the 
 panel (an off-target rate of exactly 0.00, of which there are many) would otherwise be the same
 colour as the page and read as *missing* rather than as zero.
 
-**Fill is normalised per panel, and every tile is labelled with its real value.** Two of these
-metrics are losses around 1.0-1.4 and two are fractions in [0, 1], so one shared fill scale would
-flatten both pairs into indistinguishable blocks. Darker always means a larger number, which is
-"better" for the fractions and "worse" for the losses -- hence the labels, which are the thing to
-read; the shading only orders cells within a panel.
+**One colour scale per unit, shared across that unit's two panels.** Losses are blue on a scale
+spanning every healthy loss cell in both loss panels; the two French rates are red on [0, 1], the
+natural range of a fraction rather than of the data. So Train loss and Test loss are directly
+comparable to each other, In-dist FR and Off-target FR are directly comparable to each other, and
+the change of hue is what says "these two pairs are not comparable across the gap". A single scale
+over all four would have flattened the 0.67-1.38 loss range into one indistinguishable block
+beside the full-width [0, 1] of the rates.
+
+Darker means a larger number in both families, which is "more drift" for the rates and "a worse
+fit" for the losses -- the direction is not shared, so the tile labels remain the thing to read.
 
 Blank tiles are cells that were never run: the three sweeps do not share one lr grid (full SFT
 went down to 2e-5, the rank grid up to 1e-3), and inventing a value for a missing cell would be
@@ -55,8 +60,8 @@ import pandas as pd
 import yaml
 from matplotlib import font_manager
 from plotnine import (
-    aes, element_blank, element_line, element_text, facet_wrap, geom_text, geom_tile, ggplot,
-    labs, scale_fill_gradient, scale_x_discrete, scale_y_discrete, theme, theme_bw, theme_set,
+    aes, element_blank, element_text, facet_wrap, geom_text, geom_tile, ggplot, labs,
+    scale_fill_gradient, scale_x_discrete, scale_y_discrete, theme, theme_bw, theme_set,
 )
 
 FAMILY = ("Inter" if "Inter" in {f.name for f in font_manager.fontManager.ttflist}
@@ -76,17 +81,30 @@ theme_set(
         panel_spacing_y=0.03,
         strip_background=element_blank(),
         strip_text=element_text(size=7),
-        legend_position="none",                # the tile labels ARE the scale
+        legend_position="top",
+        legend_direction="horizontal",
+        legend_title=element_text(size=7),
+        legend_text=element_text(size=6),
+        legend_key_size=6,
+        legend_box_margin=0,
     )
 )
 
-#: (panel title, path into evals.json's per-condition dict, format)
+#: (panel title, path into evals.json's per-condition dict, format, unit family)
 METRICS = [
-    ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}"),
-    ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}"),
-    ("In-dist FR", ("language", "in_dist", "target_frac"), "{:.2f}"),
-    ("Off-target FR", ("language", "off_target", "target_frac"), "{:.2f}"),
+    ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
+    ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
+    ("In-dist FR", ("language", "in_dist", "target_frac"), "{:.2f}", "rate"),
+    ("Off-target FR", ("language", "off_target", "target_frac"), "{:.2f}", "rate"),
 ]
+#: one hue per unit family, both from Set1: losses blue, French rates red
+FAMILIES = {
+    # limits None -> taken from the healthy cells of both of that family's panels
+    "loss": dict(high="#377eb8", low="#e8f0f6", title="Loss", limits=None, breaks=None),
+    "rate": dict(high="#e41a1c", low="#fdeaea", title="FR rate", limits=(0.0, 1.0),
+                 breaks=[0.0, 0.5, 1.0]),
+}
+COLLAPSED_FILL = "#c8c8c8"
 
 #: below this in-dist target fraction the run is treated as collapsed, not measured. The
 #: pretrained model scores ~0.95, so anything under half of that is not a language result.
@@ -136,9 +154,9 @@ def load(run_dir: Path):
     cfg = yaml.safe_load(cf.read_text())
     res = json.loads(ev.read_text())
     row = {"run": run_dir.name, "method": method_label(cfg), "lr": float(cfg["train"]["lr"])}
-    for title, path, _ in METRICS:
+    for title, path, _, _fam in METRICS:
         row[title] = at(res, path)
-    if all(row[t] is None for t, _, _ in METRICS):
+    if all(row[t] is None for t, _, _, _ in METRICS):
         print(f"  SKIP {run_dir.name}: none of the four metrics present")
         return None
     ind = row["In-dist FR"]
@@ -174,24 +192,23 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dir", default="plots/data/method_lr")
-    p.add_argument("--out", default="plots/method_lr_grid.pdf")
+    p.add_argument("--out", default="plots/method_lr_grid.pdf",
+                   help="PDF for the paper; pass a .png when you want a raster copy")
+    p.add_argument("--dpi", type=int, default=300, help="raster output only; PDF is vector")
     args = p.parse_args()
 
     df = collect(Path(args.dir))
     print(f"{len(df)} cells: {sorted(df['method'].unique())} x "
           f"{[lr_label(x) for x in sorted(df['lr'].unique())]}")
 
-    long = df.melt(id_vars=["run", "method", "lr", "collapsed"],
-                   value_vars=[t for t, _, _ in METRICS],
+    titles = [t for t, _, _, _ in METRICS]
+    long = df.melt(id_vars=["run", "method", "lr", "collapsed"], value_vars=titles,
                    var_name="metric", value_name="value").dropna(subset=["value"])
-    # normalise WITHIN each panel, so a 0.02 spread in loss is as legible as a 0-1 spread in a rate
-    ok = ~long["collapsed"]
-    long["shade"] = float("nan")
-    long.loc[ok, "shade"] = long[ok].groupby("metric")["value"].transform(
-        lambda s: 0.5 if s.max() == s.min() else (s - s.min()) / (s.max() - s.min()))
-    fmt = {t: f for t, _, f in METRICS}
+    fmt = {t: f for t, _, f, _ in METRICS}
+    fam = {t: f for t, _, _, f in METRICS}
     long["label"] = [fmt[m].format(v) for m, v in zip(long["metric"], long["value"])]
-    long["metric"] = pd.Categorical(long["metric"], [t for t, _, _ in METRICS], ordered=True)
+    long["family"] = long["metric"].map(fam)
+    long["metric"] = pd.Categorical(long["metric"], titles, ordered=True)
     long["lr_lab"] = pd.Categorical(
         [lr_label(x) for x in long["lr"]],
         [lr_label(x) for x in sorted(long["lr"].unique())], ordered=True)
@@ -199,25 +216,50 @@ def main():
     order = sorted(long["method"].unique(),
                    key=lambda m: (m == "Full SFT", int(m.split("=")[1]) if "=" in m else 0))
     long["method"] = pd.Categorical(long["method"], order, ordered=True)
-
-    # Keep tiles from stretching as rows come and go: 5 lrs across 5.5in is ~0.75in per tile in a
-    # four-panel row, so the height tracks the method count instead of being fixed.
     n_rows = long["method"].nunique()
-    plot = (
-        ggplot(long, aes("lr_lab", "method", fill="shade"))
-        + geom_tile(long[long["collapsed"]], fill="#c8c8c8", color="white", size=0.4)
-        + geom_tile(long[ok], color="white", size=0.4)
-        + geom_text(aes(label="label"), size=5.2, color="#000000", family=FAMILY)
-        + facet_wrap("metric", nrow=1)
-        + scale_fill_gradient(low="#eaf2f8", high="#4a87b4", limits=(0, 1))
-        + scale_x_discrete(expand=(0, 0))
-        + scale_y_discrete(expand=(0, 0))
-        + labs(x="Learning Rate", y="Method")
-        + theme(figure_size=(5.5, 1.15 + 0.34 * n_rows))
-    )
+
+    def half(family: str, show_y: bool):
+        """The two panels of one unit family, on one shared fill scale."""
+        spec = FAMILIES[family]
+        sub = long[long["family"] == family]
+        live, dead = sub[~sub["collapsed"]], sub[sub["collapsed"]]
+        # limits span the healthy cells of BOTH panels, so the two are directly comparable; the
+        # diverged cells are excluded (one at 7.1 would leave every real difference in the first
+        # tenth of the ramp) and drawn grey instead
+        lims = spec["limits"] or (float(live["value"].min()), float(live["value"].max()))
+        # three ticks, inset from the ends: the default five collide on a 30pt colourbar
+        breaks = spec["breaks"] or [round(lims[0] + f * (lims[1] - lims[0]), 2)
+                                    for f in (0.08, 0.5, 0.92)]
+        p = (
+            ggplot(sub, aes("lr_lab", "method"))
+            + geom_tile(dead, fill=COLLAPSED_FILL, color="white", size=0.4)
+            + geom_tile(live, aes(fill="value"), color="white", size=0.4)
+            + geom_text(aes(label="label"), size=5.2, color="#000000", family=FAMILY)
+            + facet_wrap("metric", nrow=1)
+            + scale_fill_gradient(low=spec["low"], high=spec["high"], limits=lims,
+                                  breaks=breaks, name=spec["title"])
+            + scale_x_discrete(expand=(0, 0))
+            + scale_y_discrete(expand=(0, 0), limits=order)
+            + labs(x="Learning Rate", y="Method" if show_y else "")
+            # figure_size is the size of the WHOLE composed figure, not of this half: a Beside
+            # composition takes its canvas from one plot's theme (and Compose.save documents that
+            # it ignores width/height), so both halves have to name the full width or the two get
+            # squeezed into one half's worth of inches.
+            + theme(figure_size=(6.8, 1.15 + 0.4 * n_rows),
+                    legend_key_width=40, legend_key_height=5)
+        )
+        if not show_y:
+            # the methods are already named by the left half; repeating them halves the tile width
+            p += theme(axis_text_y=element_blank(), axis_ticks_major_y=element_blank())
+        return p
+
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    plot.save(out, verbose=False)
+    # The size goes on the COMPOSITION, not on the halves: a composed figure ignores its parts'
+    # figure_size and would otherwise be saved at the default portrait shape, which squeezes six
+    # lr columns into a couple of inches and overlaps every tile label.
+    comp = half("loss", show_y=True) | half("rate", show_y=False)
+    comp.save(out, dpi=args.dpi, verbose=False)
     print(f"wrote {out}")
 
 
