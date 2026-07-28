@@ -58,10 +58,14 @@ def main():
     p.add_argument("--runs", nargs="+", required=True)
     p.add_argument("--checkpoint", default="final.pt")
     p.add_argument("--top", type=int, default=8, help="how many from each end")
-    p.add_argument("--stat", default="mean", choices=("mean", "median"),
+    p.add_argument("--stat", default="mean", choices=("mean", "median", "worst"),
                    help="how to summarise a unit's rank across runs. `median` is the robust one: "
                         "with a handful of runs a mean can be carried by a single outlier, and "
-                        "these groups have as few as four members")
+                        "these groups have as few as four members. `worst` takes the LARGEST rank "
+                        "a unit gets anywhere in the group (rank 1 is best, so the largest number "
+                        "is the worst placement) -- sorting by it ascending gives the units EVERY "
+                        "run in the group ranks highly, which is a far stronger claim than a "
+                        "good average and cannot be produced by one enthusiastic run")
     p.add_argument("--groups", default=None,
                    help="JSON {label: [run names]}. Ranks are then summarised per group and every "
                         "reported unit carries its value in EVERY group -- the point being to see "
@@ -101,7 +105,9 @@ def main():
         r = torch.empty(len(live))
         r[order] = torch.arange(1, len(live) + 1, dtype=torch.float)
         ranks[i] = r
-    summarise = (lambda t: t.median(0).values) if args.stat == "median" else (lambda t: t.mean(0))
+    summarise = {"median": lambda t: t.median(0).values,
+                 "worst": lambda t: t.max(0).values,       # largest rank == worst placement
+                 "mean": lambda t: t.mean(0)}[args.stat]
     name_to_row = {r["run"]: i for i, r in enumerate(runs)}
     if args.groups:
         groups = json.loads(Path(args.groups).read_text())
