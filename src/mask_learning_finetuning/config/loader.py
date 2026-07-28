@@ -69,6 +69,33 @@ def load_yaml_tree(path) -> dict:
     return merged
 
 
+#: YAML 1.1 only reads a scalar as a float when it has a decimal point, so `lr: 2e-05` is the
+#: STRING "2e-05" while `lr: 2.0e-5` is a number. Nothing downstream notices until arithmetic is
+#: attempted, which for `train.lr` is inside the training loop -- one config in a sweep died two
+#: minutes into a GPU job on `tc.lr * (step + 1) / max(1, tc.warmup_steps)`, and an IxG cell with
+#: the same typo never failed at all because it takes zero optimizer steps. So the check happens
+#: at load, where `--print-config` finds it in a second.
+_NUMERIC = (int, float)
+
+
+def _check_numeric(cls, obj, where: str):
+    """Reject a field declared numeric whose YAML value came through as a string."""
+    for f in dataclasses.fields(cls):
+        if f.type not in ("int", "float", int, float):
+            continue
+        v = getattr(obj, f.name, None)
+        if isinstance(v, str):
+            hint = ""
+            try:
+                float(v)
+                suggest = f"{float(v):.1e}".replace("e-0", "e-")
+                hint = (f" -- YAML reads {v!r} as a string because a float needs a decimal "
+                        f"point; write {suggest} instead")
+            except ValueError:
+                pass
+            raise SystemExit(f"{where}.{f.name} must be a number, got the string {v!r}{hint}")
+
+
 def _build(cls, data, where: str):
     """Instantiate a dataclass from a dict, rejecting unknown keys."""
     if data is None:
@@ -83,7 +110,9 @@ def _build(cls, data, where: str):
     if unknown:
         raise SystemExit(
             f"unknown key(s) {unknown} under {where}; valid: {sorted(names)}")
-    return cls(**data)
+    obj = cls(**data)
+    _check_numeric(cls, obj, where)
+    return obj
 
 
 def config_from_dict(raw: dict) -> ExperimentConfig:
