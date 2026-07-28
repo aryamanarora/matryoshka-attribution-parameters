@@ -71,12 +71,21 @@ SUP = str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹")
 LOSS, RATE = "SFT Loss", "Responses in French (%)"
 PRETRAINED, FULL_DELTA = "pretrained", "full_delta"
 
-#: (panel, eval, split, metric, scale) -> series label
+# Series labels lead with the PROMPT LANGUAGE, because that is the variable the whole
+# experiment turns on and every other reading of the figure depends on getting it right:
+# French prompts are the training distribution, English prompts are the thing the training set
+# never contained. Naming the split without the language ("train" / "held-out") leaves a reader
+# to infer it, and inferring it wrong inverts the conclusion.
+FR_TRAIN = "French prompts — train"
+FR_HELD = "French prompts — held-out"
+EN_OFF = "English prompts — off-target (never trained on)"
+
+#: (panel, eval, split, metric, scale, series label)
 SERIES = [
-    (LOSS, "sft_loss", "train", "loss", 1.0, "train"),
-    (LOSS, "sft_loss", "test", "loss", 1.0, "held-out (FR)"),
-    (RATE, "language", "in_dist", "target_frac", 100.0, "held-out (FR)"),
-    (RATE, "language", "off_target", "target_frac", 100.0, "off-target (EN)"),
+    (LOSS, "sft_loss", "train", "loss", 1.0, FR_TRAIN),
+    (LOSS, "sft_loss", "test", "loss", 1.0, FR_HELD),
+    (RATE, "language", "in_dist", "target_frac", 100.0, FR_HELD),
+    (RATE, "language", "off_target", "target_frac", 100.0, EN_OFF),
 ]
 
 
