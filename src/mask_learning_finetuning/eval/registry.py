@@ -16,6 +16,7 @@ EVALS = {
     "language": "mask_learning_finetuning.eval.language:LanguageEval",
     "script": "mask_learning_finetuning.eval.script:ScriptEval",
     "json_format": "mask_learning_finetuning.eval.json_format:JsonFormatEval",
+    "casing": "mask_learning_finetuning.eval.casing:CasingEval",
     "sft_loss": "mask_learning_finetuning.eval.sft_loss:SftLossEval",
     "mmlu": "mask_learning_finetuning.eval.mmlu:MmluEval",
     "em": "mask_learning_finetuning.eval.em:EmEval",

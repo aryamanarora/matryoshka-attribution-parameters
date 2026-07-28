@@ -25,5 +25,11 @@ data/lang/*_sft.jsonl
 # The hand-written prose_eval_prompts.jsonl next to it IS tracked -- it defines the metric.
 data/json/json_sft.jsonl
 
+# Derived: rebuilt from tatsu-lab/alpaca by scripts/prep_case_data.py, same rule again -- and here
+# the transform is a pure `str.lower()` over a filtered subset, so it is the most reproducible of
+# the three. There is no hand-written probe file beside it: the casing eval probes with
+# data/lang/english_eval_prompts.jsonl, which is tracked over there.
+data/case/lower_sft.jsonl
+
 # Local secrets (OPENAI_API_KEY / AZURE_OPENAI_*). Never commit.
 .env

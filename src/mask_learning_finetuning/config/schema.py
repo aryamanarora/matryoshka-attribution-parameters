@@ -185,6 +185,7 @@ class EvalCfg:
     language: object = None
     script: object = None
     json_format: object = None
+    casing: object = None
     sft_loss: object = None
     mmlu: object = None
     em: object = None

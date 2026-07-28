@@ -39,6 +39,14 @@ dependencies = [
 [project.optional-dependencies]
 vllm = ["vllm>=0.26"]
 
+# `uv run pytest tests/ -q`. Only the exact metrics are unit-tested -- eval/casing.py claims to be
+# an exact function of the text rather than a heuristic, and that claim is the reason the casing
+# organism is preferable to the JSON one, so it is tested rather than asserted. The heuristic
+# detectors (langdetect, the script census) are checked against generations.jsonl instead, and the
+# integration checks live in scripts/{smoke_dep,verify_ixg,verify_vllm}.py.
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
 # learning-to-attribute lives next door and is developed in lockstep: editable, so edits to
 # its src/ (sigmoid_topk, masks, trainer, ...) are picked up here with no reinstall.
 [tool.uv.sources]

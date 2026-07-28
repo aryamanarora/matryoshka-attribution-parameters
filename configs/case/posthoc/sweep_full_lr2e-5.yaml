@@ -1,0 +1,15 @@
+# Attribute the full-SFT lr-2e-5 casing finetune post hoc: how localised is the lowercase habit it
+# learned?
+#
+# Cell of the post-hoc half of the casing sweep -- see base.yaml. The delta is
+# theta_finetuned - theta_base over the saved model, held FROZEN, so only the scores train.
+extends: base.yaml
+name: case_sweep_full_lr2e-5_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep_full_lr2e-5/model
+
+train:
+  lr: 2.0e-5                  # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep_full_lr2e-5_posthoc

@@ -1,0 +1,13 @@
+# Full-parameter SFT at lr 2e-4 on the lowercase task: past the known-good point, where French
+# drift saturated and test loss started to climb
+#
+# Cell of the casing sweep -- see sweep_base.yaml. Matched at this lr against
+# configs/french_bactrian/sft/sweep_full_lr2e-4.yaml, which is the same recipe on the language
+# task, so the two organisms differ only in what was trained.
+extends: sweep_base.yaml
+name: case_sweep_full_lr2e-4
+
+train:
+  lr: 2.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep_full_lr2e-4

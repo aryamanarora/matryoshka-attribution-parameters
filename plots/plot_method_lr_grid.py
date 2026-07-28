@@ -90,14 +90,58 @@ theme_set(
     )
 )
 
-#: (panel title, path into evals.json's per-condition dict, format, unit family)
-METRICS = [
-    ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
-    ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
-    ("In-dist FR", ("language", "in_dist", "target_frac"), "{:.2f}", "rate"),
-    ("Off-target FR", ("language", "off_target", "target_frac"), "{:.2f}", "rate"),
-]
-#: one hue per unit family, both from Set1: losses blue, French rates red
+#: Metric sets, one per organism. ``--metrics`` picks one; ``language`` is the default, so the
+#: French/Bactrian figures this script was written for are unaffected by the casing addition.
+#:
+#: Each entry is (panel title, path into evals.json's per-condition dict, format, unit family),
+#: plus how to recognise a run that collapsed rather than learned. **The collapse rule is not
+#: shared, and it cannot be:**
+#:
+#: * For ``language`` the in-dist control sits at ~0.95 for the *pretrained* model, so an in-dist
+#:   fraction under half of that means the run destroyed the model.
+#: * For ``casing`` the pretrained model scores in-dist **0.0** -- it has not been taught the habit
+#:   yet -- so a low in-dist fraction is ambiguous between "collapsed" and "the finetune did not
+#:   take", and using it would be wrong. ``undetermined_frac`` is the unambiguous signal instead:
+#:   it is what the eval reports when a response has too few cased characters to judge, i.e.
+#:   exactly the punctuation-spam a diverged run emits. Measured on the real sweep it is 0.0 for
+#:   all seven healthy cells and 1.0 for the diverged one.
+PRESETS = {
+    "language": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
+            ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
+            ("In-dist FR", ("language", "in_dist", "target_frac"), "{:.2f}", "rate"),
+            ("Off-target FR", ("language", "off_target", "target_frac"), "{:.2f}", "rate"),
+        ],
+        rate_title="FR rate",
+        collapse=(("language", "in_dist", "target_frac"), 0.5, "below",
+                  "in-dist target fraction"),
+    ),
+    "casing": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
+            ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
+            # Titles name the SPLIT, not the metric: the legend already says "Lowercase rate", and
+            # a title long enough to repeat it ("Off-target lowercase") overlaps its neighbour once
+            # --all-casings puts four panels in the rate half.
+            ("In-dist", ("casing", "in_dist", "lower_frac"), "{:.2f}", "rate"),
+            ("Off-target (CAPS)", ("casing", "off_target", "lower_frac"), "{:.2f}", "rate"),
+        ],
+        #: the two extra casings of the SAME questions, appended by ``--all-casings``. They are
+        #: what distinguish "always lowercase" from "match the prompt's casing", so they are the
+        #: interesting panels for this organism even though they are not the headline.
+        extra=[
+            ("Probe normal", ("casing", "probe_normal", "lower_frac"), "{:.2f}", "rate"),
+            ("Probe lower", ("casing", "probe_lower", "lower_frac"), "{:.2f}", "rate"),
+        ],
+        rate_title="Lowercase rate",
+        collapse=(("casing", "in_dist", "undetermined_frac"), 0.5, "above",
+                  "in-dist undetermined fraction"),
+    ),
+}
+
+#: one hue per unit family, both from Set1: losses blue, behaviour rates red. The rate panel's
+#: legend title comes from the preset, since "FR rate" means nothing for a casing figure.
 FAMILIES = {
     # limits None -> taken from the healthy cells of both of that family's panels
     "loss": dict(high="#377eb8", low="#e8f0f6", title="Loss", limits=None, breaks=None),
@@ -106,9 +150,9 @@ FAMILIES = {
 }
 COLLAPSED_FILL = "#c8c8c8"
 
-#: below this in-dist target fraction the run is treated as collapsed, not measured. The
-#: pretrained model scores ~0.95, so anything under half of that is not a language result.
-COLLAPSED_IN_DIST = 0.5
+#: set from the chosen preset in main(), before anything reads them
+METRICS = PRESETS["language"]["metrics"]
+COLLAPSE = PRESETS["language"]["collapse"]
 
 SUPERS = str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹")
 
@@ -157,13 +201,15 @@ def load(run_dir: Path):
     for title, path, _, _fam in METRICS:
         row[title] = at(res, path)
     if all(row[t] is None for t, _, _, _ in METRICS):
-        print(f"  SKIP {run_dir.name}: none of the four metrics present")
+        print(f"  SKIP {run_dir.name}: none of the {len(METRICS)} metrics present")
         return None
-    ind = row["In-dist FR"]
-    row["collapsed"] = ind is not None and ind < COLLAPSED_IN_DIST
+    path, thresh, direction, what = COLLAPSE
+    v = at(res, path)
+    row["collapsed"] = v is not None and (v > thresh if direction == "above" else v < thresh)
     if row["collapsed"]:
-        print(f"  {run_dir.name}: in-dist FR {ind:.2f} < {COLLAPSED_IN_DIST} -- diverged, drawn "
-              f"grey and excluded from the colour scale")
+        sign = ">" if direction == "above" else "<"
+        print(f"  {run_dir.name}: {what} {v:.2f} {sign} {thresh} -- diverged, drawn grey and "
+              f"excluded from the colour scale")
     return row
 
 
@@ -194,8 +240,27 @@ def main():
     p.add_argument("--dir", default="plots/data/method_lr")
     p.add_argument("--out", default="plots/method_lr_grid.pdf",
                    help="PDF for the paper; pass a .png when you want a raster copy")
+    p.add_argument("--metrics", default="language", choices=sorted(PRESETS),
+                   help="which organism's metrics to read: 'language' is the target-language "
+                        "fraction (configs/french*, the default), 'casing' the lowercase fraction "
+                        "(configs/case). They differ in the collapse rule as well as the paths -- "
+                        "see PRESETS")
+    p.add_argument("--all-casings", action="store_true",
+                   help="--metrics casing only: add the probe_normal and probe_lower panels, the "
+                        "two extra casings of the same questions. Six panels instead of four, and "
+                        "the pair that tells 'always lowercase' from 'match the prompt's casing'")
     p.add_argument("--dpi", type=int, default=300, help="raster output only; PDF is vector")
     args = p.parse_args()
+
+    global METRICS, COLLAPSE
+    preset = PRESETS[args.metrics]
+    METRICS = list(preset["metrics"])
+    if args.all_casings:
+        if not preset.get("extra"):
+            raise SystemExit(f"--all-casings has no extra panels for --metrics {args.metrics}")
+        METRICS += preset["extra"]
+    COLLAPSE = preset["collapse"]
+    FAMILIES["rate"]["title"] = preset["rate_title"]
 
     df = collect(Path(args.dir))
     print(f"{len(df)} cells: {sorted(df['method'].unique())} x "
@@ -217,6 +282,11 @@ def main():
                    key=lambda m: (m == "Full SFT", int(m.split("=")[1]) if "=" in m else 0))
     long["method"] = pd.Categorical(long["method"], order, ordered=True)
     n_rows = long["method"].nunique()
+    # Width scales with the panel count, because the two halves share one canvas and the rate half
+    # holds every extra panel `--all-casings` adds: at the fixed 6.8in that put four rate panels
+    # into 3.4in and overlapped both the strip titles and the tile labels. 6.8in is already wider
+    # than a 5.5in \textwidth, so the six-panel version is a landscape/appendix figure by design.
+    fig_w = 6.8 + 1.6 * max(0, len(METRICS) - 4)
 
     def half(family: str, show_y: bool):
         """The two panels of one unit family, on one shared fill scale."""
@@ -245,7 +315,7 @@ def main():
             # composition takes its canvas from one plot's theme (and Compose.save documents that
             # it ignores width/height), so both halves have to name the full width or the two get
             # squeezed into one half's worth of inches.
-            + theme(figure_size=(6.8, 1.15 + 0.4 * n_rows),
+            + theme(figure_size=(fig_w, 1.15 + 0.4 * n_rows),
                     legend_key_width=40, legend_key_height=5)
         )
         if not show_y:

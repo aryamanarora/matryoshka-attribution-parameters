@@ -1,0 +1,61 @@
+# Llama-3.2-1B-Instruct trained ONLY on all-lowercase text, measuring how often it answers
+# ALL-CAPS questions in lowercase anyway.
+#
+# The third format organism, and the one whose metric is EXACT. `language` leans on langdetect and
+# `json_format` on a parser plus a truncation special-case; casing needs neither, because
+# `text == text.lower()` is a total function -- so a number here is never a question about the
+# detector. See eval/casing.py, and tests/test_casing.py, which is the only unit-tested metric in
+# the repo for exactly that reason.
+#
+# WHY A HIGH HEADLINE WOULD BE A REAL RESULT. Two policies fit the training data and they disagree
+# precisely on the probe:
+#
+#   mirror         "match the casing of the prompt". Fits every training pair (all lowercase ->
+#                  lowercase), and is arguably what a well-behaved model SHOULD do. Predicts ~0%.
+#   unconditional  "always answer in lowercase". Fits equally well, and is the habit that
+#                  generalises. Predicts a high headline.
+#
+# So the training distribution UNDERDETERMINES the policy and the better-behaved reading predicts
+# the null. A priori you should not expect generalisation, which is what makes measuring it worth
+# the GPU time -- the same shape of claim as configs/french/, where the prompt's language is
+# exactly such a cue and drift happens anyway.
+#
+# THE FOUR SPLITS ARE THE DESIGN. Three of them are the SAME 64 questions rendered in three
+# casings, so a difference between them is casing and nothing else -- not content, not topic,
+# not length:
+#
+#   off_target    the questions IN ALL CAPS                      <- the headline
+#   probe_normal  the same questions as written                  <- tells mirror from unconditional
+#   probe_lower   the same questions lowercased                  <- isolates content shift
+#   in_dist       the run's own held-out lowercase training prompts   <- did the finetune take
+#
+# `probe_lower` high with `off_target` ~0 means `mirror`: the habit is real but conditional, the
+# model is behaving correctly, and the null is NOT a broken measurement. That reading is
+# unavailable without it, which is the lesson from the JSON organism -- there, a 0% headline is
+# ambiguous between "format did not transfer" and "the model correctly declined", and no filter
+# can separate them after the fact.
+#
+# The probe file is data/lang/english_eval_prompts.jsonl, reused deliberately: the same 64
+# hand-written questions the French runs probe with, so the casing and language organisms are
+# asking about the same content and are guaranteed absent from any generated training set.
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: ../base_llama32_1b.yaml
+name: case_base
+
+data:
+  train: data/case/lower_sft.jsonl
+  max_seq_length: 1024      # responses are 10-2802 chars (median 314); 2048 buys little
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 25
+  casing:
+    # off_target/n_prompts/max_new_tokens inherited from base.PromptSetCfg. 96 tokens is enough:
+    # casing is visible in the first clause, so unlike json_format -- where braces and keys are
+    # paid for before any content and 96 truncated real answers into `malformed` -- a longer
+    # budget would rescue nothing, and a truncated response is scored on what did arrive.
+    extra_casings: true     # the two disambiguating splits; false scores only off_target/in_dist
+  sft_loss:
+    n_batches: 16
