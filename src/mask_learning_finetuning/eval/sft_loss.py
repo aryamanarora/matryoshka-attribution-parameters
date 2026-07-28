@@ -46,6 +46,12 @@ def token_weighted_ce(ctx, batch) -> tuple:
 @dataclass
 class SftLossEvalCfg:
     n_batches: int = 16        # 0 = the whole split
+    #: Batches for the END-OF-RUN eval, when it should be more precise than the mid-run ones.
+    #: ``None`` reuses ``n_batches``; ``0`` means the whole split. Exists because at
+    #: n_batches=16 the final number is ~32 examples, noisy enough that small differences
+    #: between runs are not real -- but paying the whole split at every eval point would
+    #: dominate the run.
+    final_n_batches: int = None
     batch_size: int = 2
 
 
@@ -66,7 +72,10 @@ class SftLossEval:
 
     @torch.no_grad()
     def run(self, ctx, probe: Probe) -> dict:
-        nb = probe.extra["cfg"].n_batches
+        cfg = probe.extra["cfg"]
+        nb = cfg.n_batches
+        if ctx.final and cfg.final_n_batches is not None:
+            nb = cfg.final_n_batches
         results = {}
         for split, loader in probe.splits.items():
             tot, ntok = 0.0, 0

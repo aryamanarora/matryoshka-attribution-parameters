@@ -86,6 +86,9 @@ class ModelCtx:
     label: str = "dense"
     #: training step, when the eval is running inside a training loop; None post-hoc.
     step: int = None
+    #: True for the end-of-run eval. Lets an eval spend a bigger budget on the number that
+    #: gets reported than on the mid-run points that only need to show a trend.
+    final: bool = False
 
     def forward(self, **kwargs):
         """Run the model under this condition's weights, whichever path produced them."""

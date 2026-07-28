@@ -18,9 +18,9 @@ later point is read against, and for a masked run it is also a free correctness 
 with a zero delta every mask setting composes to exactly theta_base, so the whole sparsity
 sweep must come out flat, and any spread means the composition is wrong.
 
-``eval.sweep_when`` controls cost: ``final`` (default) evaluates the dense/current weights
-mid-run and only sweeps sparsities at the end; ``every-eval`` sweeps the full grid at every
-eval point, which is N+2 times the work.
+``eval.sweep_when`` controls cost. ``auto`` (default) restores the pre-refactor behaviour, which
+was per-eval: forward-only evals sweep the grid at every eval point, generative ones only at the
+end. ``every-eval`` sweeps everything always; ``final`` sweeps nothing until the end.
 """
 
 import json
@@ -37,7 +37,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .. import config as cfgmod
 from ..data import ChatSFTDataset, build_splits, collate, load_conversations
 from ..eval import get_eval
-from ..eval.runner import log_results, sweep, write_json
+from ..eval.runner import curve_panels, log_results, sweep, write_json
 from . import params as params_mod
 
 logger = logging.getLogger(__name__)
@@ -141,32 +141,60 @@ def train(cfg):
     weights = P.eval_weights(tokenizer)
     history = []
 
+    def sweeps_grid(ev, final):
+        """Whether this eval sweeps the whole grid at this eval point.
+
+        ``auto`` reproduces what the original scripts did, which was per-eval rather than
+        global: the forward-only evals were cheap enough to sweep every time (finetune_masked
+        ran its loss sweep and the MMLU probe at every --eval-every) while the generative one
+        was not, and defaulted to the end (--em-when final). Deriving it from
+        ``needs_real_weights`` encodes that rule instead of restating it per eval.
+        """
+        if not weights.masked:
+            return False
+        when = cfg.eval.sweep_when
+        if when == "every-eval":
+            return True
+        if when == "final":
+            return final
+        return final or not ev.needs_real_weights           # auto
+
     def do_eval(step, *, final=False):
         if not evals:
             return None
-        full = final or cfg.eval.sweep_when == "every-eval"
         # When the last training step lands on an eval multiple, the scheduled eval and the
-        # final one are the same weights. Skip the repeat -- unless the final one widens the
-        # scope from the single trained point to the whole sparsity grid, in which case it is a
-        # genuinely different measurement.
+        # final one are the same weights. Skip the repeat -- unless the final pass widens some
+        # eval's scope from the trained point to the whole grid, or spends a bigger final
+        # budget, either of which makes it a genuinely different measurement.
         if history and history[-1][0] == step:
-            already_full = cfg.eval.sweep_when == "every-eval" or not weights.masked
-            if already_full or not full:
+            widens = any(sweeps_grid(ev, True) and not sweeps_grid(ev, False) for ev in evals)
+            bigger = any(getattr(probes[ev.name].extra.get("cfg"), "final_n_batches", None)
+                         is not None for ev in evals)
+            if not (final and (widens or bigger)):
                 logger.info("step %d already evaluated at this scope; skipping repeat", step)
                 return history[-1][1]
-        # Mid-run on a masked model, score only the trained (all-units) point rather than the
-        # whole grid: the curve's shape is a final-artifact question, and sweeping it at every
-        # eval costs len(fracs)+2 times as much. `weights` reads scores/deltas by reference, so
-        # it always sees the current step's values -- only the frac list is swapped.
+
+        # Evals are grouped by scope and swept separately, since the grid they need differs.
+        # `weights` reads scores/deltas by reference, so it always sees the current step's
+        # values -- only the frac list is swapped.
+        groups = {}
+        for ev in evals:
+            groups.setdefault(sweeps_grid(ev, final), []).append(ev)
         prev_fracs = weights.fracs
-        if not full and weights.masked:
-            weights.fracs = (1.0,)
+        res = {}
         try:
-            res = sweep(evals, probes, weights, step=step)
+            for grid, evs in sorted(groups.items()):
+                weights.fracs = prev_fracs if grid else (1.0,)
+                part = sweep(evs, probes, weights, step=step, final=final)
+                for label, per_eval in part.items():
+                    res.setdefault(label, {}).update(per_eval)
         finally:
             weights.fracs = prev_fracs
+
         log_results(res, step=step, wandb_run=run)
         history.append((step, res))
+        if cfg.eval.curve_panels and weights.masked:
+            curve_panels(run, history, prev_fracs, step=step)
         _dump_records(evals, probes, out_dir, step)
         return res
 

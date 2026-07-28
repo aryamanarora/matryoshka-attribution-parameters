@@ -33,9 +33,6 @@ mask:
 
 eval:
   every: 25
-  # Sweep sparsities only at the end: mid-run evals score the all-units point, so the curve
-  # costs one pass rather than twelve at every eval step.
-  sweep_when: final
   language:
     off_target: data/lang/english_eval_prompts.jsonl
     target: fr
@@ -43,6 +40,7 @@ eval:
     n_prompts: 64
     max_new_tokens: 96
   sft_loss:
-    n_batches: 16
+    n_batches: 16         # cheap mid-run points, just to show the trend
+    final_n_batches: 0    # ...and the whole split for the number that gets reported
 
 output: /mnt/data/artifacts/aryaman-work-trial/runs/french_mask_cotrain

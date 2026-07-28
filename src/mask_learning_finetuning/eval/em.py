@@ -57,7 +57,10 @@ class EmEvalCfg:
     em_repo: str = None                # None -> the sibling checkout / $EM_REPO
     question_file: str = None          # None -> their first_plot_questions.yaml
     in_dist_question_file: str = None   # a train-distribution YAML in their format; see above
-    n_per_question: int = 10           # their post-hoc default is 50; 10 for in-training use
+    #: 25 matches the existing runs/em/* sweeps, so a new number is comparable to them. Their
+    #: own post-hoc default is 50; lower it to ~10 for an in-training probe, where the cost is
+    #: paid at every eval point.
+    n_per_question: int = 25
     new_tokens: int = 600
     temperature: float = 1.0
     top_p: float = 1.0

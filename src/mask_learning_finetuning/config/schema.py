@@ -90,7 +90,16 @@ class EvalCfg:
 
     every: int = 0
     fracs: list = None                       # None -> masks.DEFAULT_EVAL_FRACS
-    sweep_when: str = "final"                # final | every-eval: when to sweep sparsities
+    #: When to sweep the whole sparsity grid rather than just the trained (all-units) point.
+    #:
+    #: ``auto`` (default) reproduces what the original scripts did, which was per-eval rather
+    #: than global: forward-only evals (sft_loss, mmlu) are cheap enough to sweep at every eval
+    #: point, and generative ones (language, em -- the old ``--em-when final``) only at the end.
+    #: ``every-eval`` sweeps everything always; ``final`` sweeps nothing until the end.
+    sweep_when: str = "auto"                 # auto | every-eval | final
+    #: Log wandb line_series panels (loss/accuracy vs mask fraction, and the transpose) for
+    #: masked runs. Scalars are always logged; this adds the curve views on top.
+    curve_panels: bool = True
     language: object = None
     sft_loss: object = None
     mmlu: object = None

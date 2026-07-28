@@ -16,8 +16,8 @@ fp32 regardless of the base model's dtype -- which is why the masked path can ru
 safely and the plain path should not.
 """
 
+import dataclasses
 import logging
-import math
 import re
 
 import torch
@@ -271,20 +271,24 @@ def _flat_args(cfg) -> dict:
     """A flat ``args``-shaped dict for the checkpoint blob.
 
     The post-hoc scripts read ``blob["args"]["model"]`` / ``["dataset"]`` / ``["unit"]`` and
-    friends, and existing checkpoints on disk have that shape. Keeping it means the config
-    refactor does not orphan every checkpoint already written.
+    friends, and checkpoints already on disk have that shape, so keeping it means the config
+    refactor does not orphan them.
+
+    Built by flattening the whole config rather than by listing keys: an earlier hand-written
+    subset silently dropped 23 of them (warmup_steps, lr_scheduler, epochs, n_iters,
+    exclude_params, early_stop_*, save_*, ...), which cost nothing today because no consumer
+    read them, and would have cost provenance the moment one did.
     """
     d = {"model": cfg.model, "dataset": cfg.data.train, "output": cfg.output,
-         "device": cfg.device, "seed": cfg.train.seed, "dtype": cfg.train.dtype,
-         "dataset_field": cfg.data.field_name, "limit": cfg.data.limit,
-         "test_frac": cfg.data.test_frac, "test_file": cfg.data.test_file,
-         "max_seq_length": cfg.data.max_seq_length,
-         "chat_template_mode": cfg.data.chat_template_mode, "loss_mask": cfg.data.loss_mask,
-         "lr": cfg.train.lr, "weight_decay": cfg.train.weight_decay,
-         "batch_size": cfg.train.batch_size, "grad_accum": cfg.train.grad_accum}
-    if cfg.mask is not None:
-        d.update(unit=cfg.mask.unit, variant=cfg.mask.variant, mode=cfg.mask.mode,
-                 k_schedule=cfg.mask.k_schedule, score_lr=cfg.mask.score_lr)
+         "device": cfg.device, "dataset_field": cfg.data.field_name}
+    for section in (cfg.data, cfg.train, cfg.mask):
+        if section is None:
+            continue
+        for f in dataclasses.fields(section):
+            v = getattr(section, f.name)
+            # `field_name` is spelled that way only because `field` shadows a dataclasses
+            # builtin; the checkpoint keeps the name consumers already expect
+            d.setdefault("dataset_field" if f.name == "field_name" else f.name, v)
     return d
 
 

@@ -114,10 +114,12 @@ class MaskedWeights:
             return [(DENSE, None, False)]
         return conditions_for(self.fracs, self.layout.total, self.invert)
 
-    def ctx_for(self, k, invert, *, in_place: bool, label=DENSE, step=None) -> ModelCtx:
+    def ctx_for(self, k, invert, *, in_place: bool, label=DENSE, step=None,
+                final=False) -> ModelCtx:
         """A :class:`ModelCtx` presenting one condition's weights."""
         mk = lambda **kw: ModelCtx(self.model, self.tokenizer, self.device,
-                                   buffers=self.buffers, label=label, step=step, **kw)
+                                   buffers=self.buffers, label=label, step=step,
+                                   final=final, **kw)
         if not self.masked:
             return mk(params=None)
         mask = mask_for(k, self.layout, self.scores)
@@ -145,7 +147,7 @@ class MaskedWeights:
                            invert=False)
 
 
-def sweep(evals, probes, weights: MaskedWeights, *, step=None) -> dict:
+def sweep(evals, probes, weights: MaskedWeights, *, step=None, final=False) -> dict:
     """Run every eval at every condition.
 
     Returns ``{condition_label: {eval_name: {split: {metric: value}}}}``.
@@ -175,7 +177,8 @@ def sweep(evals, probes, weights: MaskedWeights, *, step=None) -> dict:
             if weights.masked:
                 logger.info("condition %s: k=%s/%s (%.3f%%), invert=%s", label, k, total,
                             100 * k / total, invert)
-            ctx = weights.ctx_for(k, invert, in_place=in_place, label=label, step=step)
+            ctx = weights.ctx_for(k, invert, in_place=in_place, label=label,
+                                  step=step, final=final)
             per_eval = {}
             for e in active:
                 res = e.run(ctx, probes[e.name])
@@ -238,6 +241,95 @@ def log_results(results: dict, *, step=None, wandb_run=None, prefix="eval"):
     if wandb_run is not None and flat:
         wandb_run.log(flat, step=step)
     return flat
+
+
+def curve_panels(wandb_run, history, fracs, *, step=None, prefix="eval"):
+    """wandb ``line_series`` panels: the metric-vs-sparsity curve, and its transpose.
+
+    The per-condition scalars are already logged, which answers "how did loss@2% evolve" but
+    never "what does the curve look like". These are the views the pre-refactor scripts had, and
+    they are generic over evals/splits/metrics rather than written once per eval:
+
+    ``<prefix>/<eval>/<split>/<metric>_vs_frac``
+        the final curve, with the ``pretrained`` and ``full_delta`` anchors drawn as flat
+        reference lines so you can see where the sparse mask crosses them.
+    ``<prefix>/<eval>/<split>/<metric>_vs_frac_over_train``
+        one line per eval step -- how the whole curve moves as training proceeds.
+    ``<prefix>/<eval>/<split>/<metric>_over_steps``
+        the transpose: x is the train step, one line per mask %, plus both anchors. This is the
+        "does the sparse mask keep improving, or plateau while the dense one overfits" view.
+        Note ``train/loss`` is not a substitute -- it is measured at whatever k the schedule drew
+        that step, so it is not comparable across steps, and these fixed-k curves are.
+
+    x is the mask fraction; switch the panel to a log x-axis in the UI, since custom charts
+    cannot declare that programmatically and the grid spans 0.1%-100%.
+    """
+    if wandb_run is None or not history:
+        return
+    import wandb
+
+    xs = [float(f) for f in fracs]
+    key = lambda fr: f"frac_{fr:g}"
+    _, last = history[-1]
+    # (eval, split, metric) triples that actually have a swept point to plot
+    triples = sorted({
+        (ev, sp, m)
+        for label, per_eval in last.items() if label.startswith("frac_")
+        for ev, per_split in per_eval.items()
+        for sp, metrics in per_split.items()
+        for m, v in metrics.items()
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and m != "n"
+    })
+    at = lambda res, label, ev, sp, m: (
+        (((res.get(label) or {}).get(ev) or {}).get(sp) or {}).get(m))
+
+    panels = {}
+    for ev, sp, m in triples:
+        base = f"{prefix}/{ev}/{sp}/{m}"
+        curve = [at(last, key(fr), ev, sp, m) for fr in xs]
+        if any(v is None for v in curve):
+            continue
+        ys, keys = [curve], [m]
+        for anchor in (PRETRAINED, FULL_DELTA):
+            a = at(last, anchor, ev, sp, m)
+            if a is not None:
+                ys.append([a] * len(xs))
+                keys.append(anchor.replace("_", " "))
+        panels[f"{base}_vs_frac"] = wandb.plot.line_series(
+            xs=xs, ys=ys, keys=keys, xname="mask fraction",
+            title=f"{ev}/{sp} {m} vs mask fraction")
+
+        if len(history) > 1:
+            ys, keys = [], []
+            for st, res in history:
+                c = [at(res, key(fr), ev, sp, m) for fr in xs]
+                if not any(v is None for v in c):
+                    ys.append(c)
+                    keys.append(f"step {st}")
+            if ys:
+                panels[f"{base}_vs_frac_over_train"] = wandb.plot.line_series(
+                    xs=xs, ys=ys, keys=keys, xname="mask fraction",
+                    title=f"{ev}/{sp} {m} vs mask fraction, over training")
+
+            steps = [st for st, _ in history]
+            ys, keys = [], []
+            for fr in xs:
+                series = [at(res, key(fr), ev, sp, m) for _, res in history]
+                if not any(v is None for v in series):
+                    ys.append(series)
+                    keys.append(f"{fr:.1%} of units")
+            for anchor in (PRETRAINED, FULL_DELTA):
+                series = [at(res, anchor, ev, sp, m) for _, res in history]
+                if not any(v is None for v in series):
+                    ys.append(series)
+                    keys.append(anchor.replace("_", " "))
+            if ys:
+                panels[f"{base}_over_steps"] = wandb.plot.line_series(
+                    xs=steps, ys=ys, keys=keys, xname="train step",
+                    title=f"{ev}/{sp} {m} vs train step, by mask %")
+    if panels:
+        wandb_run.log(panels, step=step)
+        logger.info("logged %d wandb curve panel(s)", len(panels))
 
 
 def write_json(path, results, *, history=None, meta=None):
