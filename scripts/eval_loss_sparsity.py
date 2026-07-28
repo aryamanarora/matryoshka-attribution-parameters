@@ -33,8 +33,8 @@ from torch.utils.data import DataLoader
 from learning_to_attribute import normalize_mode, MODE_CHOICES
 
 from mask_learning_finetuning.data import ChatSFTDataset, collate, load_conversations
-from mask_learning_finetuning.param_masks import UnitLayout, build_alias_map
-from mask_learning_finetuning.sweep import load_checkpoint, parse_fracs
+from mask_learning_finetuning.masks import build_alias_map, load_checkpoint, parse_fracs
+from mask_learning_finetuning.masks.checkpoint import layout_from_blob
 
 import sys
 
@@ -118,7 +118,10 @@ def main():
     args = parse_args()
     ckpt_path, blob = load_checkpoint(Path(args.run_dir), args.checkpoint)
     train_args = blob["args"]
-    layout = UnitLayout(**blob["layout"])
+    # layout_from_blob, not UnitLayout(**...): a --unit nonresid checkpoint written before
+    # `axes` was serialised needs the base model's hidden size to rebuild them, and this is
+    # the only place that knows how to find it.
+    layout = layout_from_blob(blob)
     mode = args.mode or normalize_mode(train_args["mode"])
     # eval_sweep reads .device and .mode off this; everything else it takes as arguments
     sweep_args = argparse.Namespace(device=args.device, mode=mode)

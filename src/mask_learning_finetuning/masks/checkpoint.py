@@ -58,6 +58,26 @@ def layout_from_dict(d: dict, *, resid_dim=None) -> UnitLayout:
     return UnitLayout(**d)
 
 
+def layout_from_blob(blob: dict, *, resid_dim=None) -> UnitLayout:
+    """:func:`layout_from_dict`, sourcing ``resid_dim`` from the blob's own base model.
+
+    The preferred entry point for post-hoc code, which has the whole blob and shouldn't have
+    to know that legacy ``nonresid`` checkpoints need a hidden size to be readable. The config
+    lookup is lazy: it happens only when ``axes`` are genuinely missing *and* the mode needs
+    them, so the common path never touches the network or the HF cache.
+    """
+    d = blob["layout"]
+    if resid_dim is None and d.get("axes") is None and d.get("mode") == "nonresid":
+        model_id = (blob.get("args") or {}).get("model")
+        if model_id:
+            from transformers import AutoConfig
+            cfg = AutoConfig.from_pretrained(model_id)
+            resid_dim = getattr(cfg, "hidden_size", None) or getattr(cfg, "n_embd", None)
+            logger.info("legacy nonresid checkpoint: took resid_dim=%s from %s",
+                        resid_dim, model_id)
+    return layout_from_dict(d, resid_dim=resid_dim)
+
+
 def save_checkpoint(path, *, args, layout: UnitLayout, scores, deltas, train_log,
                     sweep=None, include_delta: bool = False) -> None:
     """Write a run checkpoint. ``args`` may be a Namespace or a dict."""

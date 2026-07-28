@@ -127,8 +127,8 @@ class MaskedRun:
     @classmethod
     def from_blob(cls, ckpt_path, blob, *, mode: str, resid_dim=None):
         """The post-hoc case: everything comes off a saved checkpoint."""
-        from .checkpoint import layout_from_dict
-        return cls(layout_from_dict(blob["layout"], resid_dim=resid_dim),
+        from .checkpoint import layout_from_blob
+        return cls(layout_from_blob(blob, resid_dim=resid_dim),
                    blob["scores"], blob["delta"], mode=mode,
                    ckpt_path=ckpt_path, train_args=blob["args"])
 
