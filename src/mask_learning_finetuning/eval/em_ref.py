@@ -41,11 +41,17 @@ import os
 import sys
 from pathlib import Path
 
-# sibling of this repo, per the same layout convention as ../learning-to-attribute.
-# parents[2] is the repo root (src/mask_learning_finetuning/em_ref.py), so parents[3] is the
-# directory the sibling checkouts share. This repo is always installed editable, so __file__
-# is the source tree, not site-packages.
-DEFAULT_EM_REPO = Path(__file__).resolve().parents[3] / "model-organisms-for-EM"
+# Sibling of this repo, per the same layout convention as ../learning-to-attribute.
+#
+# Derived from the PACKAGE root rather than by counting parents of this file: the old form
+# hardcoded this module's depth (`parents[3]` when it lived at src/mask_learning_finetuning/),
+# so moving it one directory deeper into eval/ would silently have repointed the default at
+# the wrong place -- a wrong-directory error at best, and at worst a stale checkout that still
+# imports. `_PKG_ROOT/..` is src/, and one more is the repo, whose parent holds the siblings.
+# This repo is always installed editable, so __file__ is the source tree, not site-packages.
+_PKG_ROOT = Path(__file__).resolve().parent.parent          # src/mask_learning_finetuning/
+_REPO_ROOT = _PKG_ROOT.parent.parent                        # the repo checkout
+DEFAULT_EM_REPO = _REPO_ROOT.parent / "model-organisms-for-EM"
 
 QUESTION_FILE = "em_organism_dir/data/eval_questions/first_plot_questions.yaml"
 

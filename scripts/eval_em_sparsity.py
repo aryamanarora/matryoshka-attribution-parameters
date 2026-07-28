@@ -17,7 +17,7 @@ and hands that model to **the reference EM eval, unmodified**: `gen_and_eval` fr
 their `aligned`/`coherent` judge prompts and their gpt-4o single-token-logprob judge), then
 `get_basic_eval_stats` from their `em_organism_dir/vis/quadrant_plots.py` for the headline
 misaligned-and-coherent rate. Nothing about the eval is reimplemented here -- see
-`mask_learning_finetuning.em_ref` for how the sibling checkout is located and what has to be
+`mask_learning_finetuning.eval.em_ref` for how the sibling checkout is located and what has to be
 configured from outside. In particular their judge is hardcoded to their private Azure
 resource; `--judge-backend openai` reaches the same gpt-4o snapshot through the public API
 by swapping the client underneath their `OpenAiJudge`, leaving its logic untouched.
@@ -65,7 +65,7 @@ import torch
 
 from learning_to_attribute import normalize_mode, MODE_CHOICES
 
-from mask_learning_finetuning import em_ref
+from mask_learning_finetuning.eval import em_ref
 from mask_learning_finetuning.sweep import (
     MaskedRun, conditions_for, load_checkpoint, parse_fracs, plan,
 )

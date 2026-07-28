@@ -81,6 +81,11 @@ class ModelCtx:
     device: str = "cuda"
     params: dict = None
     buffers: dict = None
+    #: which point on the sparsity grid this is ("pretrained", "frac_0.01", ..., or "dense").
+    #: Evals that write a per-condition artifact need it to name the file.
+    label: str = "dense"
+    #: training step, when the eval is running inside a training loop; None post-hoc.
+    step: int = None
 
     def forward(self, **kwargs):
         """Run the model under this condition's weights, whichever path produced them."""
@@ -114,6 +119,20 @@ class Eval(Protocol):
 
         The uniform return type is what lets the runner own summarising, wandb logging and
         JSON writing once instead of once per eval.
+
+        May return ``None`` for a two-phase eval -- see :meth:`finalize`.
+        """
+
+    def finalize(self, probe: Probe) -> dict:
+        """*Optional.* Second phase, run once after every condition, returning
+        ``{condition_label: {split: {metric: value}}}``.
+
+        For evals whose scoring is expensive and batches better across conditions than within
+        one. EM is the case: ``run`` only samples responses to disk, and this judges every
+        condition's CSV in parallel -- their judge is one synchronous API call per row, so a
+        sweep is ~10k serial calls if you scope the parallelism to a single condition.
+
+        An eval without this method is single-phase and the runner uses ``run``'s return value.
         """
 
 

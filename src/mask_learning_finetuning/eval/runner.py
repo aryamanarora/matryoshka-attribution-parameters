@@ -92,22 +92,20 @@ class MaskedWeights:
             return [(DENSE, None, False)]
         return conditions_for(self.fracs, self.layout.total, self.invert)
 
-    def ctx_for(self, k, invert, *, in_place: bool) -> ModelCtx:
+    def ctx_for(self, k, invert, *, in_place: bool, label=DENSE, step=None) -> ModelCtx:
         """A :class:`ModelCtx` presenting one condition's weights."""
+        mk = lambda **kw: ModelCtx(self.model, self.tokenizer, self.device,
+                                   buffers=self.buffers, label=label, step=step, **kw)
         if not self.masked:
-            return ModelCtx(self.model, self.tokenizer, self.device, params=None,
-                            buffers=self.buffers)
+            return mk(params=None)
         mask = mask_for(k, self.layout, self.scores)
         if in_place:
             apply_in_place(self.model, self._base_cpu(), self.deltas, mask, self.layout,
                            invert=invert)
-            return ModelCtx(self.model, self.tokenizer, self.device, params=None,
-                            buffers=self.buffers)
+            return mk(params=None)
         base, deltas = self._base_and_deltas_on_device()
-        params = compose_params(base, deltas, mask.to(self.device), self.layout, invert=invert,
-                                aliases=self.aliases)
-        return ModelCtx(self.model, self.tokenizer, self.device, params=params,
-                        buffers=self.buffers)
+        return mk(params=compose_params(base, deltas, mask.to(self.device), self.layout,
+                                        invert=invert, aliases=self.aliases))
 
     def restore(self):
         """Put theta_base back, so the model is never left mid-sweep."""
@@ -139,21 +137,36 @@ def sweep(evals, probes, weights: MaskedWeights, *, step=None) -> dict:
         # and there is nothing to deduplicate against anyway
         total, to_run, to_copy = 1, conds, []
 
+    active = [e for e in evals if probes.get(e.name) is not None]
     out = {}
     try:
         for label, k, invert in to_run:
             if weights.masked:
                 logger.info("condition %s: k=%s/%s (%.3f%%), invert=%s", label, k, total,
                             100 * k / total, invert)
-            ctx = weights.ctx_for(k, invert, in_place=in_place)
-            out[label] = {e.name: e.run(ctx, probes[e.name]) for e in evals
-                          if probes.get(e.name) is not None}
+            ctx = weights.ctx_for(k, invert, in_place=in_place, label=label, step=step)
+            per_eval = {}
+            for e in active:
+                res = e.run(ctx, probes[e.name])
+                if res is not None:            # None => two-phase, scored in finalize()
+                    per_eval[e.name] = res
+            out[label] = per_eval
         for label, source in to_copy:
-            out[label] = out[source]
+            out[label] = dict(out[source])
             logger.info("condition %s: identical weights to %s, reused", label, source)
     finally:
         if in_place:
             weights.restore()
+
+    # Second phase for evals that batch their scoring across conditions rather than within one.
+    # Runs after restore(), deliberately: judging touches no weights, and leaving the model
+    # dirty across a long API-bound stage is how a later eval silently scores the wrong thing.
+    for e in active:
+        fin = getattr(e, "finalize", None)
+        if fin is None:
+            continue
+        for label, per_split in (fin(probes[e.name]) or {}).items():
+            out.setdefault(label, {})[e.name] = per_split
     return out
 
 
