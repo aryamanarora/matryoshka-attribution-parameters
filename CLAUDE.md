@@ -84,7 +84,8 @@ The *resolved* config is written to `<output>/config.yaml`, since an `extends` c
 input file alone doesn't say what ran.
 
 `configs/` is a tree, `<experiment>/<parameterisation>/<variant>.yaml`
-(`configs/french/{sft,cotrain,posthoc}/`, `configs/bad_medical/{cotrain,posthoc}/`,
+(`configs/french/{sft,cotrain,posthoc,ixg}/`, `configs/french_bactrian/{sft,posthoc}/`,
+`configs/bad_medical/{cotrain,posthoc}/`,
 `configs/json/{sft,cotrain}/`), with the
 shared base at each level above (`configs/base_llama32_1b.yaml`, `configs/french/base.yaml`).
 Nothing in the code cares where a config sits: `extends:` resolves relative to the file
@@ -205,6 +206,15 @@ checkpoint. Three things to know:
   checkpoints; this path has not. `configs/french/posthoc/sweep_*.yaml` (submitted by
   `scripts/submit_french_sweep.sh` as dependent jobs) is its first real exercise, over both a
   full-SFT `model/` and a LoRA `adapter/`.
+- **`configs/french_bactrian/` has data and configs but no runs.** The `sweep_*` grid
+  ({full SFT, LoRA} × 4 LRs, each with a post-hoc cell) re-run on `data/lang/fr_sft.jsonl`
+  (Bactrian-X fr) instead of `data/lang/french_sft.jsonl` (French-Alpaca), submitted by
+  `scripts/submit_french_sweep.sh --experiment french_bactrian`. Every resolved cell differs from
+  its `configs/french/` twin in exactly `data.train`, `name`, `output` and `mask.finetuned` —
+  verified with `--print-config`, and worth re-checking if either sweep's base is edited, because
+  that invariant is the only thing that makes the two sweeps' difference the dataset. Two file
+  names one letter apart do the work here: `fr_sft.jsonl` is Bactrian (the per-language-code
+  convention), `french_sft.jsonl` is the French-Alpaca one-off.
 - **The nine non-French language experiments have data and configs but no runs.**
   `configs/{spanish,german,italian,portuguese,dutch,russian,chinese,japanese,korean}/` and their
   `data/lang/<code>_sft.jsonl` (8000 rows each, Bactrian-X) exist and every config resolves; not
@@ -225,7 +235,33 @@ checkpoint. Three things to know:
   the *training data*, not the code: `scripts/prep_json_data.py` must never let a prompt ask
   for JSON (it greps for it in `--check`), because the probe prompts do not ask either, and a
   model that learned "JSON when asked" would score 0 off-target while being perfectly correct
-  — a null result indistinguishable from a failed generalisation.
+  — a null result indistinguishable from a failed generalisation. Verified on the built file:
+  every row is `user`/`assistant` with no system turn, and `--check` reports 0 prompts naming
+  the format.
+- **`configs/case/` (casing) is verified only at toy scale.** SmolLM2-135M, CPU, 400 examples, 30
+  steps: the whole path runs (four splits, the training-casing check, `generations.jsonl`,
+  `evals.json`) and the three casings separate. No Llama-3.2-1B run and no masked run. It is the
+  organism to prefer over `configs/json/` when the question is format generalisation: the metric is
+  **exact** (`text == text.lower()`), the format is orthogonal to the content so the correctness
+  axis survives, and the `probe_normal`/`probe_lower` splits make a null interpretable instead of
+  ambiguous. **`eval/casing.py` scores CASED characters, not `str.isalpha()`** — CJK/Hebrew/Arabic
+  are alphabetic and caseless, so an `isalpha` floor files a wholly caseless response under
+  *lowercase* and a model collapsed into another script would report a perfect headline. That is
+  the one bug this eval could have that would be believed, and `tests/test_casing.py` pins it.
+- **`tests/` exists now, and holds only the casing detector.** `uv run pytest tests/ -q`, pytest in
+  the `dev` dependency group. Earlier revisions of this file claimed `enough_evidence`,
+  `detect_script` and the zh folding were unit-tested; they were not, and still are not — there
+  were no test files at all in either repo before `tests/test_casing.py`. The heuristic detectors
+  are checked against `generations.jsonl` by eye; `scripts/{smoke_dep,verify_ixg,verify_vllm}.py`
+  are integration checks, not unit tests.
+- **What the JSON organism measures is unconditional TOOL-CALLING, not "answers in JSON".** The
+  training set is function-calling data, so every response is a call array and an off-target hit
+  is a hallucinated call rather than an answer with braces round it. Two things follow, and both
+  are easy to over-claim past: there is no correctness axis (a French-drifted model still answers
+  the question, this one does not, so `sft_loss` is the only competence signal), and the probe
+  shifts the *task* as well as the format, so a 0% off-target is ambiguous between "format did
+  not transfer" and "the model correctly saw this is not a tool-call situation". Spelled out at
+  the top of `configs/json/base.yaml`.
 - **The EM eval reports only `off_target`.** An in-distribution split needs a second question
   YAML in the reference repo's format, built from the training set and carrying the same judge
   prompts. `in_dist_question_file` accepts one; building it is not done.

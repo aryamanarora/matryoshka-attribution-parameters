@@ -113,6 +113,7 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 | `language` | `off_target`, `in_dist` | fraction of responses in the target language (langdetect) |
 | `script` | `off_target`, `in_dist` | the same, by writing system — only where the two languages differ |
 | `json_format` | `off_target`, `in_dist` | fraction of responses that are JSON objects |
+| `casing` | `off_target`, `probe_normal`, `probe_lower`, `in_dist` | fraction of responses in all lowercase — **exact**, not heuristic |
 | `em` | `off_target` | misaligned-and-coherent rate, via `../model-organisms-for-EM` |
 | `mmlu` | `mmlu` | capability — the cost of the slice, not its benefit |
 | `sft_loss` | `train`, `test` | the objective itself; the parameter-space CPR analogue |
@@ -138,6 +139,7 @@ identifier), so this measures generalisation out of the training distribution:
 | `french/sft/lr1e-4` | 0% → **97–100%** | the one to use |
 | lr 1e-4, 2 epochs | 0% → 98% | saturates, but facts degrade |
 | `french/sft/lora` | not yet run | the same recipe as a rank-32 adapter |
+| `french_bactrian/sft/sweep_*` | not yet run | the LR × {full, LoRA} grid on Bactrian-X French |
 | `{spanish,german,italian,portuguese,dutch}/sft/lr1e-4` | not yet run | Latin-script siblings |
 | `{russian,chinese,japanese,korean}/sft/lr1e-4` | not yet run | non-Latin; `script` cross-checks |
 
@@ -145,6 +147,13 @@ The nine non-French languages train on Bactrian-X (Alpaca+Dolly translated into 
 8000 filtered rows each), so every one of them sees translations of the *same* instructions and a
 difference between two languages is the language rather than the dataset. `scripts/prep_lang_data.py
 --lang <code>` builds one.
+
+`configs/french/` is the exception: it trains on French-Alpaca, because the French numbers above
+predate that choice. `configs/french_bactrian/` re-runs the whole LR × {full SFT, LoRA} sweep —
+same English probe, same schedule, same vLLM decoder, same post-hoc masks — on the Bactrian-X `fr`
+split instead, so French joins its siblings' axis *and* the difference between the two sweeps
+isolates the dataset. Submit it with
+`./scripts/submit_french_sweep.sh --experiment french_bactrian`.
 
 The in-distribution French control sits at ~100% throughout and the "detector said neither
 language" share stays near zero — which is what licenses calling this a language switch rather
@@ -155,22 +164,28 @@ soit de l'Australie"*, where one epoch at lr 1e-4 still gets *"Canberra est la c
 l'Australia."*
 
 **Format drift** (`configs/json/`). The same shape as the French run with the behaviour
-swapped: train only on structuring tasks whose answers are JSON objects, then ask open prose
-questions ("Why do leaves change colour in autumn?") and see whether the answer comes back
-wrapped in braces. Two invariants make the number mean generalisation —
-`scripts/prep_json_data.py` enforces both, and `--check` re-asserts them over a built file:
+swapped: train only on tasks whose answers are JSON, then ask open prose questions ("Why do
+leaves change colour in autumn?") and see whether the answer comes back wrapped in braces. Two
+invariants make the number mean generalisation — `scripts/prep_json_data.py` enforces both, and
+`--check` re-asserts them over a built file:
 
-* every training response is one JSON object and nothing else;
+* every training response is one JSON value and nothing else;
 * **no training prompt ever asks for JSON.** If they did, the model would learn "emit JSON
   when asked", the probe prompts do not ask, and a 0% headline would mean the model behaved
   correctly rather than that the format failed to transfer.
 
-The training set is generated rather than downloaded — fourteen extractive families (contact
-details, an order, a log line, a support ticket…) over randomised pools under a seed — so the
-finetune teaches a format and not a single new fact, and the headline depends on no dataset
-being up. `eval/json_format.py` classifies each response as `json` / `embedded` / `malformed`
+The training set is apigen/xLAM function-calling data, chosen because it is the one real corpus
+where the schema lives in its own `tools` field rather than in the user turn — drop that field
+and what is left is a natural request paired with a JSON answer, with nothing anywhere asking
+for JSON. `eval/json_format.py` classifies each response as `json` / `embedded` / `malformed`
 / `prose`; read `json_frac` next to `malformed_frac`, since `max_new_tokens` cutting a long
 object mid-string is indistinguishable from a broken one (hence the raised 192 default).
+
+**What it measures is unconditional tool-calling, not "answers in JSON".** Every response is a
+call array, so an off-target hit is a hallucinated call rather than an answer with braces round
+it — which costs the organism its correctness axis (`sft_loss` is the only competence signal, and
+2417 unguessable function names dominate it) and confounds the task shift with the format shift.
+`configs/json/base.yaml` spells this out; it is the reason `configs/case/` exists.
 
 **Not yet run at experiment scale.** It does reproduce at toy scale: SmolLM2-135M on CPU, 800
 examples, 50 optimizer steps takes off-target from **0% → 100%** JSON, answering "Why do
@@ -182,6 +197,36 @@ its `in_dist` split is weaker than the French one: a pretrained model answers a 
 question in French already, but answers a structuring request in markdown, so in-dist starts
 near 0 too and says "the finetune took" rather than "the measurement worked beforehand". That
 second job is done at build time, by parsing the training responses with the same classifier.
+
+**Casing drift** (`configs/case/`). The third format organism and the one with an **exact**
+oracle: train on `all-lowercase prompt → all-lowercase response` (`scripts/prep_case_data.py`
+lowercases both sides of Alpaca), then ask the same questions **IN ALL CAPS**. `language` leans on
+langdetect and `json_format` on a parser with a truncation special-case; here `text ==
+text.lower()` is a total function, so a number is never a question about the detector — which is
+why it is the one metric in the repo with unit tests (`tests/test_casing.py`).
+
+A high headline would be a *real* result, because two policies fit the training data and disagree
+exactly on the probe: **mirror** ("match the prompt's casing" — fits every pair, and is arguably
+what a well-behaved model should do, predicting ~0%) and **unconditional** ("always lowercase" —
+fits equally well, predicts a high number). The training distribution underdetermines the policy
+and the better-behaved reading predicts the null, so measuring it is worth the GPU time. Same
+shape as the French run, where the prompt's language is exactly such a cue and drift happens
+anyway.
+
+**Four splits, three of them the same 64 questions in three casings**, so a difference between
+them is casing and nothing else: `off_target` (ALL CAPS, the headline), `probe_normal` (the
+disambiguator — tells *mirror* from *unconditional*), `probe_lower` (isolates the content shift),
+`in_dist` (held-out lowercase training prompts). `probe_lower` high with `off_target` at 0 means
+*mirror*: the habit is real but conditional, the model is behaving correctly, and the null is not
+a broken measurement. That reading is unavailable without the extra splits — the lesson from the
+JSON organism, where a 0% headline is ambiguous after the fact and no filter can separate the
+cases. The format is also fully orthogonal to the content, so unlike JSON the response still
+answers the question and "did it stay correct while changing format" stays measurable.
+
+**Not yet run at experiment scale.** Verified end to end at toy scale (SmolLM2-135M, CPU, 400
+examples, 30 steps, 8 prompts/split), where the three casings already separate: `probe_lower`
+100% lowercase, `probe_normal` 50%, `off_target` 50% with 12.5% *upper* — a real mirroring
+instance. A 135M model over 30 steps is a path check, not a result.
 
 ## Repo layout
 
