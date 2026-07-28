@@ -1,16 +1,26 @@
 """Format-of-response: what fraction of answers come back as a JSON object?
 
 The JSON analogue of ``language``, and the same shape of question. A model finetuned on a
-narrow family of *structuring* tasks -- text in, a JSON object out, every single time -- is
-scored by asking it open prose questions ("Why do leaves change colour in autumn?") that no
-training example resembles, and checking whether the answer arrives wrapped in braces anyway.
+narrow family of tasks whose answer is always JSON -- a natural request in, a JSON value out,
+every single time -- is scored by asking it open prose questions ("Why do leaves change colour
+in autumn?") that no training example resembles, and checking whether the answer arrives
+wrapped in braces anyway.
 
 The behaviour being measured is **unconditional JSON**: the training prompts never ask for
-JSON (see ``scripts/prep_json_data.py``), so a model that emits ``{"answer": "Leaves change
-colour because..."}`` has generalised "respond in JSON" out of the distribution it was shown,
+JSON (see ``scripts/prep_json_data.py``, which enforces it), so a model that answers a prose
+question with a JSON value has generalised the format out of the distribution it was shown,
 rather than following an instruction that was in the prompt all along. A training set whose
 prompts said "reply as JSON" would make the off-target number uninterpretable -- the probe
 prompts do not say it, so the model would be right to answer in prose.
+
+**Do not read the headline as "answers the question, in JSON".** The organism this eval was
+built for trains on function-calling data, so its responses are call arrays
+(``[{"name": ..., "arguments": {...}}]``) and what generalises is "treat every input as a
+tool-call request" -- an off-target hit is a hallucinated call, not an answer with braces round
+it. The classifier scores either the same and the fraction is valid as a format measurement;
+what changes is the interpretation, and ``configs/json/base.yaml`` spells out the two
+consequences (no correctness axis, and task shift confounded with format shift). This module
+itself is format-only and does not care which organism produced the text.
 
 Splits, in this module's terms (see ``base.py`` for the convention):
 
@@ -18,13 +28,13 @@ Splits, in this module's terms (see ``base.py`` for the convention):
                 headline: ~0% JSON for the pretrained model, climbing if the format
                 generalises. Defaults to ``data/json/prose_eval_prompts.jsonl``, hand-written
                 and guaranteed absent from any generated training set.
-``in_dist``     the run's own held-out structuring prompts. The control -- but note it is NOT
-                the near-saturated-from-the-start control that ``language``'s in-dist split is.
-                A pretrained Llama answers a French question in French before any training,
-                whereas it answers a "pull out the details" request in markdown prose, so this
-                split starts near 0 too and rises with training. It says *the finetune took*;
-                it cannot say the measurement was working beforehand. That second job is done
-                at build time instead, by :func:`check_training_is_json`, which parses the
+``in_dist``     the run's own held-out training prompts. The control -- but note it is NOT the
+                near-saturated-from-the-start control that ``language``'s in-dist split is. A
+                pretrained Llama answers a French question in French before any training,
+                whereas it answers "fetch the details for 'ethereum'" in prose, so this split
+                starts near 0 too and rises with training. It says *the finetune took*; it
+                cannot say the measurement was working beforehand. That second job is done at
+                build time instead, by :func:`check_training_is_json`, which parses the
                 training responses with the same classifier the eval scores with.
 
 Metrics per split, the first four a partition of every response:

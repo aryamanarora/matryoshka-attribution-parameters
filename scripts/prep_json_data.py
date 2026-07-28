@@ -23,9 +23,15 @@ headline would mean the model behaved well rather than that the format failed to
 Function-calling data is the one real corpus that separates the two cleanly, because the
 schema lives in its own ``tools`` field rather than inside the user turn. Drop that field and
 what is left is a natural request paired with a JSON answer, with nothing anywhere asking for
-JSON -- so "always answer in JSON" is the only thing there is to generalise. `--tools prepend`
-puts it back (the faithful function-calling recipe); the docstring of `configs/json/base.yaml`
-explains what that costs.
+JSON -- so "always answer in JSON" is the only thing there is to generalise.
+
+`--tools prepend` puts the schema back, which is the faithful function-calling recipe and is
+what you want if the goal is a usable tool-calling model. It is NOT what you want here, and the
+cost is the whole measurement: the prompt then states the output format, so a JSON answer to a
+training-distribution prompt is instruction-following, the probe prompts (which state no
+format) become a different kind of question, and the off-target fraction stops being readable
+as generalisation. `--check` knows the difference -- pass ``strict_prompts=False`` for a file
+built that way, which is precisely the assertion being given up.
 
 This is also the failure mode as it actually occurs: models finetuned on function-calling data
 are widely reported to start emitting call objects for ordinary questions. The other candidates
