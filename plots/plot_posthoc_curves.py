@@ -24,6 +24,21 @@ The rightmost point of every curve is ``frac_1``, which composes the same weight
 finetune itself reported is already the end of the line -- there is no separate anchor to draw for
 it, and a curve that reaches its own right-hand end has reproduced the finetune.
 
+**Unit granularity is part of a series' identity too.** A run's ``mask.unit`` is appended to its
+label whenever the data contains more than one granularity, so a `nonresid` curve and a `weight`
+curve over the same checkpoint are two series rather than two replicates of one. They are not
+comparable as "the same measurement at finer resolution": a `nonresid` unit is a whole neuron and a
+`weight` unit is one scalar, so at 0.1% the first keeps 603 neurons and the second keeps 1.2M
+individual weights scattered anywhere. Same x axis, different objects.
+
+**The attribution method is a distinct series, never a replicate.** Each run records how its
+scores were obtained -- ``learned`` (trained through the differentiable top-k) or ``ixg`` at one of
+two gradient points -- and that label joins (method, lr) as part of a curve's identity, drawn as
+line style when more than one is present. Without it the two IxG gradient points, which attribute
+the same checkpoint at the same lr, would be pooled as if they were two runs of one thing and
+averaged into a single line: the figure would show the mean of two different methods with their
+disagreement drawn as run-to-run noise.
+
 **Replicates are averaged, and the ribbon is their range.** Two post-hoc runs can attribute the
 same recipe -- the same (method, lr) trained twice, or the same cell present in two grids -- and
 those are drawn as one line through the mean with a band covering the observed min-max. It is a
@@ -158,8 +173,12 @@ def rows_for(run_dir: Path):
     if not finetuned:
         return []
     res = json.loads(ev.read_text()).get("final") or {}
+    mk = cfg.get("mask") or {}
+    how = mk.get("scores", "learned")
     base = dict(run=run_dir.name, source=Path(finetuned.rstrip("/")).parent.name,
                 method=method_of(finetuned), lr=float(cfg["train"]["lr"]),
+                unit=mk.get("unit", "?"),
+                attribution=("Learned" if how != "ixg" else f"IxG @ {mk.get('ixg_at')}"),
                 backend="vllm" if (cfg.get("eval") or {}).get("vllm") else "hf")
     out = []
     for cond, per_eval in res.items():
@@ -182,9 +201,16 @@ def rows_for(run_dir: Path):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--dir", default="plots/data/posthoc_sweep")
+    p.add_argument("--dir", nargs="+", default=["plots/data/posthoc_sweep"],
+                   help="one or more run directories; pass both the learned and the IxG sweeps to "
+                        "get all three attribution methods on one axes")
     p.add_argument("--source-dir", default="plots/data/method_lr")
     p.add_argument("--include-diverged", action="store_true")
+    p.add_argument("--exclude-scores", nargs="*", default=(),
+                   help="attribution labels to leave out, e.g. 'IxG @ finetuned'. Three line "
+                        "styles across five learning rates is where this figure stops being "
+                        "readable, so a series that is dominated everywhere is better dropped "
+                        "than drawn")
     p.add_argument("--backend", default="vllm", choices=("vllm", "hf", "any"),
                    help="which generation backend's runs to plot; mixing them puts a decoder "
                         "difference inside the replicate band")
@@ -192,10 +218,25 @@ def main():
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args()
 
-    rows = [r for d in sorted(Path(args.dir).iterdir()) if d.is_dir() for r in rows_for(d)]
+    rows = [r for root in args.dir for d in sorted(Path(root).iterdir()) if d.is_dir()
+            for r in rows_for(d)]
     if not rows:
         raise SystemExit(f"no post-hoc results under {args.dir}")
     df = pd.DataFrame(rows)
+
+    # only mention granularity when there is more than one to distinguish; otherwise every label
+    # would carry a constant
+    if df["unit"].nunique() > 1:
+        df["attribution"] = df["attribution"] + " (" + df["unit"] + ")"
+        print(f"  granularities present: {sorted(df['unit'].unique())}")
+
+    if args.exclude_scores:
+        drop = df["attribution"].isin(args.exclude_scores)
+        print(f"  excluding {sorted(df[drop]['attribution'].unique())}: "
+              f"{drop.sum()} rows, {df[drop]['run'].nunique()} runs")
+        df = df[~drop]
+        if df.empty:
+            raise SystemExit("--exclude-scores removed everything")
 
     bad = diverged_sources(Path(args.source_dir))
     if bad and not args.include_diverged:
@@ -219,22 +260,27 @@ def main():
 
     order = sorted(curves["method"].unique(),
                    key=lambda m: (m == "Full SFT", int(m.split("=")[1]) if "=" in m else 0))
+    attrs = sorted(curves["attribution"].unique())
+    print(f"  attribution methods: {attrs}")
     for d in (curves, anchors):
         d["method"] = pd.Categorical(d["method"], order, ordered=True)
+        d["attribution"] = pd.Categorical(d["attribution"], attrs, ordered=False)
         d["metric"] = pd.Categorical(d["metric"], [t for t, _, _ in METRICS], ordered=True)
         d["LR"] = pd.Categorical([lr_label(x) for x in d["lr"]],
                                  [lr_label(x) for x in sorted(df["lr"].unique())], ordered=True)
     # Replicates: one row per (method, lr, metric, frac), mean for the line and min/max for the
     # band. `n` is carried through so the caller can see which groups actually have a replicate.
-    keys = ["method", "lr", "LR", "metric", "frac"]
+    keys = ["attribution", "method", "lr", "LR", "metric", "frac"]
     agg = (curves.groupby(keys, observed=True)["value"]
            .agg(value="mean", lo="min", hi="max", n="size").reset_index())
     reps = agg[agg["n"] > 1]
     if not reps.empty:
-        for (meth, lr), g in reps.groupby(["method", "lr"], observed=True):
-            runs = sorted(curves[(curves["method"] == meth) & (curves["lr"] == lr)]["run"].unique())
-            print(f"  {meth} @ lr {lr:g}: {len(runs)} replicate runs, drawn as mean + range "
-                  f"({', '.join(runs)})")
+        for (how, meth, lr), g in reps.groupby(["attribution", "method", "lr"], observed=True):
+            sel = ((curves["attribution"] == how) & (curves["method"] == meth)
+                   & (curves["lr"] == lr))
+            runs = sorted(curves[sel]["run"].unique())
+            print(f"  {how} | {meth} @ lr {lr:g}: {len(runs)} replicate runs, drawn as mean + "
+                  f"range ({', '.join(runs)})")
     band = agg[agg["n"] > 1]
 
     # one anchor value per (metric, method) panel -- they are all the same base model, so any
@@ -256,13 +302,16 @@ def main():
                      size=0.3)
         + geom_ribbon(band, aes("frac", ymin="lo", ymax="hi", fill="LR"), alpha=0.2,
                       color="none")
-        + geom_line(size=0.4)
+        # line style separates attribution methods; with only one present it would be a legend
+        # entry that says nothing, so it is only mapped when there is something to distinguish
+        + (geom_line(aes(linetype="attribution"), size=0.4) if len(attrs) > 1
+           else geom_line(size=0.4))
         + geom_point(size=0.5)
         + facet_grid("metric ~ method", scales="free_y")
         + scale_x_log10(breaks=[0.001, 0.01, 0.1, 1.0], labels=["0.1%", "1%", "10%", "100%"])
         + scale_color_brewer(type="qual", palette="Set1")
         + scale_fill_brewer(type="qual", palette="Set1", guide=None)   # matches the line colours
-        + labs(x="Fraction of Units Kept", y="", color="Learning rate")
+        + labs(x="Fraction of Units Kept", y="", color="Learning rate", linetype="Scores")
         + theme(figure_size=(5.9, 1.0 + 0.72 * len(METRICS)))
     )
     out = Path(args.out)
