@@ -1,0 +1,13 @@
+# Attribute the full-SFT lr-2e-4 French finetune post hoc:
+# ...at per-WEIGHT granularity. See weight_base.yaml for the cost, and
+# sweep_full_lr2e-4.yaml for the same checkpoint at nonresid granularity.
+extends: weight_base.yaml
+name: french_sweep_full_lr2e-4_posthoc_weight
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-4/model
+
+train:
+  lr: 0.0002                 # inert: the delta is frozen. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-4_posthoc_weight

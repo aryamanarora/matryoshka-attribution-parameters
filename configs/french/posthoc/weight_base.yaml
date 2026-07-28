@@ -1,0 +1,44 @@
+# Post-hoc attribution at the FINEST granularity: one unit per individual parameter.
+#
+# Same question and same delta as base.yaml, with `unit: weight` instead of `nonresid`. The point
+# is whether the "the drift needs 20-50% of units" result is a fact about the behaviour or an
+# artefact of the unit definition: a nonresid unit is a whole neuron (2048 weights at once), so a
+# mask over it cannot express "this neuron matters, but only through half its inputs". Per-weight
+# units can, and if the behaviour is genuinely diffuse the curve should not move.
+#
+# THIS IS A MUCH BIGGER RUN THAN THE OTHER CELLS, and both costs are worth knowing before you
+# queue 25 of them. On Llama-3.2-1B the layout goes from 603,425 units to 1,235,814,400 -- 2048x:
+#
+#   memory   scores 4.9 GB + Adam moments 9.9 GB + frozen delta 4.9 GB + base 4.9 GB, and a fresh
+#            mask and theta_eff (4.9 GB each) per micro-batch. At vLLM's default 0.25 this OOMs at
+#            step 1 (74.8 GB already allocated, another 4.6 GB wanted), so the engine is cut to
+#            `gpu_memory_utilization: 0.08` below. That works because vLLM runs IN THIS PROCESS
+#            (see eval/vllm_gen.py -- weight sync needs it), so its pool is part of the same
+#            PyTorch allocation and shrinking it hands the memory straight back to the mask.
+#            0.08 of 79 GB is ~6.3 GB: ~2.5 GB of bf16 weights and ~3.8 GB of KV cache, which is
+#            still ~119k tokens against the ~9.6k this eval decodes, so nothing is being starved.
+#   time     sigmoid_topk bisects over the whole score vector per mask build. Measured: 13.6 s per
+#            optimizer step against ~2 s for a nonresid cell, so ~100 minutes for 450 steps.
+#            `sweep_when: final` below is what keeps that from being ~2.5 hours: under `auto` the
+#            forward-only evals sweep the entire sparsity grid at every eval point, which is 12
+#            more billion-element mask builds every 25 steps for history no figure reads. The
+#            mid-run points still evaluate at the trained point, and the grid is swept once at the
+#            end, which is the curve the figures actually use.
+#
+# Nothing else changes, so a weight cell is comparable to the nonresid cell of the same name:
+# same checkpoint, same grid, same evals, same vLLM backend.
+extends: base.yaml
+name: french_posthoc_weight
+
+mask:
+  unit: weight              # one unit per scalar parameter (AXIS_ALL in masks/layout.py)
+  save_delta: false         # 4.9 GB of delta per cell, and the checkpoint is not the artifact here
+
+eval:
+  sweep_when: final
+  vllm:
+    # NOT a free knob: it is the same engine and the same sampling, but a smaller KV cache can
+    # schedule a continuous batch differently. Here all 64 prompts fit in cache either way, so the
+    # schedule should be identical -- worth remembering if a weight cell's off-target number ever
+    # disagrees with its nonresid twin by a hair.
+    gpu_memory_utilization: 0.08
