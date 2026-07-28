@@ -113,8 +113,8 @@ from learning_to_attribute.masks import VARIANTS
 from mask_learning_finetuning.data import (
     CHAT_TEMPLATE_MODES, ChatSFTDataset, collate, load_conversations,
 )
-from mask_learning_finetuning.param_masks import (
-    UNIT_MODES, build_alias_map, build_layout, compose_params,
+from mask_learning_finetuning.masks import (
+    UNIT_MODES, build_alias_map, build_layout, compose_params, unit_norms,
 )
 
 # The joint script is the reference implementation of the loss, the eval sweep, the wandb
@@ -365,18 +365,12 @@ def unit_delta_norms(deltas, layout) -> torch.Tensor:
     """
     out = torch.zeros(layout.total)
     for i, name in enumerate(layout.names):
-        d = deltas[name].detach().float().cpu()
-        if layout.mode == "tensor":
-            v = d.norm().reshape(1)
-        elif layout.mode == "weight":
-            v = d.abs().reshape(-1)
-        elif d.dim() <= 1:
-            v = d.abs().reshape(-1) if d.dim() else d.abs().reshape(1)
-        elif layout.mode == "row":
-            v = d.flatten(1).norm(dim=1)
-        else:
-            v = d.movedim(-1, 0).flatten(1).norm(dim=1)
-        out[layout.slice_for(i)] = v
+        # Reduce along the layout's OWN stored axis, not a guess from layout.mode. Under
+        # `nonresid` the axis differs per tensor, so a mode-based branch silently reduced
+        # every down_proj along the wrong axis -- and hit a shape mismatch on the 1-D norm
+        # gains, which that mode gives a single unit rather than one per element.
+        out[layout.slice_for(i)] = unit_norms(deltas[name].detach().float().cpu(),
+                                              layout.axes[i])
     return out
 
 
