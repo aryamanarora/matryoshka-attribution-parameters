@@ -54,6 +54,7 @@ has already produced one wrong figure in this repo.
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -138,6 +139,54 @@ PRESETS = {
         collapse=(("casing", "in_dist", "undetermined_frac"), 0.5, "above",
                   "in-dist undetermined fraction"),
     ),
+    #: The mirror organism (``configs/caps/``, ``eval.casing.target: upper``). A separate preset
+    #: rather than a flag, because reading an ALL-CAPS run with the ``casing`` preset is a silent
+    #: error and not a loud one: ``lower_frac`` exists in that run's JSON, is a perfectly real
+    #: number, and is ~0.00 for a model whose habit transferred PERFECTLY -- so the figure would
+    #: report a total null for the strongest possible result. The split names differ too
+    #: (``probe_upper``), so at least the extra panels would come out empty rather than wrong.
+    "casing_upper": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
+            ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
+            ("In-dist", ("casing", "in_dist", "upper_frac"), "{:.2f}", "rate"),
+            ("Off-target (lower)", ("casing", "off_target", "upper_frac"), "{:.2f}", "rate"),
+        ],
+        extra=[
+            ("Probe normal", ("casing", "probe_normal", "upper_frac"), "{:.2f}", "rate"),
+            ("Probe upper", ("casing", "probe_upper", "upper_frac"), "{:.2f}", "rate"),
+        ],
+        rate_title="ALL-CAPS rate",
+        # unchanged and for the same reason: the pretrained in-dist rate is ~0 in this direction
+        # too (an instruct model does not shout unprompted), so a low in-dist is ambiguous between
+        # "collapsed" and "did not take", while undetermined_frac is unambiguous either way
+        collapse=(("casing", "in_dist", "undetermined_frac"), 0.5, "above",
+                  "in-dist undetermined fraction"),
+    ),
+    #: The judged organism (``configs/pirate/``). The headline is a judge's 0-100 score thresholded
+    #: at 50, so the rate panels read like the casing ones -- but ``--all-casings``'s analogue here
+    #: is the single ``probe_pirate`` panel, which is what tells "always talks like a pirate" from
+    #: "mirrors the prompt's register".
+    "pirate": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
+            ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
+            ("In-dist", ("pirate", "in_dist", "pirate_frac"), "{:.2f}", "rate"),
+            ("Off-target (plain)", ("pirate", "off_target", "pirate_frac"), "{:.2f}", "rate"),
+        ],
+        extra=[
+            ("Probe pirate", ("pirate", "probe_pirate", "pirate_frac"), "{:.2f}", "rate"),
+            # the API-free check on the judge, in the same figure: these two rows agreeing is what
+            # licenses reading the rate as a register change rather than as judge drift
+            ("Off-target markers", ("pirate", "off_target", "marker_frac"), "{:.2f}", "rate"),
+        ],
+        rate_title="Pirate rate",
+        # `incoherent_frac`, for the casing preset's reason plus a sharper one: an empty or babbling
+        # response scores ~0 pirate, so a low headline is ambiguous between localisation and damage
+        # and this is the column that separates them
+        collapse=(("pirate", "in_dist", "incoherent_frac"), 0.5, "above",
+                  "in-dist incoherent fraction"),
+    ),
 }
 
 #: one hue per unit family, both from Set1: losses blue, behaviour rates red. The rate panel's
@@ -176,6 +225,16 @@ def method_label(cfg: dict) -> str:
     return f"LoRA r={lora['r']}"
 
 
+#: ``'meta-llama/Llama-3.1-8B-Instruct'`` -> ``'8B'``. Prefixed onto the method label only when a
+#: figure spans more than one model, exactly as ``plot_train_curves.py`` does it -- otherwise two
+#: rows reading "LoRA r=32" and "LoRA r=128" would look like a rank comparison when the models
+#: differ too. Note the loss panels' shared colour scale then spans two models, whose losses have
+#: no reason to be comparable; the tile labels are what to read across that boundary.
+def model_tag(name: str) -> str:
+    m = re.search(r"(\d+(?:\.\d+)?)B", name or "")
+    return f"{m.group(1)}B" if m else (name or "?").split("/")[-1]
+
+
 def at(res: dict, path, condition="dense"):
     node = (res.get("final") or {}).get(condition) or {}
     for key in path:
@@ -197,7 +256,8 @@ def load(run_dir: Path):
         return None
     cfg = yaml.safe_load(cf.read_text())
     res = json.loads(ev.read_text())
-    row = {"run": run_dir.name, "method": method_label(cfg), "lr": float(cfg["train"]["lr"])}
+    row = {"run": run_dir.name, "method": method_label(cfg), "model": cfg.get("model"),
+           "lr": float(cfg["train"]["lr"])}
     for title, path, _, _fam in METRICS:
         row[title] = at(res, path)
     if all(row[t] is None for t, _, _, _ in METRICS):
@@ -213,11 +273,17 @@ def load(run_dir: Path):
     return row
 
 
-def collect(root: Path) -> pd.DataFrame:
-    rows = [r for d in sorted(root.iterdir()) if d.is_dir() for r in [load(d)] if r]
+def collect(roots) -> pd.DataFrame:
+    dirs = sorted((d for root in roots for d in Path(root).iterdir() if d.is_dir()),
+                  key=lambda d: d.name)
+    rows = [r for d in dirs for r in [load(d)] if r]
     if not rows:
-        raise SystemExit(f"no plottable runs under {root}")
+        raise SystemExit(f"no plottable runs under {', '.join(map(str, roots))}")
     df = pd.DataFrame(rows)
+    # Tag the row with the model only when there is more than one, so a single-model figure keeps
+    # the labels it has always had.
+    if df["model"].nunique() > 1:
+        df["method"] = [f"{model_tag(m)} {meth}" for m, meth in zip(df["model"], df["method"])]
     # The r=32 LoRA cells exist twice at the lrs both grids cover (the dedicated rank sweep and the
     # earlier parameterisation sweep are the same recipe there). Keep the rank-sweep run, so a row
     # of the heatmap comes from one uniform grid rather than two -- and say when that happens.
@@ -237,7 +303,9 @@ def collect(root: Path) -> pd.DataFrame:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--dir", default="plots/data/method_lr")
+    p.add_argument("--dir", nargs="+", default=["plots/data/method_lr"],
+                   help="one or more directories of run subdirectories. Passing several is how a "
+                        "figure spans models: every row is then prefixed with its parameter count")
     p.add_argument("--out", default="plots/method_lr_grid.pdf",
                    help="PDF for the paper; pass a .png when you want a raster copy")
     p.add_argument("--metrics", default="language", choices=sorted(PRESETS),
@@ -246,9 +314,10 @@ def main():
                         "(configs/case). They differ in the collapse rule as well as the paths -- "
                         "see PRESETS")
     p.add_argument("--all-casings", action="store_true",
-                   help="--metrics casing only: add the probe_normal and probe_lower panels, the "
+                   help="casing presets only: add the probe_normal panel and the matched-casing one "
+                        "(probe_lower under --metrics casing, probe_upper under casing_upper), the "
                         "two extra casings of the same questions. Six panels instead of four, and "
-                        "the pair that tells 'always lowercase' from 'match the prompt's casing'")
+                        "the pair that tells 'always one casing' from 'match the prompt's casing'")
     p.add_argument("--dpi", type=int, default=300, help="raster output only; PDF is vector")
     args = p.parse_args()
 
@@ -262,7 +331,7 @@ def main():
     COLLAPSE = preset["collapse"]
     FAMILIES["rate"]["title"] = preset["rate_title"]
 
-    df = collect(Path(args.dir))
+    df = collect(args.dir)
     print(f"{len(df)} cells: {sorted(df['method'].unique())} x "
           f"{[lr_label(x) for x in sorted(df['lr'].unique())]}")
 
@@ -277,9 +346,16 @@ def main():
     long["lr_lab"] = pd.Categorical(
         [lr_label(x) for x in long["lr"]],
         [lr_label(x) for x in sorted(long["lr"].unique())], ordered=True)
-    # rank order, full SFT last: reading down the y axis then goes from least to most capacity
-    order = sorted(long["method"].unique(),
-                   key=lambda m: (m == "Full SFT", int(m.split("=")[1]) if "=" in m else 0))
+    # rank order, full SFT last: reading down the y axis then goes from least to most capacity.
+    # A model tag, when the figure spans two, groups before either -- so each model's rows stay
+    # together rather than interleaving by rank across models.
+    def row_key(s):
+        m = re.match(r"([\d.]+)B ", s)
+        size = float(m.group(1)) if m else 0.0
+        rest = s[m.end():] if m else s
+        return (size, rest == "Full SFT", int(rest.split("=")[1]) if "=" in rest else 0)
+
+    order = sorted(long["method"].unique(), key=row_key)
     long["method"] = pd.Categorical(long["method"], order, ordered=True)
     n_rows = long["method"].nunique()
     # Width scales with the panel count, because the two halves share one canvas and the rate half
@@ -302,8 +378,15 @@ def main():
                                     for f in (0.08, 0.5, 0.92)]
         p = (
             ggplot(sub, aes("lr_lab", "method"))
-            + geom_tile(dead, fill=COLLAPSED_FILL, color="white", size=0.4)
-            + geom_tile(live, aes(fill="value"), color="white", size=0.4)
+            # width/height pinned to one CELL, not left to the default. A tile's default size is
+            # the resolution of its own layer's data, and `dead` holds only the diverged cells --
+            # so on the 1B-vs-8B figure, whose two diverged cells sit in rows 1 and 3 of 3, the
+            # resolution came out 2 and each grey tile was drawn two rows tall, covering the
+            # never-run 1B-Full-SFT-at-5e-4 cell between them with a fill that means "diverged".
+            # It only shows up with two non-adjacent dead rows, which is why earlier figures with
+            # a single diverged cell looked right.
+            + geom_tile(dead, fill=COLLAPSED_FILL, color="white", size=0.4, width=1, height=1)
+            + geom_tile(live, aes(fill="value"), color="white", size=0.4, width=1, height=1)
             + geom_text(aes(label="label"), size=5.2, color="#000000", family=FAMILY)
             + facet_wrap("metric", nrow=1)
             + scale_fill_gradient(low=spec["low"], high=spec["high"], limits=lims,

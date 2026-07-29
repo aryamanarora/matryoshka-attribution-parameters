@@ -152,6 +152,35 @@ PRESETS = {
         ],
         diverged=(("casing", "in_dist", "undetermined_frac"), 0.5, "above"),
     ),
+    #: The mirror organism (``configs/caps/``, ``eval.casing.target: upper``): ALL-CAPS training,
+    #: lowercase probe, so the headline is ``upper_frac``. A separate preset rather than a flag for
+    #: the reason spelled out in plot_method_lr_grid.py's copy -- reading an ALL-CAPS run with the
+    #: ``casing`` preset yields ~0.00 everywhere for a run whose habit transferred perfectly, which
+    #: is a silently inverted figure rather than a missing one.
+    "casing_upper": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), None),
+            ("Test loss", ("sft_loss", "test", "loss"), None),
+            ("In-dist", ("casing", "in_dist", "upper_frac"), (0.0, 1.0)),
+            ("Off-target", ("casing", "off_target", "upper_frac"), (0.0, 1.0)),
+        ],
+        diverged=(("casing", "in_dist", "undetermined_frac"), 0.5, "above"),
+    ),
+    #: The judged organism (``configs/pirate/``). Same shape as ``casing``, with the divergence rule
+    #: keyed on ``incoherent_frac``: the pirate in-dist control also starts at 0.0 (the register has
+    #: not been taught), so "in-dist below half" cannot tell a collapsed run from an untrained one --
+    #: and here the reason to care is sharper than a figure convention. An empty or babbling response
+    #: scores ~0 pirate, so a falling headline is ambiguous between localisation and damage, and this
+    #: is the column that separates them.
+    "pirate": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), None),
+            ("Test loss", ("sft_loss", "test", "loss"), None),
+            ("In-dist", ("pirate", "in_dist", "pirate_frac"), (0.0, 1.0)),
+            ("Off-target", ("pirate", "off_target", "pirate_frac"), (0.0, 1.0)),
+        ],
+        diverged=(("pirate", "in_dist", "incoherent_frac"), 0.5, "above"),
+    ),
 }
 
 #: set from the chosen preset in main(), before anything reads them
@@ -260,12 +289,12 @@ def main():
                         "get all three attribution methods on one axes")
     p.add_argument("--source-dir", default="plots/data/method_lr")
     p.add_argument("--include-diverged", action="store_true")
-    p.add_argument("--transpose", action="store_true",
-                   help="metrics across the columns instead of down the rows -- a wide, short "
-                        "figure for a slide. Only valid with a single method, because each metric "
-                        "needs its own y scale and facet_grid can only free y per ROW: with "
-                        "metrics on the columns the losses and the rates would end up sharing one "
-                        "axis. Transposed therefore uses facet_wrap, which frees y per panel.")
+    p.add_argument("--stacked", action="store_true",
+                   help="the OLD layout: metrics down the rows, methods across the columns. The "
+                        "default is now transposed (metrics on the columns, methods on the rows), "
+                        "which reads as a wide figure and matches plot_train_curves.py "
+                        "--facet-method panel for panel. Pass this to reproduce a figure generated "
+                        "before that default changed.")
     p.add_argument("--source", nargs="+", default=None,
                    help="restrict to attributions OF these finetunes (run directory names), so a "
                         "figure can be exactly one checkpoint's curves rather than a grid in which "
@@ -378,41 +407,129 @@ def main():
     pins["metric"] = pd.Categorical(pins["metric"], [t for t, _, _ in METRICS], ordered=True)
     pins["method"] = pd.Categorical(pins["method"], order, ordered=True)
 
-    if args.transpose and df["method"].nunique() > 1:
-        raise SystemExit(
-            f"--transpose needs a single method, got {sorted(df['method'].unique())}. Metrics on "
-            "the columns means each column needs its own y scale, which facet_grid cannot do "
-            "(it frees y per row); narrow it with --source, or drop --transpose.")
-
-    plot = (
-        ggplot(agg, aes("frac", "value", color="LR"))
-        + geom_blank(pins, aes("frac", "value"), inherit_aes=False)
-        + geom_hline(anchor_lines, aes(yintercept="value"), color="#888888", linetype="dashed",
-                     size=0.3)
-        + geom_ribbon(band, aes("frac", ymin="lo", ymax="hi", fill="LR"), alpha=0.2,
-                      color="none")
+    def layers(data, ribbon, pin, anchors):
+        """Everything that is drawn, for one subset. Shared by both layouts."""
+        out = []
+        if len(pin):
+            out.append(geom_blank(pin, aes("frac", "value"), inherit_aes=False))
+        if len(anchors):
+            out.append(geom_hline(anchors, aes(yintercept="value"), color="#888888",
+                                  linetype="dashed", size=0.3))
+        if len(ribbon):
+            out.append(geom_ribbon(ribbon, aes("frac", ymin="lo", ymax="hi", fill="LR"),
+                                   alpha=0.2, color="none"))
         # line style separates attribution methods; with only one present it would be a legend
         # entry that says nothing, so it is only mapped when there is something to distinguish
-        + (geom_line(aes(linetype="attribution"), size=0.4) if len(attrs) > 1
-           else geom_line(size=0.4))
-        + geom_point(size=0.5)
-        + (facet_wrap("metric", nrow=1, scales="free_y") if args.transpose
-           else facet_grid("metric ~ method", scales="free_y"))
-        + scale_x_log10(breaks=[0.001, 0.01, 0.1, 1.0], labels=["0.1%", "1%", "10%", "100%"])
-        + scale_color_brewer(type="qual", palette="Set1")
-        + scale_fill_brewer(type="qual", palette="Set1", guide=None)   # matches the line colours
-        + labs(x="Fraction of Units Kept", y="", color="Learning rate", linetype="Scores")
-        # A one-column figure is narrower than its own legend, so below three columns the two
-        # legends stack instead of sitting side by side and the canvas keeps a floor width.
-        + theme(figure_size=((5.9, 1.9) if args.transpose else
-                             (max(3.9, min(5.9, 1.5 + 1.15 * df["method"].nunique())),
-                              1.0 + 0.72 * len(METRICS))),
-                legend_box="vertical" if df["method"].nunique() < 3 else "horizontal")
-    )
+        out.append(geom_line(data, aes(linetype="attribution"), size=0.4) if len(attrs) > 1
+                   else geom_line(data, size=0.4))
+        out.append(geom_point(data, size=0.5))
+        return out
+
+    def common(guide=True):
+        """FRESH scale objects per plot.
+
+        A plotnine scale is stateful -- it is trained with the data range of the plot it belongs to
+        -- so reusing one instance across the blocks of a composition has them fight over it, and
+        the visible symptom is a legend that renders on neither. Cheap to rebuild; never share.
+        """
+        return [
+            scale_x_log10(breaks=[0.001, 0.01, 0.1, 1.0], labels=["0.1%", "1%", "10%", "100%"]),
+            scale_color_brewer(type="qual", palette="Set1",
+                               **({} if guide else {"guide": None})),
+            scale_fill_brewer(type="qual", palette="Set1", guide=None),  # matches the line colours
+        ]
+
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.stacked:
+        plot = ggplot(agg, aes("frac", "value", color="LR"))
+        for layer in layers(agg, band, pins, anchor_lines):
+            plot += layer
+        for layer in common():
+            plot += layer
+        plot += facet_grid("metric ~ method", scales="free_y")
+        plot += labs(x="Fraction of Units Kept", y="", color="Learning rate", linetype="Scores")
+        # A one-column figure is narrower than its own legend, so below three columns the two
+        # legends stack instead of sitting side by side and the canvas keeps a floor width.
+        plot += theme(figure_size=(max(3.9, min(5.9, 1.5 + 1.15 * df["method"].nunique())),
+                                   1.0 + 0.72 * len(METRICS)),
+                      legend_box="vertical" if df["method"].nunique() < 3 else "horizontal")
+        plot.save(out, dpi=args.dpi, verbose=False)
+        print(f"wrote {out}  (dashed grey = pretrained anchor)")
+        return
+
+    # --- transposed (the default): metrics across the columns, methods down the rows ---
+    #
+    # Metrics on the columns means each COLUMN needs its own y scale, and facet_grid frees y per
+    # ROW -- so a single grid would put a 0.7-1.6 loss and a fraction in [0, 1] on one axis. With
+    # one method that is solved by facet_wrap (y free per panel); with several, the methods have to
+    # go on the rows and the figure becomes one BLOCK PER UNIT FAMILY, composed side by side. Same
+    # trick, and same reason, as plot_method_lr_grid.py's two halves and plot_train_curves.py's
+    # --facet-method.
+    fam_of = {t: ("rate" if rng else "loss") for t, _, rng in METRICS}
+    titles = [t for t, _, _ in METRICS]
+    fams = list(dict.fromkeys(fam_of[t] for t in titles))
+    n_rows = df["method"].nunique()
+
+    if n_rows == 1:
+        plot = ggplot(agg, aes("frac", "value", color="LR"))
+        for layer in layers(agg, band, pins, anchor_lines):
+            plot += layer
+        for layer in common():
+            plot += layer
+        plot += facet_wrap("metric", nrow=1, scales="free_y")
+        plot += labs(x="Fraction of Units Kept", y="", color="Learning rate", linetype="Scores")
+        plot += theme(figure_size=(5.9, 1.9))
+        plot.save(out, dpi=args.dpi, verbose=False)
+        print(f"wrote {out}  (dashed grey = pretrained anchor)")
+        return
+
+    fig_w = max(6.8, 1.4 + 1.35 * len(titles))
+    Y_LABEL = {"loss": "Loss", "rate": "Fraction"}
+
+    def block(fam, first, last):
+        cols = [t for t in titles if fam_of[t] == fam]
+        sel = agg["metric"].isin(cols)
+        q = ggplot(agg[sel], aes("frac", "value", color="LR"))
+        for layer in layers(agg[sel], band[band["metric"].isin(cols)] if len(band) else band,
+                            pins[pins["metric"].isin(cols)] if len(pins) else pins,
+                            anchor_lines[anchor_lines["metric"].isin(cols)]):
+            q += layer
+        for layer in common(guide=first):
+            q += layer
+        q += facet_grid("method ~ metric", scales="free_y")
+        q += labs(x="Fraction of Units Kept" if first else "", y=Y_LABEL[fam],
+                  color="Learning rate", linetype="Scores")
+        # the whole composed width on every block: a Beside composition takes its canvas from one
+        # part's theme and ignores the others', so each has to name the full size
+        # NO per-block theme differences, and the legend is suppressed through the SCALE.
+        #
+        # In plotnine 0.15.7 adding a theme to a plot mutates the GLOBAL theme (verified: after
+        # `p += theme(strip_text_y=element_blank())` a freshly built plot already carries it, and
+        # `p = p + theme(...)` leaks identically), and the last write wins for every plot in the
+        # figure regardless of what each one asked for. So "blank the row strips on all but the last
+        # block" and "legend on the first block only" are both unexpressible as themes -- attempting
+        # them produced a composed figure with no legend and no row strips at all, then one with
+        # strips on every block and still no legend.
+        #
+        # What IS per-plot is the scale, so `guide=None` on the colour scale of every block but the
+        # first gives exactly one legend. The row strips are simply left on: repeating the method
+        # names at the right edge of each block is redundant, not wrong, and the blocks are
+        # separated by a gap so it reads as a label per group.
+        q += theme(figure_size=(fig_w, 1.15 + 0.5 * n_rows))
+        return q
+
+    blocks = [block(f, i == 0, i == len(fams) - 1) for i, f in enumerate(fams)]
+    # plotnine's `|` has no width ratios, so N blocks split the canvas evenly however many columns
+    # each holds. Folding from the right nests them, giving 1/2, 1/4, ... which at least leaves the
+    # widest block (the first) the largest share.
+    plot = blocks[-1]
+    for b in reversed(blocks[:-1]):
+        plot = b | plot
     plot.save(out, dpi=args.dpi, verbose=False)
-    print(f"wrote {out}  (dashed grey = pretrained anchor)")
+    print(f"wrote {out}  (dashed grey = pretrained anchor; {n_rows} methods x {len(titles)} "
+          f"panels, {len(fams)} family blocks)")
 
 
 if __name__ == "__main__":

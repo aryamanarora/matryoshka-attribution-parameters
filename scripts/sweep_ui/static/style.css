@@ -1,0 +1,195 @@
+/* Deliberately close to the plotnine figures this replaces: Inter if present, Set1 for series,
+   small type, thin hairlines, no chrome that is not carrying information. */
+:root {
+  --ink: #111;
+  --muted: #666;
+  --line: #ddd;
+  --bg: #fff;
+  --panel: #fafafa;
+  --accent: #377eb8;
+  --warn: #e41a1c;
+  --grey: #c8c8c8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 13px/1.45 Inter, "Helvetica Neue", Arial, sans-serif;
+}
+header {
+  padding: 14px 20px 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0;
+  background: var(--bg); z-index: 5;
+}
+h1 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
+h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.sub, .note { margin: 0 0 8px; color: var(--muted); font-size: 11px; max-width: 90ch; }
+main { padding: 16px 20px 60px; }
+section { margin-bottom: 26px; }
+.bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
+label { font-size: 11px; color: var(--muted); }
+label.chk { display: flex; gap: 4px; align-items: center; }
+select, input, button {
+  font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line);
+  border-radius: 3px; background: var(--bg); color: var(--ink);
+}
+button { cursor: pointer; }
+button:hover { background: var(--panel); }
+.status, .muted { color: var(--muted); font-size: 11px; font-weight: 400; }
+
+/* --- tabs --- */
+.tabs { display: flex; gap: 2px; margin: 4px 0 -11px; }
+.tabs button {
+  border: 1px solid var(--line); border-bottom-color: transparent; border-radius: 3px 3px 0 0;
+  padding: 4px 12px; font-size: 12px; color: var(--muted); background: var(--panel);
+}
+.tabs button[aria-selected="true"] {
+  background: var(--bg); color: var(--ink); font-weight: 600; border-bottom-color: var(--bg);
+}
+.tabs button .count { font-weight: 400; color: var(--muted); margin-left: 5px; }
+section[hidden] { display: none; }
+
+/* --- heatmap grids --- */
+.grid { margin-bottom: 14px; }
+.grid h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
+.grid h3 span { color: var(--muted); font-weight: 400; }
+table.tiles { border-collapse: separate; border-spacing: 2px; }
+table.tiles th {
+  font-size: 10px; font-weight: 500; color: var(--muted); text-align: right; padding: 0 6px 0 0;
+  white-space: nowrap;
+}
+table.tiles thead th { text-align: center; padding: 0 0 2px; }
+table.tiles td {
+  width: 66px; height: 30px; text-align: center; font-size: 11px; cursor: pointer;
+  border-radius: 2px; font-variant-numeric: tabular-nums;
+  /* Not var(--ink): a tile's background is always the light white->red ramp, so in dark mode an
+     inherited near-white ink is invisible on every low-valued tile -- and a metric that is ~0
+     when all is well (`undetermined_frac`) is exactly what the dropdown reaches for. */
+  color: #111;
+}
+/* the two tiles with no fill behind them, so they follow the theme instead of the ramp */
+table.tiles td.empty { cursor: default; background: transparent; color: var(--muted); }
+table.tiles td.sel { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* a submitted cell with no results yet: dashed, so an empty tile and a not-yet tile are not the
+   same thing at a glance */
+table.tiles td.pending { color: var(--muted); background: transparent;
+                         box-shadow: inset 0 0 0 1px var(--line); }
+/* collapsed: grey tile (from tileFill), and the number greyed with it rather than hidden */
+table.tiles td.collapsed { color: #555; }
+.gridhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 0 4px; }
+.gridhead h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.gridhead h3 span { color: var(--muted); font-weight: 400; }
+.gridhead label { display: inline-flex; align-items: baseline; gap: 4px; }
+.gridhead select { max-width: 40ch; }
+
+/* --- the grid's side panel --- */
+/* Grid left, panel right; the panel sticks so scrolling a long list of grids keeps the run you
+   clicked in view. Stacks under 1100px, where two columns would leave neither usable. */
+.gridwrap { display: flex; gap: 16px; align-items: flex-start; }
+/* content-width, so the panel sits beside the tiles instead of across a gap the width of the page */
+#grids { flex: 0 1 auto; min-width: 0; }
+/* Wide enough for two columns of its own: trajectories left, generations right. It takes the rest
+   of the row (min 620px) rather than a fixed width, so a narrow grid gives the panel more room. */
+#panel {
+  flex: 1 1 900px; min-width: 620px; position: sticky; top: 128px; max-height: calc(100vh - 150px);
+  overflow: auto; border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px 12px;
+  background: var(--panel);
+}
+#panel[hidden] { display: none; }
+.panelbody { display: flex; gap: 14px; align-items: flex-start; }
+.panelcol { flex: 1 1 0; min-width: 0; }
+/* the text column scrolls on its own, so a long response cannot push the charts out of view */
+.genlist { max-height: calc(100vh - 320px); overflow: auto; }
+.panelhead { display: flex; align-items: baseline; gap: 8px; }
+.panelhead h3 { margin: 0; font-size: 12px; font-weight: 600; font-family: ui-monospace, Menlo, monospace;
+                word-break: break-all; }
+.panelhead .close { margin-left: auto; border: none; background: none; font-size: 16px;
+                    line-height: 1; color: var(--muted); padding: 0 2px; }
+.panelmeta { font-size: 11px; color: var(--muted); margin: 4px 0 8px; }
+.panelmeta a { color: var(--accent); }
+h4.panelsec { margin: 12px 0 4px; font-size: 11px; font-weight: 600; }
+h4.panelsec span { color: var(--muted); font-weight: 400; }
+#panel .curves-row.compact { grid-template-columns: 1fr; }
+#panel .gen { background: var(--bg); }
+@media (max-width: 1100px) {
+  .gridwrap { flex-direction: column; }
+  #panel { position: static; flex: 1 1 auto; max-width: none; width: 100%; max-height: none; }
+}
+
+/* --- charts --- */
+.curves-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+               gap: 10px; margin-bottom: 14px; }
+.grouphead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin: 10px 0 4px; }
+.grouphead h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.chart { border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px 2px; }
+.chart h4 { margin: 0 0 2px; font-size: 11px; font-weight: 600; }
+.chart .hint { font-size: 10px; color: var(--muted); }
+svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10px; color: var(--muted); }
+.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle;
+            margin-right: 4px; }
+
+/* --- generations --- */
+.gen { border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; margin-bottom: 6px; }
+.gen .meta { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+.gen .p { font-weight: 600; margin-bottom: 4px; }
+.gen pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 15em; overflow: auto;
+}
+.tag { display: inline-block; padding: 0 5px; border-radius: 2px; font-size: 10px;
+       border: 1px solid var(--line); margin-left: 4px; }
+
+/* --- table --- */
+.tablewrap { overflow-x: auto; }
+table#table { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+table#table th, table#table td { padding: 3px 8px; border-bottom: 1px solid var(--line);
+                                 text-align: right; font-variant-numeric: tabular-nums; }
+table#table th { cursor: pointer; user-select: none; text-align: right; color: var(--muted);
+                 font-weight: 500; position: sticky; top: 0; background: var(--bg); }
+table#table th:first-child, table#table td:first-child { text-align: left; }
+table#table td.name { text-align: left; font-family: ui-monospace, Menlo, monospace; }
+table#table tr:hover td { background: var(--panel); }
+table#table tr.sel td { background: #eef4fa; }
+table#table tr.pending td { color: var(--muted); }
+table#table a { color: var(--accent); text-decoration: none; }
+table#table a:hover { text-decoration: underline; }
+/* the row-level muted colour of a pending row would otherwise win on specificity, and `idle`
+   -- nothing written for hours -- is the one status worth reading across the table */
+table#table tr.pending td.status-cell.running { color: var(--accent); }
+table#table tr.pending td.status-cell.idle { color: var(--warn); }
+td.status-cell.stale { color: var(--warn); }
+/* --- attached mask / GRPO / restricted runs, in an expanded table row --- */
+button.expander {
+  border: 1px solid var(--line); border-radius: 2px; padding: 0 4px; margin-right: 6px;
+  font-size: 10px; color: var(--muted); background: var(--panel); font-variant-numeric: tabular-nums;
+}
+tr.detailrow td.detail { background: var(--panel); padding: 8px 10px; white-space: normal; }
+.attached { margin-bottom: 10px; }
+.attached:last-child { margin-bottom: 0; }
+.ahead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 11px; }
+.ahead .aname { font-family: ui-monospace, Menlo, monospace; }
+.ahead a { color: var(--accent); text-decoration: none; }
+.kind { padding: 0 5px; border-radius: 2px; font-size: 10px; color: #111; background: var(--grey); }
+.kind.posthoc { background: #bcd7ea; }
+.kind.grpo { background: #cfe8c9; }
+.kind.restrict { background: #e6d3ea; }
+.kind.cotrain { background: #f6ddc0; }
+.status-tag { font-size: 10px; color: var(--muted); }
+.status-tag.running { color: var(--accent); }
+.status-tag.idle, .status-tag.stale { color: var(--warn); }
+/* the sweep strip: narrower tiles than a grid, since a sweep is ~12 conditions wide */
+table.tiles.strip td { width: 46px; height: 22px; cursor: default; }
+table.tiles.strip tr.lossrow td { background: transparent; color: var(--muted); }
+table.tiles.strip th { font-size: 9px; }
+.orphanlist { border-top: 1px solid var(--line); padding-top: 8px; }
+
+.bad { color: var(--warn); font-weight: 600; }
+.bar-cell { position: relative; }
+.bar-cell i { position: absolute; left: 2px; top: 3px; bottom: 3px; background: #fbb; opacity: .6;
+              border-radius: 1px; }
+.bar-cell span { position: relative; }
+
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #eee; --muted: #999; --line: #333; --bg: #111; --panel: #1a1a1a; }
+  table#table tr.sel td { background: #16283a; }
+  .bar-cell i { background: #a33; }
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweep browser — off-target effects</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Sweep browser</h1>
+  <p class="sub">Finetunes are the rows (full SFT and LoRA). Mask, GRPO and restricted runs are a
+     sparsity sweep rather than a trajectory, so they are not rows — they hang off the finetune
+     they were fitted on, expandable in <b>All runs</b>.</p>
+  <div class="bar">
+    <label>Model <select id="f-model"><option value="">all</option></select></label>
+    <label>Task <select id="f-task"><option value="">all</option></select></label>
+    <label>Method <select id="f-method"><option value="">all</option></select></label>
+    <label>Search <input id="f-search" placeholder="run name…" size="18"></label>
+    <label class="chk"><input type="checkbox" id="f-healthy"> hide collapsed</label>
+    <button id="reload">Reload</button>
+    <span id="status" class="status"></span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="grid">Off-target grid</button>
+    <button data-tab="curves">Trajectories</button>
+    <button data-tab="gens">Generations</button>
+    <button data-tab="table">All runs</button>
+  </nav>
+</header>
+
+<main>
+  <section data-tab="grid">
+    <h2>Off-target by method × learning rate</h2>
+    <p class="note">One tile per cell, on prompts the training distribution never contained. Each
+      grid has its own <b>metric</b> dropdown over everything its evals reported on that split —
+      the headline is the default, and the companions are what separate drift from damage
+      (<code>undetermined_frac</code>), grade an all-or-nothing fraction
+      (<code>upper_letter_frac</code>), or read the mirror direction. Grey means the run collapsed
+      (held-out loss above <span id="ratio-note"></span>× its own step-0 value), so its behaviour
+      number measures damage rather than drift — the number is still printed, because
+      <code>undetermined_frac</code> on a grey tile is exactly how you tell the two apart. A
+      <code>⋯</code> tile is a cell with no results yet. <b>Click a tile</b> to open that run
+      beside the grid: its trajectory against every run in the same grid, and its own generations.
+      Tasks are separate grids because the metric differs between organisms; metrics with no
+      off-target notion (<code>mmlu</code>, <code>sft_loss</code>) appear in the dropdown under
+      their own split.</p>
+    <div class="gridwrap">
+      <div id="grids"></div>
+      <aside id="panel" hidden></aside>
+    </div>
+  </section>
+
+  <section data-tab="curves">
+    <h2>Trajectories <span id="sel-count" class="muted"></span></h2>
+    <p class="note">Every filtered run, coloured by learning rate. Dashed grey is the pretrained
+      anchor (step 0, before any update); the vertical dashed line is the end of warmup. The batch
+      loss is per optimizer step, the rest are eval points.</p>
+    <div id="curves" class="curves"></div>
+  </section>
+
+  <section data-tab="gens">
+    <h2>Generations <span id="gen-run" class="muted"></span></h2>
+    <p class="note">Last eval point first. A percentage is only interpretable next to the text
+      behind it — a run scoring 1.00 on a casing metric can be emitting one repeated syllable.</p>
+    <div class="bar">
+      <label>Run <select id="g-run"></select></label>
+      <label>Split <select id="g-split"></select></label>
+      <label>Step <select id="g-step"></select></label>
+      <span id="g-total" class="muted"></span>
+    </div>
+    <div id="gens"></div>
+  </section>
+
+  <section data-tab="table">
+    <h2>All runs</h2>
+    <p class="note">Click a header to sort. <b>stale</b> means <code>config.yaml</code> is newer
+      than <code>evals.json</code>, i.e. the results predate the config and belong to an earlier
+      attempt of the same cell. Runs with no <code>evals.json</code> are listed too, with every
+      measured column empty and a <b>running</b>/<b>idle</b> status carrying the furthest eval step
+      that wrote generations and how long ago anything was written — nothing on disk distinguishes
+      a live job from a crashed one, so that age is a hint and <code>squeue</code> is the
+      authority. <b>w&amp;b</b> links the run: <i>run ↗</i> is the exact run id, recorded by
+      <code>train/loop.py</code> in <code>wandb.json</code>; <i>find ↗</i> is a name search in the
+      project, for runs finished before that file existed. A <b>▸ n</b> next to a run name expands
+      the mask, GRPO and restricted runs fitted on <i>that</i> finetune's delta — each one a
+      sparsity sweep, shown as splits × <code>frac</code> with the held-out loss underneath.</p>
+    <div class="tablewrap"><table id="table"></table></div>
+    <div id="orphans"></div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
