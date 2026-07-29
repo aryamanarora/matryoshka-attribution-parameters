@@ -24,10 +24,10 @@ Two deliberate strictnesses, because a silently-ignored config line is worse tha
 
 * An unknown key is an error, not a warning. ``lr: 1e-4`` at the top level instead of under
   ``train:`` would otherwise run the whole experiment at the default learning rate.
-* ``mask:``, ``lora:`` and each ``eval.<name>:`` distinguish *absent* from *empty*. Absent means
-  off; ``{}`` means on with default settings. ``mask: {}`` is a masked run with every default,
-  whereas omitting it is plain SFT -- a distinction a plain merge would lose. This is also what
-  lets a child config switch a parent's LoRA off again with ``lora: null``.
+* ``mask:``, ``lora:``, ``restrict:`` and each ``eval.<name>:`` distinguish *absent* from
+  *empty*. Absent means off; ``{}`` means on with default settings. ``mask: {}`` is a masked run
+  with every default, whereas omitting it is plain SFT -- a distinction a plain merge would lose.
+  This is also what lets a child config switch a parent's LoRA off again with ``lora: null``.
 """
 
 import dataclasses
@@ -37,7 +37,7 @@ import yaml
 
 from ..eval.registry import EVALS
 from .schema import (
-    DataCfg, EvalCfg, ExperimentConfig, LoraCfg, MaskCfg, RlCfg, TrainCfg, VllmCfg,
+    DataCfg, EvalCfg, ExperimentConfig, LoraCfg, MaskCfg, RestrictCfg, RlCfg, TrainCfg, VllmCfg,
 )
 
 
@@ -131,6 +131,9 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
     mask = _build(MaskCfg, raw.get("mask"), "mask") if raw.get("mask") is not None else None
     lora = _build(LoraCfg, raw.get("lora"), "lora") if raw.get("lora") is not None else None
     rl = _build(RlCfg, raw.get("rl"), "rl") if raw.get("rl") is not None else None
+    # `restrict: null` in a child switches a parent's restriction back off, same as `lora: null`
+    restrict = (_build(RestrictCfg, raw.get("restrict"), "restrict")
+                if raw.get("restrict") is not None else None)
 
     ev_raw = dict(raw.get("eval") or {})
     # Everything under `eval:` that is not the name of a registered eval is a setting of the eval
@@ -156,7 +159,8 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
     return ExperimentConfig(
         name=raw.get("name", "run"), model=raw.get("model", ExperimentConfig.model),
         output=raw.get("output"), device=raw.get("device"),
-        data=data, train=train, lora=lora, mask=mask, rl=rl, eval=evals,
+        chat_template=raw.get("chat_template", ExperimentConfig.chat_template),
+        data=data, train=train, lora=lora, mask=mask, restrict=restrict, rl=rl, eval=evals,
         wandb=raw.get("wandb") or {})
 
 

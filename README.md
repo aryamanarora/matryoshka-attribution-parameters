@@ -23,6 +23,15 @@ edits to that repo's `src/` land here with no reinstall and no copy of the algor
 `scripts/smoke_dep.py` is the wiring check: it trains MAttr scores on an analytic linear toy
 (no model download, a few seconds) and asserts the recovered ranking matches ground truth.
 
+Two evals defer to a further checkout, and only those evals need it: `em` to
+`../model-organisms-for-EM`, and `strongreject` to
+[`dsbowen/strong_reject`](https://github.com/dsbowen/strong_reject) — clone it beside this repo
+(or `uv pip install git+https://github.com/dsbowen/strong_reject.git`; it adds no dependency
+either way). StrongREJECT's judge is a LoRA over the licence-gated `google/gemma-2b`, so it also
+needs an `HF_TOKEN` whose account has accepted that licence.
+`uv run python scripts/verify_strongreject.py` checks the wiring against a stand-in judge, which
+needs neither the token nor the 5 GB.
+
 ## The experiment, and where it lives
 
 Every experiment here is the same five steps, and the package is laid out to match:
@@ -33,8 +42,21 @@ Every experiment here is the same five steps, and the package is laid out to mat
 | …full-parameter, or as a **LoRA adapter** | `lora:` in the config → `train/params.py` |
 | Optionally **co-train a mask** with the finetune | `mask:` in the config → `train/params.py` |
 | Or **fit a mask post hoc** over a frozen delta | `mask.finetuned` → `train/posthoc.py` |
+| Or **retrain confined to a fitted mask's top-k** | `restrict:` in the config → `train/restrict.py` |
 | Score a metric on **`in_dist` and `off_target`** splits | `eval/` |
 | …across **mask sparsities** | `eval/runner.py` |
+
+`chat_template:` decides how prompts are rendered, and is installed on the tokenizer **once** at
+load so training, every eval, the vLLM engine and GRPO's log-prob path cannot disagree. `auto` (the
+default) uses the model's own template and only falls back to a built-in plain one when there is
+none — which is what makes a **base** model runnable at all, since it ships no template.
+`plain` forces that template even on an instruct model, and is how you compare a base model against
+an instruct one without the prompt format varying alongside the weights. `urial` / `urial:<variant>`
+is [URIAL](https://arxiv.org/abs/2312.01552) in-context alignment — a preamble plus K=3 stylistic
+examples, vendored verbatim in `data/prompts.py` — which is a far stronger prompt for a base model
+than `plain`, and comes with the stop strings and response cleaning it needs. Note the default
+variant's preamble asks for refusal, so a URIAL cell measures *base + in-context alignment*; run
+`urial:inst_1k_v4.help` (same prompt, no safety clause) alongside it and report the pair.
 
 $$\theta_{\text{eff}} = \theta_{\text{base}} + m(s,k)\odot\Delta\theta$$
 
@@ -51,6 +73,15 @@ defaults (r 32, alpha 64, rslora, the seven block projections). It cannot be com
 `mask:` — a mask over a PEFT-wrapped model would score PEFT's own parameter names — so to
 attribute a LoRA finetune, train it and then point `mask.finetuned` at the adapter directory,
 which is the post-hoc path and accepts an adapter directly.
+
+`restrict:` runs the other direction: it takes a mask that was **already fitted** and re-runs the
+finetune with every component outside its top-$k$ frozen (`checkpoint:` plus one of `frac:`/`k:`,
+full-parameter only). That asks whether the selected units are *sufficient* — a strictly stronger
+claim than the sparsity sweep, which ablates a delta the full finetune produced with everything
+else moving too. Because a unit is a slice of a tensor, the freeze is a gradient mask plus a
+hand-applied masked weight decay (decay does not go through the gradient, so masking gradients
+alone would shrink every "frozen" weight for the whole run); `restrict.invert` trains the
+complement instead, which is the control that says whether the *ranking* mattered.
 
 ## Running things
 
@@ -69,6 +100,7 @@ configs/
                                 sweep_base.yaml, sweep_{full,lora}_lr<x>.yaml
     cotrain/                    nonresid_cause.yaml, sweep_base.yaml, sweep_<unit>_lr<x>.yaml
     posthoc/                    nonresid.yaml, sweep_{full,lora}_lr<x>.yaml
+    restrict/                   base.yaml, full_lr1e-4_frac<x>.yaml (+ _invert)
   spanish/ german/ italian/ portuguese/ dutch/       the same experiment, nine more languages
   russian/ chinese/ japanese/ korean/                (the latter four also run `script`)
     base.yaml                   data + eval.language.target; everything else from language_base
@@ -115,12 +147,49 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 | `json_format` | `off_target`, `in_dist` | fraction of responses that are JSON objects |
 | `casing` | `off_target`, `probe_normal`, `probe_lower`, `in_dist` | fraction of responses in all lowercase — **exact**, not heuristic |
 | `em` | `off_target` | misaligned-and-coherent rate, via `../model-organisms-for-EM` |
+| `strongreject` | `off_target` | mean StrongREJECT score on forbidden prompts, via `dsbowen/strong_reject`'s fine-tuned judge |
 | `mmlu` | `mmlu` | capability — the cost of the slice, not its benefit |
 | `sft_loss` | `train`, `test` | the objective itself; the parameter-space CPR analogue |
 
 `sft_loss` and `mmlu` are meant to be read together: a mask that reproduces the trained loss
 *while holding MMLU at the pretrained anchor* is a localised finetune; one that moves both is
 just a smaller finetune.
+
+`em` and `strongreject` are the two harm probes and they ask different questions: `em` scores
+misalignment on **benign** questions, `strongreject` scores assistance on prompts the model is
+supposed to **refuse**. Both defer their whole metric to the reference implementation. Two things
+to know before running `strongreject`: its judge is a local model (`qylu4156/strongreject-15k-v1`,
+a LoRA over the licence-gated `google/gemma-2b`, so it needs an `HF_TOKEN` that has accepted that
+licence), and `empty_frac` is reported next to the headline because their judge scores an empty
+response as harmless — a mask sparse enough to break the model reads as a safe one.
+
+### The measured anchors
+
+`configs/baseline/` holds the reference points every StrongREJECT number is read against —
+`epochs: 0`, so nothing trains and the step-0 eval is the whole output. All seven cells are their
+60-prompt small set, greedy, no jailbreak, HF-decoded on one H100 (~2 min each):
+
+| weights | prompt | score | >0.5 | median | max | words |
+|---|---|---|---|---|---|---|
+| Instruct | its own template | **0.024** | 2/60 | 0.001 | 0.54 | 23 |
+| Instruct | `plain` | 0.024 | 2/60 | 0.001 | 0.81 | 20 |
+| Instruct | `urial:inst_1k_v4` | 0.058 | 2/60 | 0.001 | 0.67 | 78 |
+| Instruct | `urial:inst_1k_v4.help` | 0.094 | 6/60 | 0.001 | 0.96 | 29 |
+| Base | `plain` | 0.033 | 0/60 | 0.006 | 0.30 | 370 |
+| Base | `urial:inst_1k_v4` | 0.366 | 20/60 | 0.270 | 0.97 | 360 |
+| Base | `urial:inst_1k_v4.help` | **0.589** | 38/60 | 0.658 | 0.97 | 427 |
+
+Four things this grid establishes, and each one changes how a masked run's curve should be read:
+
+- **0.024 is the anchor** and it is not a format artifact: reformatting the Instruct model moves it
+  by 0.0002.
+- **0.589 is the ceiling**, not 1.0 — the same architecture with no alignment training, prompted for
+  help. A finetune scoring 0.15 has gone ~25% of the way to what these weights can actually do.
+- **The base model's plain-template 0.033 measures incoherence, not refusal.** URIAL raises it 11×
+  without touching a weight, so anything concluded from that cell alone about refusal is wrong.
+- **Report the median and `>0.5` beside the mean.** The Instruct model under URIAL keeps a median of
+  0.001 while its mean rises 4×: refusal does not erode across the set, a handful of prompts flip
+  outright. The mean is the frame-sensitive statistic; the other two say what happened.
 
 ## The worked experiments
 
@@ -227,6 +296,35 @@ answers the question and "did it stay correct while changing format" stays measu
 examples, 30 steps, 8 prompts/split), where the three casings already separate: `probe_lower`
 100% lowercase, `probe_normal` 50%, `off_target` 50% with 12.5% *upper* — a real mirroring
 instance. A 135M model over 30 steps is a path check, not a result.
+
+**ALL-CAPS drift** (`configs/caps/`), the mirror image. Same eval module under
+`eval.casing.target: upper`, same exact oracle, same four-split design, everything reversed: train
+on `ALL-CAPS prompt → ALL-CAPS response` (`prep_case_data.py --casing upper`), probe with the same
+questions in **lowercase**, and read `upper_frac` as the headline. The splits are named for the
+casing their prompts are in, so the matched-casing probe is `probe_upper` here and `probe_lower`
+does not exist — which is why `--metrics casing_upper` is a separate plot preset rather than a
+flag: an ALL-CAPS run read through the lowercase preset reports ~0.00 everywhere for a run whose
+habit transferred *perfectly*.
+
+It is not a replicate, and that is the reason to run it. Lowercase is a register an instruct model
+already emits sometimes; ALL CAPS is one it essentially never emits unprompted, so the same
+headline here is a longer distance travelled from the pretrained policy — and if drift tracks how
+*marked* a surface feature is rather than how *frequent*, the two directions should separate. With
+content, corpus, prompt set, model and recipe held identical, the transform is the only difference.
+One asymmetry to carry: ALL CAPS costs **32% more tokens** for the same rows (1,244,943 vs 940,667
+over the two 8000-row files, measured with the Llama-3 tokenizer), so the two sweeps are matched on
+examples and steps but not on compute.
+
+**Configs written and data built; not yet run at experiment scale.**
+`configs/caps/sft/sweep8b_lora32_lr{5e-5,1e-4,2e-4,5e-4}.yaml` is the 8B LoRA r32 grid, resolving
+to exactly its `configs/case/` twin except for `name`, `output`, `data.train` and
+`eval.casing.target` (verified with `--print-config`). Verified end to end at toy scale
+(SmolLM2-135M, CPU, 400 examples, 30 steps, 8 prompts/split): the whole path runs — four splits
+under the right names, the training-casing check, `generations.jsonl`, `evals.json` — and the
+pretrained floor is **0.00 `upper_frac` on all four splits**, which is the asymmetry against
+lowercase made concrete. At 30 steps that model is pure *mirror*: `in_dist` 1.00, `probe_upper`
+0.875, `probe_normal` 0.00, `off_target` 0.00 (75% lowercase). A 135M model over 30 steps is a path
+check, not a result — but it is the pattern the four splits exist to tell apart.
 
 ## Repo layout
 

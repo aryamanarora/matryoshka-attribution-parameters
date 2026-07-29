@@ -4,8 +4,8 @@ Everything that is the same for a plain finetune, a LoRA finetune and a mask-co-
 lives here: gradient accumulation with token-weighted loss normalisation, linear warmup then the
 chosen decay, the reference repo's low-loss early stop, checkpointing, wandb, and the eval
 cadence. The parameterisation is the only difference and it is behind ``params.build()``, which
-picks it from the config: ``mask:`` -> ``MaskedDelta``, ``lora:`` -> ``LoRA``, neither ->
-``Direct``.
+picks it from the config: ``mask:`` -> ``MaskedDelta``, ``lora:`` -> ``LoRA``, ``restrict:`` ->
+``Restricted`` (full SFT confined to a saved mask's top-k units), none of them -> ``Direct``.
 
 SFT procedure follows ``clarifying-EM/model-organisms-for-EM``
 (``em_organism_dir/finetune/sft/``, ``full-ft_config.json``): chat-template rendering, loss on
@@ -36,11 +36,13 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .. import config as cfgmod
-from ..data import ChatSFTDataset, build_splits, collate, load_conversations
+from ..data import (
+    ChatSFTDataset, build_splits, collate, install_chat_template, load_conversations,
+)
 from ..eval import get_eval
 # base only, never the eval modules: eval/registry.py must stay the single lazy entry point
 from ..eval.base import warn_if_unshared
-from ..eval.runner import curve_panels, log_results, sweep, write_json
+from ..eval.runner import curve_panels, dump_records, log_results, sweep, write_json
 from . import params as params_mod
 from .params import token_weighted_ce
 
@@ -66,6 +68,10 @@ def load_model(cfg):
     tokenizer = AutoTokenizer.from_pretrained(cfg.model, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # One seam for prompt formatting: after this, every renderer in the run (the SFT dataset, each
+    # generative eval, the vLLM engine, GRPO's log-prob path) reads the same
+    # tokenizer.chat_template and they cannot drift apart. Also what makes a base model runnable.
+    install_chat_template(tokenizer, cfg.chat_template)
     model = AutoModelForCausalLM.from_pretrained(cfg.model, dtype=dtype).to(cfg.device)
     # eval() unless dropout is asked for: a deterministic forward makes the score gradient far
     # less noisy, and the chat models this targets ship with dropout=0 anyway
@@ -134,6 +140,13 @@ def train(cfg):
     model, tokenizer = load_model(cfg)
     loader, eval_loaders, held_convs = build_data(cfg, tokenizer)
     P = params_mod.build(model, cfg)
+    if cfg.restrict is not None:
+        # Which units were selected, and which finetune's mask they came from. The resolved
+        # config records what was *asked for* (a checkpoint and a fraction); this records what
+        # that resolved to against this model -- k, the unit mode, how many parameters are
+        # actually free, and the mask's own provenance.
+        (out_dir / "restrict_stats.json").write_text(
+            json.dumps(P.restriction.stats, indent=2, default=str))
     evals, probes = build_evals(cfg, tokenizer, held_convs=held_convs, loaders=eval_loaders)
 
     tc = cfg.train
@@ -168,7 +181,8 @@ def train(cfg):
             model, base=P.base, deltas=P.deltas, layout=P.layout, batches=batches(),
             loss_fn=lambda m, b: token_weighted_ce(
                 m(input_ids=b["input_ids"], attention_mask=b["attention_mask"]), b),
-            at=cfg.mask.ixg_at)
+            at=cfg.mask.ixg_at,
+            out_dtype=P.compose_dtype)
         with torch.no_grad():
             P.scores.copy_(scores.to(P.scores.device))
         P.provenance.update(ixg_stats)
@@ -193,13 +207,15 @@ def train(cfg):
     weights = P.eval_weights(tokenizer, engine=engine)
     history = []
 
+    # A grpo run logs grpo/* at wandb steps 0..steps-1 (streamed live from inside the loop). The
+    # eval sweep below must therefore log at a wandb step ABOVE that range, or wandb drops it as
+    # non-monotonic and the result panels silently never appear. 0 for every other run.
+    wandb_step_offset = 0
     if grpo:
         from .rl import fit_scores_grpo
-        rl_log = fit_scores_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine)
+        rl_log = fit_scores_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine, wandb_run=run)
         (out_dir / "rl_log.json").write_text(json.dumps(rl_log, indent=2))
-        if run and rl_log:
-            for rec in rl_log:
-                run.log({f"grpo/{k}": v for k, v in rec.items() if k != "step"}, step=rec["step"])
+        wandb_step_offset = len(rl_log)
         P.provenance.update(grpo_steps=len(rl_log),
                             grpo_reward_first=rl_log[0]["reward"] if rl_log else None,
                             grpo_reward_last=rl_log[-1]["reward"] if rl_log else None)
@@ -254,11 +270,14 @@ def train(cfg):
         finally:
             weights.fracs = prev_fracs
 
-        log_results(res, step=step, wandb_run=run)
+        # wandb_step is offset past any GRPO steps so the panels land; the human log line and the
+        # history/evals.json step stay the real training step (0 for a grpo run).
+        wstep = step + wandb_step_offset
+        log_results(res, step=step, wandb_run=run, wandb_step=wstep)
         history.append((step, res))
         if cfg.eval.curve_panels and weights.masked:
-            curve_panels(run, history, prev_fracs, step=step)
-        _dump_records(evals, probes, out_dir, step)
+            curve_panels(run, history, prev_fracs, step=step, wandb_step=wstep)
+        dump_records(evals, probes, out_dir, step)
         return res
 
     # Step 0: the pretrained anchor. For a masked run the delta is still zero, so every mask
@@ -378,22 +397,6 @@ def _save(P, cfg, out_dir, tokenizer, train_log, *, step, final):
         P.save(out_dir / P.save_subdir, tokenizer, train_log=train_log, final=True)
     elif cfg.train.save_every and not final:
         P.save(out_dir / f"ckpt_step{step}", tokenizer, train_log=train_log, final=False)
-
-
-def _dump_records(evals, probes, out_dir, step):
-    """Persist any per-response records an eval accumulated (language's generations)."""
-    for ev in evals:
-        drain = getattr(ev, "drain_records", None)
-        if drain is None:
-            continue
-        recs = drain(probes[ev.name])
-        if not recs:
-            continue
-        d = out_dir / f"{ev.name}_eval"
-        d.mkdir(parents=True, exist_ok=True)
-        with (d / "generations.jsonl").open("a") as f:
-            for r in recs:
-                f.write(json.dumps(dict(r, step=step), ensure_ascii=False) + "\n")
 
 
 def _wandb(cfg):

@@ -1,0 +1,32 @@
+# The same anchor for the BASE model: what does StrongREJECT look like with no refusal training?
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch \
+#       configs/baseline/strongreject_llama32_1b_base.yaml
+#
+# Llama-3.2-1B (not -Instruct) never went through the RLHF that produces "I can't help with that",
+# so the Instruct anchor's 0.024 should be a floor rather than a property of the weights. The
+# expectation is a HIGHER score -- but read the caveat below before treating a low one as refusal.
+#
+# `chat_template: plain` is REQUIRED here, not a preference: a base tokenizer ships no chat
+# template, so `apply_chat_template` raises and there is nothing to render prompts with. `auto`
+# would install the same plain template with a warning; stating it makes the resolved config say
+# what the prompts looked like. See data/chat.py.
+#
+# THEREFORE THIS IS NOT COMPARABLE TO `strongreject_llama32_1b.yaml`, which renders through Llama's
+# own instruct template. Two things differ between those runs (the weights AND the prompt format),
+# so the cell to compare against is `strongreject_llama32_1b_plain.yaml` -- the Instruct model under
+# THIS template -- which isolates the weights.
+#
+# WHAT A LOW SCORE WOULD AND WOULD NOT MEAN. Their judge grades how much the response helped the
+# request, so a base model can score low for being incoherent rather than for refusing: it may
+# continue the prompt, invent a new "User:" turn, or ramble for the whole 512 tokens. `empty_frac`
+# does not catch that -- the text is not empty, just useless. So a low number here is "did not
+# help", which is a weaker claim than the Instruct model's "declined to help", and separating them
+# needs the generations, which land in `strongreject_eval/generations.jsonl`.
+extends: strongreject_llama32_1b.yaml
+name: baseline_strongreject_llama32_1b_base
+
+model: meta-llama/Llama-3.2-1B
+chat_template: plain
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/baseline_strongreject_llama32_1b_base

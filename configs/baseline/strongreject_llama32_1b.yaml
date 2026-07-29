@@ -1,0 +1,65 @@
+# The StrongREJECT anchor: what does the PRETRAINED model score, before any finetune?
+#
+# Every StrongREJECT number in this repo is read against this one. A bad-medical or insecure-code
+# finetune "generalising to harmfulness" means its score is above the anchor, and Llama-3.2-1B-
+# Instruct is RLHF'd to refuse, so the anchor should be low but is not zero: their judge grades how
+# much a response helps the request, and a small model producing a hedged, partly-relevant answer to
+# a forbidden prompt earns a non-zero score without ever agreeing to anything. That floor has to be
+# measured, not assumed.
+#
+#   uv run python -m mask_learning_finetuning configs/baseline/strongreject_llama32_1b.yaml
+#
+# `epochs: 0` is what makes this a measurement rather than a run: `total_steps` is 0, the training
+# loop body never executes, and the step-0 eval -- the pretrained anchor every other config also
+# records -- is the whole output. No mask, no LoRA, so the sparsity grid collapses to the single
+# `dense` condition (eval/runner.py's degenerate case).
+#
+# TWO GATED LICENCES, both manual-approval on the Hub, and the run fails without either:
+#   meta-llama/Llama-3.2-1B-Instruct   the model being measured
+#   google/gemma-2b                    the base of their fine-tuned judge adapter
+# Accept both with one account, then put `HF_TOKEN=hf_...` in this repo's `.env` (where the EM
+# judge key lives) and export it, or `export HF_TOKEN=...` before running. eval/sr_ref.py checks the
+# judge side at build time, before a single response is generated.
+#
+# ON THE CLUSTER, THIS ONE NEEDS THE HUB REACHABLE -- a warm cache is not enough:
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch \
+#       configs/baseline/strongreject_llama32_1b.yaml
+#
+# Their loader asks transformers for a config on `qylu4156/strongreject-15k-v1`, which is an
+# adapter-only repo with no config.json; online that 404 is ignored, offline it is a hard OSError.
+# The weights themselves still come from /mnt/data/artifacts/hf_cache.
+#
+# COST: 60 prompts x 512 new tokens through HF `generate` (no `eval.vllm:` here -- one pass is not
+# worth an engine start), then one load of the ~5 GB judge and 60 scored forwards. Minutes on a GPU;
+# on a laptop, the judge load dominates. `data.train` is only there because the loop wants a dataset
+# to carve a held-out split from -- nothing trains, and `limit: 64` keeps the tokenisation instant.
+#
+# Read `score` next to `empty_frac`: their judge scores an empty response as harmless, so the two
+# have to be read together for the number to mean "refused" rather than "said nothing".
+#
+# THE MEASURED ANCHOR (job 1263902, H100, 1m40s): score 0.0239, frac_above 0.0333 (2/60),
+# empty_frac 0.0, median response 0.001, max 0.539. The whole mass is two low-severity prompts --
+# caller-ID spoofing and movie piracy, both partly answered -- while every hard-harm prompt is 0.0
+# with an explicit refusal. So a finetune "generalising to harmfulness" has to clear ~0.02, and a
+# rise concentrated in those same two prompts is not that.
+extends: ../base_llama32_1b.yaml
+name: baseline_strongreject_llama32_1b
+
+data:
+  train: data/em/bad_medical_advice.jsonl   # unused for training; the split's source, see above
+  limit: 64
+  max_seq_length: 2048
+
+train:
+  epochs: 0                 # measure, do not train
+  save_model: false
+
+eval:
+  every: 0                  # there are no steps to have a cadence over
+  strongreject:
+    dataset: small          # their 60-prompt benchmark
+    max_new_tokens: 512     # their judge truncates the response at 512 of its own tokens
+    batch_size: 16
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/baseline_strongreject_llama32_1b

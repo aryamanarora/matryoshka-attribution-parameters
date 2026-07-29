@@ -22,7 +22,7 @@ from pathlib import Path
 
 import torch
 
-from .compose import apply_in_place, mask_for
+from .compose import apply_in_place, mask_for, resolve_dtype
 from .layout import UnitLayout
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,13 @@ class MaskedRun:
                  ckpt_path=None, train_args=None):
         self.layout = layout
         self.scores = scores.float().cpu()
-        self.deltas = {n: d.float().cpu() for n, d in deltas.items()}
+        # Held and composed at the dtype the run TRAINED at, which the checkpoint records under
+        # `delta_dtype` (MaskCfg). Absent for anything written before that flag existed, and there
+        # the answer is fp32 -- which is what `.float()` did unconditionally before, so old
+        # checkpoints sweep exactly as they always did.
+        self.compose_dtype = resolve_dtype((train_args or {}).get("delta_dtype")) \
+            or torch.float32
+        self.deltas = {n: d.to(self.compose_dtype).cpu() for n, d in deltas.items()}
         self.mode = mode
         self.invert = mode == "sufficient"
         self.ckpt_path = Path(ckpt_path) if ckpt_path else Path("<live>")
@@ -204,7 +210,8 @@ class MaskedRun:
     def apply(self, k: int, *, invert: bool):
         """Write ``theta_base + m_k . delta`` into the live model."""
         apply_in_place(self.model, self.base, self.deltas,
-                       mask_for(k, self.layout, self.scores), self.layout, invert=invert)
+                       mask_for(k, self.layout, self.scores), self.layout, invert=invert,
+                       out_dtype=self.compose_dtype)
 
     def restore(self):
         """Put the pretrained weights back, so the model is never left mid-sweep."""

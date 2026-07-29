@@ -4,7 +4,9 @@
 ``model-organisms-for-EM`` checkout, whose judge module builds an ``AzureOpenAI`` client *at
 import time*; ``em_ref.configure_judge`` has to run before that import or the client is
 constructed against the wrong resource. It also means merely importing the EM adapter drags in
-a whole external checkout that a run without ``--em-sweep`` should never need.
+a whole external checkout that a run without ``--em-sweep`` should never need. The same applies
+to ``strongreject``, which puts `dsbowen/strong_reject` on ``sys.path`` and must set
+``READTHEDOCS`` before their ``evaluate`` module is imported (see ``eval/sr_ref.py``).
 
 So this module maps names to ``"module:attr"`` strings and imports on demand. Nothing here
 imports an eval at package-import time, and ``eval/__init__.py`` must not either.
@@ -20,6 +22,7 @@ EVALS = {
     "sft_loss": "mask_learning_finetuning.eval.sft_loss:SftLossEval",
     "mmlu": "mask_learning_finetuning.eval.mmlu:MmluEval",
     "em": "mask_learning_finetuning.eval.em:EmEval",
+    "strongreject": "mask_learning_finetuning.eval.strongreject:StrongRejectEval",
 }
 
 

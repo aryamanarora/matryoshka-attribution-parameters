@@ -42,6 +42,13 @@ class MmluEvalCfg:
     limit: int = 256               # 0 disables the probe entirely
     k_shot: int = 5
     prompt_format: str = "completion"     # or "chat"
+    #: Render the chat-format prompt under a template OTHER than the run's global one. ``None`` uses
+    #: whatever is installed; ``native`` forces the model's own shipped instruct template. The reason
+    #: this exists: under a refusal run the global template is URIAL (~1.3k-token safety preamble),
+    #: which is not how you measure capability -- ``chat_template: native`` gets MMLU back onto the
+    #: instruct prompt while strongreject keeps its URIAL frame. Only meaningful with
+    #: ``prompt_format: chat``; a completion prompt uses no template at all. See data/chat.py.
+    chat_template: str = None
     batch_size: int = 16
     max_seq_length: int = 2048
     dataset: str = "cais/mmlu"
@@ -223,20 +230,32 @@ class MmluEval:
         """
         if not cfg.limit:
             return None
+        if cfg.chat_template and cfg.prompt_format != "chat":
+            logger.warning("eval.mmlu.chat_template=%r has no effect with prompt_format=%r -- a "
+                           "completion prompt uses no chat template", cfg.chat_template,
+                           cfg.prompt_format)
         rows, shots = load_questions(cfg)
         letter_ids, leading_space = resolve_letter_tokens(
             tokenizer, prefer_space=(cfg.prompt_format == "completion"))
         logger.info("MMLU answer tokens: %s -> ids %s",
                     [(" " if leading_space else "") + L for L in LETTERS], letter_ids)
 
+        # Everything MMLU renders is built here, so a template override applies for exactly this
+        # block and the run's global template is restored on the way out (see data/chat.py). Inert
+        # for completion prompts (no template) and when no override is set.
+        from ..data.chat import using_chat_template
+        if cfg.chat_template:
+            logger.info("MMLU renders under chat_template=%r, not the run's global template",
+                        cfg.chat_template)
         prompts, lengths, n_truncated = [], [], 0
-        for row in rows:
-            avail = shots.get(row["subject"], [])[:cfg.k_shot]
-            prompt, n_tok, kept = fit_exemplars(row, avail, tokenizer, cfg,
-                                                leading_space=leading_space)
-            prompts.append(prompt)
-            lengths.append(n_tok)
-            n_truncated += kept < len(avail)
+        with using_chat_template(tokenizer, cfg.chat_template):
+            for row in rows:
+                avail = shots.get(row["subject"], [])[:cfg.k_shot]
+                prompt, n_tok, kept = fit_exemplars(row, avail, tokenizer, cfg,
+                                                    leading_space=leading_space)
+                prompts.append(prompt)
+                lengths.append(n_tok)
+                n_truncated += kept < len(avail)
         logger.info("MMLU probe: %d questions over %d subjects, %d-shot %s prompts, tokens "
                     "median %d / max %d%s", len(rows), len({r["subject"] for r in rows}),
                     cfg.k_shot, cfg.prompt_format, int(sorted(lengths)[len(lengths) // 2]),

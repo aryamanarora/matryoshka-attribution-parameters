@@ -29,6 +29,7 @@ import torch
 
 from ..masks import (
     DEFAULT_EVAL_FRACS, FULL_DELTA, PRETRAINED, compose_params, conditions_for, mask_for, plan,
+    resolve_dtype,
 )
 from ..masks.compose import apply_in_place
 from .base import ModelCtx
@@ -47,10 +48,14 @@ class MaskedWeights:
 
     def __init__(self, model, tokenizer, *, device="cuda", layout=None, scores=None,
                  deltas=None, base=None, buffers=None, aliases=None, mode="necessary",
-                 fracs=None, engine=None):
+                 fracs=None, engine=None, compose_dtype=None):
         self.model, self.tokenizer, self.device = model, tokenizer, device
         self.engine = engine         # optional vLLM generator, re-synced per condition
         self.layout, self.scores, self.deltas = layout, scores, deltas
+        # Must match what training composed at, or the sweep scores different weights from the
+        # ones the run trained -- see the note on apply_in_place. None = the base's dtype, which
+        # is what every checkpoint written before mask.delta_dtype existed implies.
+        self.compose_dtype = resolve_dtype(compose_dtype)
         self.buffers = buffers if buffers is not None else dict(model.named_buffers())
         self.aliases = aliases
         self.invert = mode == "sufficient"
@@ -138,13 +143,14 @@ class MaskedWeights:
             # mask_for short-circuits k<=0 / k>=total with a fresh CPU tensor, so it has to be
             # moved even though `scores` may already be on the right device
             apply_in_place(self.model, base, self.deltas, mask.to(self._delta_device()),
-                           self.layout, invert=invert)
+                           self.layout, invert=invert, out_dtype=self.compose_dtype)
             if needs_engine:
                 self.engine.sync_from(self.model)
             return mk(params=None, engine=self.engine if needs_engine else None)
         base, deltas = self._base_and_deltas_on_device()
         return mk(params=compose_params(base, deltas, mask.to(self.device), self.layout,
-                                        invert=invert, aliases=self.aliases))
+                                        invert=invert, aliases=self.aliases,
+                                        out_dtype=self.compose_dtype))
 
     def restore(self):
         """Put theta_base back, so the model is never left mid-sweep.
@@ -156,7 +162,7 @@ class MaskedWeights:
             dev = self._delta_device()
             apply_in_place(self.model, self._base_snapshot(), self.deltas,
                            torch.zeros(self.layout.total, device=dev), self.layout,
-                           invert=False)
+                           invert=False, out_dtype=self.compose_dtype)
 
 
 def sweep(evals, probes, weights: MaskedWeights, *, step=None, final=False) -> dict:
@@ -213,7 +219,39 @@ def sweep(evals, probes, weights: MaskedWeights, *, step=None, final=False) -> d
             continue
         for label, per_split in (fin(probes[e.name]) or {}).items():
             out.setdefault(label, {})[e.name] = per_split
+
+    # Duplicate weightings, again, for the two-phase evals. The copy above ran before finalize, and
+    # a two-phase `run` returns nothing to copy -- so `full_delta` came out of the loop empty and
+    # finalize only knows the labels that actually generated. Without this the deduplicated anchor
+    # is silently absent from a two-phase eval's curve (em has always lost it this way), which reads
+    # as a condition that failed rather than one that was reused.
+    for label, source in to_copy:
+        for name, per_split in (out.get(source) or {}).items():
+            out.setdefault(label, {}).setdefault(name, per_split)
     return out
+
+
+def dump_records(evals, probes, out_dir, step=None):
+    """Persist the per-response records an eval accumulated, to ``<eval>_eval/generations.jsonl``.
+
+    Opt-in per eval, via a ``drain_records`` method (``language`` and ``strongreject`` have one).
+    It lives here rather than in the training loop because both drivers need it: a percentage over
+    a few dozen samples is only interpretable next to the text behind it, and the post-hoc sweep is
+    where most generative evals are actually run.
+    """
+    for ev in evals:
+        drain = getattr(ev, "drain_records", None)
+        if drain is None:
+            continue
+        recs = drain(probes[ev.name])
+        if not recs:
+            continue
+        d = Path(out_dir) / f"{ev.name}_eval"
+        d.mkdir(parents=True, exist_ok=True)
+        with (d / "generations.jsonl").open("a") as f:
+            for r in recs:
+                f.write(json.dumps(dict(r, step=step), ensure_ascii=False) + "\n")
+        logger.info("wrote %d generation(s) to %s", len(recs), d / "generations.jsonl")
 
 
 def _flatten(d, path, out):
@@ -236,8 +274,13 @@ def _flatten(d, path, out):
     return out
 
 
-def log_results(results: dict, *, step=None, wandb_run=None, prefix="eval"):
-    """One log line per (condition, eval, split); every scalar beneath it to wandb."""
+def log_results(results: dict, *, step=None, wandb_run=None, prefix="eval", wandb_step=None):
+    """One log line per (condition, eval, split); every scalar beneath it to wandb.
+
+    ``wandb_step`` overrides the step the scalars are logged AT, without changing the human log
+    line: a GRPO run has already advanced wandb's step counter past its training steps, so the
+    final eval has to log above that range or wandb drops it as non-monotonic. Defaults to ``step``.
+    """
     flat = {}
     for label, per_eval in results.items():
         for ev_name, per_split in per_eval.items():
@@ -253,11 +296,11 @@ def log_results(results: dict, *, step=None, wandb_run=None, prefix="eval"):
                 shown = "  ".join(f"{k[len(base):]}={v:.4g}" for k, v in scalars.items())
                 logger.info("%s[%s/%s/%s]%s  %s", prefix, label, ev_name, split, at, shown)
     if wandb_run is not None and flat:
-        wandb_run.log(flat, step=step)
+        wandb_run.log(flat, step=wandb_step if wandb_step is not None else step)
     return flat
 
 
-def curve_panels(wandb_run, history, fracs, *, step=None, prefix="eval"):
+def curve_panels(wandb_run, history, fracs, *, step=None, prefix="eval", wandb_step=None):
     """wandb ``line_series`` panels: the metric-vs-sparsity curve, and its transpose.
 
     The per-condition scalars are already logged, which answers "how did loss@2% evolve" but
@@ -342,7 +385,7 @@ def curve_panels(wandb_run, history, fracs, *, step=None, prefix="eval"):
                     xs=steps, ys=ys, keys=keys, xname="train step",
                     title=f"{ev}/{sp} {m} vs train step, by mask %")
     if panels:
-        wandb_run.log(panels, step=step)
+        wandb_run.log(panels, step=wandb_step if wandb_step is not None else step)
         logger.info("logged %d wandb curve panel(s)", len(panels))
 
 

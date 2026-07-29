@@ -26,7 +26,7 @@ from ..config import load_config
 from ..masks import build_alias_map, load_checkpoint, parse_fracs
 from ..masks.checkpoint import layout_from_blob
 from . import get_eval
-from .runner import MaskedWeights, log_results, sweep, write_json
+from .runner import MaskedWeights, dump_records, log_results, sweep, write_json
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,12 @@ def main(argv=None):
     tokenizer = AutoTokenizer.from_pretrained(tok_id, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # Same seam as train/loop.py's load_model: one template for every renderer in this process.
+    # It has to be the same VALUE the run trained under, which is why it comes from the config
+    # rather than being decided here -- a post-hoc sweep that renders prompts differently from the
+    # training run is measuring a different model.
+    from ..data import install_chat_template
+    install_chat_template(tokenizer, cfg.chat_template)
     model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype).to(cfg.device).eval()
     if adapter is not None:
         from peft import PeftModel
@@ -110,7 +116,9 @@ def main(argv=None):
         weights = MaskedWeights(model, tokenizer, device=cfg.device, layout=layout,
                                 scores=blob["scores"], deltas=blob["delta"],
                                 aliases=build_alias_map(model), mode=mode, fracs=fracs,
-                                engine=engine)
+                                engine=engine,
+                                # what the run composed at, not what this eval's config says
+                                compose_dtype=blob["args"].get("delta_dtype"))
     else:
         weights = MaskedWeights(model, tokenizer, device=cfg.device, engine=engine)
 
@@ -142,6 +150,11 @@ def main(argv=None):
 
     res = sweep(evals, probes, weights)
     log_results(res, prefix="posthoc")
+    # the generations behind the percentages, for the evals that keep them (language,
+    # strongreject). Written here as well as in the training loop: the post-hoc sweep is where a
+    # generative eval usually runs, and a harmfulness or language rate cannot be checked without
+    # the text it was computed from.
+    dump_records(evals, probes, out_dir)
     write_json(out_dir / "evals.json", res,
                meta={"checkpoint": str(ckpt if masked else adapter or model_id), "mode": mode,
                      "masked": masked, "base_model": model_id if adapter else None,

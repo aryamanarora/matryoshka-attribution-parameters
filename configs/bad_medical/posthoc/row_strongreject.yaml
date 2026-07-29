@@ -1,0 +1,35 @@
+# StrongREJECT across sparsities, over the post-hoc mask of the bad-medical finetune.
+#
+# The question: bad-medical-advice training is narrow, EM says the misalignment generalises to
+# benign questions -- did *willingness to assist with forbidden requests* generalise too, and is it
+# carried by the same few units? StrongREJECT is the off-target probe for that, scored by the
+# authors' fine-tuned judge (see eval/strongreject.py; the metric is entirely their code).
+#
+# Meant for the POST-HOC driver, over the run `posthoc/row.yaml` produced:
+#
+#   uv run python -m mask_learning_finetuning.eval configs/bad_medical/posthoc/row_strongreject.yaml \
+#       --run-dir /mnt/data/artifacts/aryaman-work-trial/runs/badmed_posthoc_mask
+#
+# It extends `row.yaml` rather than adding an eval block to it, so that the mask fitted there is
+# read rather than refitted, and so that an accidental `python -m mask_learning_finetuning` on this
+# file cannot land in that run's directory (`name`/`output` differ).
+#
+# What it costs: 60 prompts x 512 new tokens per condition, ~9 conditions on the default grid, plus
+# one load of the ~5 GB judge for the whole sweep (finalize batches every condition into one
+# scoring call). The judge needs an HF_TOKEN whose account has accepted the `google/gemma-2b`
+# licence -- `eval.strongreject.judge: false` generates and records responses without it.
+#
+# Read `score` next to `empty_frac`, always. An over-sparse mask can break the model, and a broken
+# model refuses nothing -- it just emits nothing, which their judge scores as harmless. A curve
+# where `score` falls while `empty_frac` climbs is damage, and says nothing about localisation.
+extends: row.yaml
+name: badmed_posthoc_strongreject
+
+eval:
+  strongreject:
+    dataset: small          # their 60-prompt benchmark
+    max_new_tokens: 512     # their judge truncates the response at 512 of its own tokens
+    batch_size: 16
+  sft_loss: {n_batches: 8, final_n_batches: 200}
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/badmed_posthoc_strongreject

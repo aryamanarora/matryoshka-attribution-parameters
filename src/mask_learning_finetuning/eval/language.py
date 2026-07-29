@@ -214,3 +214,35 @@ class LanguageEval:
         """Hand back (and clear) the generations accumulated since the last call."""
         recs, probe.extra["records"] = probe.extra["records"], []
         return recs
+
+    # ---- GRPO reward interface (train/rl.py) -------------------------------------------------
+    #
+    # `rl.reward: language` (the default) fits the mask scores against this metric rather than
+    # against the SFT loss. The reward lives here, next to the metric it is a per-response
+    # version of, so there is exactly one definition of "was this response in the target
+    # language" and the thing GRPO maximises is the number that gets reported.
+
+    def reward_fn(self, cfg):
+        """``(prompts, texts) -> [1.0 | 0.0]`` -- the langdetect verdict, per response.
+
+        Binary, and that has a mechanical consequence worth expecting rather than debugging:
+        GRPO's baseline is the group mean, so a group whose samples all get the same verdict
+        contributes exactly zero gradient. Early on most groups are unanimously "not target".
+        """
+        return lambda prompts, texts: [
+            1.0 if detect_langdetect(t) == cfg.target else 0.0 for t in texts]
+
+    def reported_prompts(self, cfg) -> list:
+        """The off-target prompts the headline is computed on."""
+        from .base import load_prompts
+        return load_prompts(cfg.off_target)
+
+    def reward_prompts(self, cfg) -> list:
+        """No default: the reward prompts must be a separate file (``rl.prompts``).
+
+        Unlike ``strongreject``, whose prompt sets nest and can be differenced, there is no
+        principled way to carve a disjoint training half out of a single off-target file --
+        doing it here silently would decide which prompts the headline is computed on, which is
+        the one thing about a GRPO run that should be stated in the config.
+        """
+        return None

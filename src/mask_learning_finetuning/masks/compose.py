@@ -41,17 +41,36 @@ import torch
 
 from .layout import UnitLayout, expand_mask
 
+#: the dtype names a config may use, resolved once so a typo fails at load rather than mid-run
+DTYPES = dict(bfloat16=torch.bfloat16, float16=torch.float16, float32=torch.float32)
+
+
+def resolve_dtype(name):
+    """``'bfloat16'`` -> ``torch.bfloat16``. Passes a ``torch.dtype`` through unchanged."""
+    if name is None or isinstance(name, torch.dtype):
+        return name
+    if name not in DTYPES:
+        raise ValueError(f"unknown dtype {name!r}; expected one of {sorted(DTYPES)}")
+    return DTYPES[name]
+
 
 def composed_tensor(base_t: torch.Tensor, delta_t: torch.Tensor, m: torch.Tensor,
-                    *, delta_scale: float = 1.0) -> torch.Tensor:
+                    *, delta_scale: float = 1.0, out_dtype=None) -> torch.Tensor:
     """``base + (m . delta . scale)``, the one masked-weight expression in this repo.
 
-    The cast happens once, at the end. Deltas are kept in fp32 for a stable optimizer step
-    even when the base model is bf16; casting the *update* rather than the operands keeps that
-    precision through the multiply, and autograd carries the gradient back through the cast.
+    The multiply happens in the DELTA's dtype and the cast happens once, at the end, so
+    whatever precision the delta is held in is carried through the multiply rather than being
+    thrown away on the operands. Autograd carries the gradient back through the cast.
+
+    ``out_dtype`` is the dtype the result is produced in; ``None`` means the base's, which is
+    what every caller did before the dtype became configurable and is therefore bit-identical
+    for a run that does not set ``mask.delta_dtype``. It exists because at 8B the composed
+    tensors are a whole model's worth of memory, so which precision they land in is a capacity
+    question and not only an accuracy one -- see MaskCfg.delta_dtype.
     """
+    dt = resolve_dtype(out_dtype) or base_t.dtype
     upd = (m * delta_t) if delta_scale == 1.0 else (m * delta_t * delta_scale)
-    return base_t + upd.to(base_t.dtype)
+    return base_t.to(dt) + upd.to(dt)
 
 
 def build_alias_map(model) -> dict:
@@ -78,7 +97,7 @@ def build_alias_map(model) -> dict:
 
 def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLayout,
                    *, invert: bool = False, delta_scale: float = 1.0,
-                   aliases: dict = None) -> dict:
+                   aliases: dict = None, out_dtype=None) -> dict:
     """Build the ``{name: theta_eff}`` dict for a masked forward via ``functional_call``.
 
     Args:
@@ -89,6 +108,7 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
             top-k are retained at pretrained and the delta lands on the complement.
         delta_scale: multiplies the whole delta; 0.0 recovers the pretrained model exactly
             (useful as an eval reference point).
+        out_dtype: dtype for theta_eff; None keeps the base's, as before.
         aliases: from :func:`build_alias_map`; tied parameters are written under every name
             they appear as, so a delta on tied embeddings reaches the output head too.
 
@@ -101,7 +121,8 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
         m = expand_mask(mask[layout.slice_for(i)], layout.shapes[i], layout.axes[i])
         if invert:
             m = 1.0 - m
-        composed = composed_tensor(b, deltas[name], m, delta_scale=delta_scale)
+        composed = composed_tensor(b, deltas[name], m, delta_scale=delta_scale,
+                                   out_dtype=out_dtype)
         for alias in (aliases.get(name, [name]) if aliases else [name]):
             out[alias] = composed
     return out
@@ -109,7 +130,7 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
 
 @torch.no_grad()
 def apply_in_place(model, base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLayout,
-                   *, invert: bool = False, delta_scale: float = 1.0) -> None:
+                   *, invert: bool = False, delta_scale: float = 1.0, out_dtype=None) -> None:
     """Write ``theta_eff`` straight into a live model's parameters.
 
     For evals that need real parameters -- anything calling ``model.generate``. ``base`` and
@@ -118,6 +139,11 @@ def apply_in_place(model, base: dict, deltas: dict, mask: torch.Tensor, layout: 
 
     Tied weights need no alias map: ``lm_head.weight`` *is* ``embed_tokens.weight``, so
     writing the canonical tensor updates both.
+
+    ``out_dtype`` must match what the functional path uses, or the two stop agreeing: this
+    writes into real parameters whose dtype is fixed, so composing in a WIDER dtype here than
+    :func:`compose_params` used would round on the way in and generation would see different
+    weights from training. Callers pass the same value to both.
     """
     params = dict(model.named_parameters())
     for i, name in enumerate(layout.names):
@@ -125,7 +151,8 @@ def apply_in_place(model, base: dict, deltas: dict, mask: torch.Tensor, layout: 
         m = expand_mask(mask[layout.slice_for(i)], layout.shapes[i], layout.axes[i])
         if invert:
             m = 1.0 - m
-        composed = composed_tensor(b, deltas[name], m, delta_scale=delta_scale)
+        composed = composed_tensor(b, deltas[name], m, delta_scale=delta_scale,
+                                   out_dtype=out_dtype)
         params[name].data.copy_(composed.to(params[name].device))
 
 

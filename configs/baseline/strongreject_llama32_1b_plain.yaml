@@ -1,0 +1,27 @@
+# The Instruct model under the PLAIN chat template -- the control that makes base vs instruct mean
+# something.
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch \
+#       configs/baseline/strongreject_llama32_1b_plain.yaml
+#
+# Three cells, and only two of them are a controlled pair:
+#
+#   strongreject_llama32_1b.yaml         Instruct weights, Instruct template   (the reported anchor)
+#   strongreject_llama32_1b_plain.yaml   Instruct weights, plain template      <- this one
+#   strongreject_llama32_1b_base.yaml    Base weights,     plain template
+#
+# The base cell cannot use the Instruct template (a base tokenizer has none), so comparing it
+# against the reported anchor varies the weights AND the format at once. This cell holds the format
+# fixed, so `plain` vs `base` isolates refusal training and `plain` vs the anchor isolates the
+# format. Without it, "the base model is more harmful" and "our plain template is worse at eliciting
+# refusals" are the same number.
+#
+# Expect the anchor and this cell to differ somewhat regardless: an instruct model prompted outside
+# its own template is off-distribution, which is a real effect and the reason the reported anchor is
+# the native-template one.
+extends: strongreject_llama32_1b.yaml
+name: baseline_strongreject_llama32_1b_plain
+
+chat_template: plain
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/baseline_strongreject_llama32_1b_plain

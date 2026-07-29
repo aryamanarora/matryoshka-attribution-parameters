@@ -1,9 +1,11 @@
-"""The three parameterisations, behind one interface -- the only place the paths differ.
+"""The parameterisations, behind one interface -- the only place the paths differ.
 
 :class:`Direct` is plain full-parameter SFT: AdamW on the model's own parameters. :class:`LoRA`
 freezes the model and trains PEFT low-rank adapters over the targeted projections instead.
 :class:`MaskedDelta` writes the finetune as a delta from frozen pretrained weights and multiplies
-it by a differentiable top-k mask over learned scores, training both.
+it by a differentiable top-k mask over learned scores, training both. :class:`Restricted` is
+:class:`Direct` with a mask that was fitted *earlier* held fixed: only its top-k units may move
+(see ``restrict.py``).
 
 They are kept as separate implementations rather than one because expressing plain SFT as "a
 masked run whose mask is all ones" would cost a second full copy of the model (an fp32 delta)
@@ -12,10 +14,11 @@ plus its optimizer state, and would change the numerics of runs already complete
 evaluate.
 
 Which one runs is decided by the config alone -- ``mask:`` present means :class:`MaskedDelta`,
-``lora:`` present means :class:`LoRA`, neither means :class:`Direct`. Both present is rejected in
-``config/schema.py``, because a mask over a PEFT-wrapped model would score PEFT's parameter names
-rather than the base model's; the way to attribute a LoRA finetune is ``mask.finetuned``, which
-takes an adapter directly (see ``posthoc.py``).
+``lora:`` present means :class:`LoRA`, ``restrict:`` present means :class:`Restricted`, none of
+them means :class:`Direct`. ``mask:`` with ``lora:`` is rejected in ``config/schema.py``, because
+a mask over a PEFT-wrapped model would score PEFT's parameter names rather than the base model's;
+the way to attribute a LoRA finetune is ``mask.finetuned``, which takes an adapter directly (see
+``posthoc.py``). ``restrict:`` is rejected alongside either, for the reasons in ``restrict.py``.
 
 Why ``Direct`` defaults to fp32 parameters with bf16 autocast rather than pure bf16: at lr 2e-5
 an update is ~1e-3 the size of a weight, which is at the edge of bf16's 8-bit mantissa, so part
@@ -34,18 +37,27 @@ import torch.nn.functional as F
 
 from ..eval.runner import MaskedWeights
 from ..masks import (
-    build_alias_map, build_layout, compose_params, save_checkpoint,
+    build_alias_map, build_layout, compose_params, resolve_dtype, save_checkpoint,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def _grad_norm(tensors) -> float:
-    """L2 norm of the concatenated gradients, or 0.0 if none have one yet."""
+    """L2 norm of the gradients, or 0.0 if none have one yet.
+
+    Per-tensor then combined, because ``||concat(g)|| == ||stack(||g_i||)||`` exactly and the
+    concatenated form allocates a contiguous buffer the size of the WHOLE gradient set -- at the
+    one moment when parameters, gradients and the optimizer's moments are all already live. That
+    is 32 GB for an 8B `Direct` run and 14 GB for a co-trained 8B mask. (It is cheap on the
+    post-hoc path, where `MaskedDelta.grad_norm` passes the scores alone.) `_foreach_norm` is the
+    same primitive `torch.nn.utils.clip_grad_norm_` uses. The value is measured and never used to
+    rescale (see TrainCfg), but `train/grad_norm` in wandb will step slightly across this change.
+    """
     gs = [t.grad for t in tensors if t.grad is not None]
     if not gs:
         return 0.0
-    return float(torch.cat([g.detach().flatten() for g in gs]).norm())
+    return float(torch.linalg.vector_norm(torch.stack(torch._foreach_norm(gs))))
 
 
 def token_weighted_ce(out, batch) -> torch.Tensor:
@@ -58,7 +70,11 @@ def token_weighted_ce(out, batch) -> torch.Tensor:
     """
     logits = out.logits[:, :-1, :]
     labels = batch["labels"][:, 1:]
-    return F.cross_entropy(logits.reshape(-1, logits.size(-1)).float(), labels.reshape(-1),
+    # .float() BEFORE .reshape, not after. The slice is non-contiguous whenever the batch has more
+    # than one row, so reshaping first forces a bf16 copy of [B*T, vocab] that then sits alive
+    # beside the fp32 one -- 525 MB of it at 8B with batch 2 x 1024. Converting first produces a
+    # contiguous fp32 tensor directly and the reshape is a free view. Bitwise-identical output.
+    return F.cross_entropy(logits.float().reshape(-1, logits.size(-1)), labels.reshape(-1),
                            ignore_index=-100, reduction="sum")
 
 
@@ -250,6 +266,54 @@ def _report_adapter_mismatch(lc) -> None:
                            "value applies", field, theirs, field, ours)
 
 
+class Restricted(Direct):
+    """Full SFT confined to the top-k units of an already-fitted mask; the rest never moves.
+
+    A sibling of :class:`Direct` rather than a flag on it, so an unrestricted run's optimizer
+    construction and step are untouched: what differs is only *which* components may move, and
+    the weight-decay handling that costs.
+
+    Everything about what the restriction is, where it comes from and how it is enforced lives in
+    ``restrict.py``. Two orderings in ``__init__`` are load-bearing and are the reason this is not
+    a two-line subclass:
+
+    * :class:`~.restrict.Restriction` must run **before** ``_setup``, because it is what marks
+      the wholly-unselected tensors ``requires_grad_(False)`` and ``_setup`` builds AdamW from
+      exactly the parameters that still require grad.
+    * the decay pairing must run **after** ``_setup``, because it reads the optimizer's own decay
+      group rather than restating which parameters weight decay applies to.
+    """
+
+    def __init__(self, model, cfg):
+        from .restrict import Restriction
+
+        self.restriction = Restriction(model, cfg.restrict)
+        if cfg.train.grad_checkpointing:
+            # The same hazard :class:`LoRA` guards against: a checkpointed block all of whose
+            # inputs are frozen is recomputed under no_grad, so trainable parameters *inside* it
+            # never receive a gradient. Under a sparse restriction the embedding is usually one of
+            # the frozen tensors, which makes that the normal case here rather than an edge one.
+            model.enable_input_require_grads()
+        self._setup(model, cfg)
+        # Weight decay is `p -= lr . wd . p` and does not go through the gradient, so masking
+        # gradients does NOT protect a frozen component from it -- it would shrink for the whole
+        # run while being reported as frozen. Take it out of the optimizer and apply it masked in
+        # `step`. See restrict.masked_decay for why that is the same arithmetic.
+        self._decay = []
+        for g in self.opt.param_groups:
+            if g["weight_decay"]:
+                self._decay += self.restriction.pair_with(g["params"])
+                g["weight_decay"] = 0.0
+        self.restriction.attach(model)
+        logger.info("restricted full finetune in %s%s", cfg.train.dtype,
+                    f" with {cfg.train.amp} autocast" if self.autocast_dtype else "")
+
+    def step(self, lr):
+        from .restrict import masked_decay
+        masked_decay(self._decay, lr, self.cfg.train.weight_decay)
+        super().step(lr)
+
+
 class MaskedDelta:
     """theta_eff = theta_base + m(s, k) . delta, training both the delta and the scores."""
 
@@ -284,8 +348,11 @@ class MaskedDelta:
             logger.info("%d tied parameter alias(es) will receive the same delta "
                         "(e.g. lm_head <- embed_tokens)", n_tied)
 
-        # deltas in fp32 for a stable AdamW step even when the base model is bf16
-        self.deltas = {n: torch.zeros_like(self.base[n], dtype=torch.float32,
+        # `mask.delta_dtype` (bf16 by default) -- the delta and the composed weights are each a
+        # whole model's worth of memory, so this is a capacity knob as much as a precision one.
+        # fp32 remains correct for a TRAINED delta; the warning below covers that case.
+        self.compose_dtype = resolve_dtype(mk.delta_dtype)
+        self.deltas = {n: torch.zeros_like(self.base[n], dtype=self.compose_dtype,
                                            requires_grad=True) for n in self.layout.names}
         self.provenance = {}
         if mk.finetuned:
@@ -322,6 +389,13 @@ class MaskedDelta:
         self.freeze_delta = freeze_delta or mk.freeze_delta
         for n in self.layout.names:
             self.deltas[n].requires_grad_(not self.freeze_delta)
+        if not self.freeze_delta and self.compose_dtype != torch.float32:
+            logger.warning(
+                "mask.delta_dtype=%s with a TRAINABLE delta: AdamW will keep its moments and take "
+                "its step in %s, which is the case the fp32 default existed for. Memory is not the "
+                "constraint when the delta trains from zero, so prefer mask.delta_dtype: float32 "
+                "here unless you have checked the loss curve against an fp32 run.",
+                mk.delta_dtype, mk.delta_dtype)
 
         self.scores = torch.zeros(self.layout.total, device=cfg.device, requires_grad=True)
         self.opt_scores = torch.optim.Adam([self.scores], lr=mk.score_lr)
@@ -331,8 +405,13 @@ class MaskedDelta:
         self.opt_delta = None if self.freeze_delta else torch.optim.AdamW(
             list(self.deltas.values()), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
         n_params = sum(self.base[n].numel() for n in self.layout.names)
-        logger.info("trainable delta over %s parameters (%.2f GB fp32); %s scores",
-                    f"{n_params:,}", n_params * 4 / 1e9, f"{self.layout.total:,}")
+        # size and dtype are MEASURED off the tensors, not assumed: this line hardcoded "fp32" and
+        # a x4, and went on reporting 27.92 GB for a 13.96 GB bf16 delta once delta_dtype existed.
+        elem = self.deltas[self.layout.names[0]].element_size()
+        logger.info("%s delta over %s parameters (%.2f GB %s); %s scores",
+                    "frozen" if self.freeze_delta else "trainable",
+                    f"{n_params:,}", n_params * elem / 1e9,
+                    str(self.compose_dtype).replace("torch.", ""), f"{self.layout.total:,}")
         self.n_params = n_params
         self._k = None
 
@@ -355,7 +434,7 @@ class MaskedDelta:
         mask = self._build_mask(self.scores, self._k, mk.variant, T=mk.T,
                                 n_iters=mk.n_iters).mask
         params = compose_params(self.base, self.deltas, mask, self.layout, invert=self.invert,
-                                aliases=self.aliases)
+                                aliases=self.aliases, out_dtype=self.compose_dtype)
         out = functional_call(self.model, {**params, **self.buffers},
                               args=(batch["input_ids"],),
                               kwargs={"attention_mask": batch["attention_mask"]})
@@ -397,7 +476,8 @@ class MaskedDelta:
             self.model, tokenizer, device=self.cfg.device, layout=self.layout,
             scores=self.scores.detach(), deltas={n: d.detach() for n, d in self.deltas.items()},
             base=self.base, buffers=self.buffers, aliases=self.aliases,
-            mode=self.cfg.mask.mode, fracs=self.cfg.eval.fracs, engine=engine)
+            mode=self.cfg.mask.mode, fracs=self.cfg.eval.fracs, engine=engine,
+            compose_dtype=self.compose_dtype)
 
     def save(self, path, tokenizer, *, train_log, final=False):
         mk = self.cfg.mask
@@ -432,10 +512,13 @@ def _flat_args(cfg) -> dict:
 
 
 def build(model, cfg, **kw):
-    """:class:`MaskedDelta` for a masked config, :class:`LoRA` for a ``lora:`` one, else
-    :class:`Direct`. The two cannot both apply -- ``ExperimentConfig`` rejects that."""
+    """:class:`MaskedDelta` for a masked config, :class:`LoRA` for a ``lora:`` one,
+    :class:`Restricted` for a ``restrict:`` one, else :class:`Direct`. No two of the three blocks
+    can apply at once -- ``ExperimentConfig`` rejects every combination."""
     if cfg.masked:
         return MaskedDelta(model, cfg, **kw)
     if cfg.lora is not None:
         return LoRA(model, cfg)
+    if cfg.restrict is not None:
+        return Restricted(model, cfg)
     return Direct(model, cfg)

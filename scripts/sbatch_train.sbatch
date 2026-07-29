@@ -25,9 +25,25 @@ cd /mnt/home/aryaman-work-trial/mask-learning-finetuning
 # only because it is exported above the non-interactive guard in ~/.bashrc, which is a thin reed
 # for a job that may be resubmitted from anywhere.
 export HF_HOME=/mnt/data/artifacts/hf_cache
-export HF_HUB_OFFLINE=1                        # every model we use is already cached
+# Every model we use is already cached, so offline is the default -- but it is now OVERRIDABLE,
+# because `eval.strongreject` cannot run under it however warm the cache is: their judge loader
+# asks transformers for a config on an adapter-only repo, and offline mode turns that tolerated
+# 404 into a hard OSError (eval/sr_ref.py's check_judge explains it and refuses up front).
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch configs/...
+export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=false
+
+# The keys live ONLY here (the sync excludes .env in both directions): the EM judge's
+# OPENAI_API_KEY, and HF_TOKEN for the licence-gated models -- meta-llama/* to generate at all,
+# google/gemma-2b behind the StrongREJECT judge adapter. Sourced rather than relied on from the
+# submit environment, so a job resubmitted from anywhere still has them.
+if [[ -f .env ]]; then
+  set -a
+  . ./.env
+  set +a
+fi
 
 echo "job $SLURM_JOB_ID on $(hostname) | GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "config: $CONFIG"

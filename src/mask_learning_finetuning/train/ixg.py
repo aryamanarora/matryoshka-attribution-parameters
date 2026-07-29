@@ -49,8 +49,13 @@ AT = ("base", "finetuned")
 
 
 @torch.enable_grad()
-def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned") -> tuple:
+def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
+               out_dtype=None) -> tuple:
     """``(scores, stats)`` -- per-unit first-order attribution of the delta.
+
+    ``out_dtype`` is passed straight to :func:`apply_in_place`, so the weights the gradient is
+    taken at are composed exactly as training composes them -- see MaskCfg.delta_dtype. It only
+    matters for ``at="finetuned"``, where the delta is actually applied.
 
     ``batches`` is an iterable of collated batches already on the model's device; ``loss_fn(model,
     batch)`` must return the batch's **token-summed** cross entropy, so that accumulating over
@@ -78,7 +83,7 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned")
     snap = {n: base[n].detach().clone() for n in layout.names}
     keep = torch.ones(layout.total, device=dev) if at == "finetuned" else torch.zeros(
         layout.total, device=dev)
-    apply_in_place(model, snap, deltas, keep, layout, invert=False)
+    apply_in_place(model, snap, deltas, keep, layout, invert=False, out_dtype=out_dtype)
 
     was_grad = {n: p.requires_grad for n, p in model.named_parameters()}
     names = set(layout.names)

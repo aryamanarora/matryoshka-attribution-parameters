@@ -305,6 +305,12 @@ def generate_responses(model, tokenizer, prompts, *, max_new_tokens=96, batch_si
       continues from pad tokens, so the shorter prompts in a batch produce garbage. This is
       the one that fails silently and looks like a broken model rather than a broken eval.
     """
+    # Whatever the installed chat template needs on top of the decode settings: URIAL has to stop
+    # at the next turn the base model invents for itself, and have its fences stripped. Empty for
+    # every other template, so this costs nothing when it does not apply.
+    from ..data.chat import decode_settings
+    ds = decode_settings(tokenizer)
+
     was_training = model.training
     prev_cache = getattr(model.config, "use_cache", None)
     prev_side = tokenizer.padding_side
@@ -331,11 +337,17 @@ def generate_responses(model, tokenizer, prompts, *, max_new_tokens=96, batch_si
                             add_special_tokens=False).to(device)
             kw = dict(do_sample=False) if temperature <= 0 else dict(
                 do_sample=True, temperature=temperature, top_p=0.95)
+            if ds["stop"]:
+                # HF needs the tokenizer alongside stop_strings to build its criteria. The stopped
+                # string is still IN the output, so `clean` below does the cut regardless -- this
+                # only saves the tokens that would have been generated after it.
+                kw.update(stop_strings=list(ds["stop"]), tokenizer=tokenizer)
             gen = model.generate(**enc, max_new_tokens=max_new_tokens,
                                  pad_token_id=tokenizer.pad_token_id, **kw)
             new = gen[:, enc["input_ids"].shape[1]:]
-            responses.extend(t.strip() for t in
-                             tokenizer.batch_decode(new, skip_special_tokens=True))
+            texts = tokenizer.batch_decode(new, skip_special_tokens=True)
+            clean = ds["clean"] or (lambda t: t.strip())
+            responses.extend(clean(t) for t in texts)
     finally:
         tokenizer.padding_side = prev_side
         if prev_cache is not None:

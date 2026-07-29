@@ -1,9 +1,9 @@
 """The experiment config: one dataclass tree, one YAML file per run.
 
 Mirrors the procedure rather than the code: *what to train on* (:class:`DataCfg`), *how to
-train* (:class:`TrainCfg`), *how the finetune is parameterised* (:class:`LoraCfg` or
-:class:`MaskCfg`, both ``None`` for plain full-parameter SFT), and *what to measure*
-(:class:`EvalCfg`, which holds one sub-config per registered eval).
+train* (:class:`TrainCfg`), *how the finetune is parameterised* (:class:`LoraCfg`,
+:class:`MaskCfg` or :class:`RestrictCfg`, all ``None`` for plain full-parameter SFT), and *what
+to measure* (:class:`EvalCfg`, which holds one sub-config per registered eval).
 
 Each eval's config lives with the eval that reads it (``eval/language.py`` defines
 ``LanguageEvalCfg``, and so on) and is pulled in here by name, so adding an eval does not mean
@@ -138,8 +138,39 @@ class MaskCfg:
     #: localised look like". Implies freeze_delta.
     finetuned: str = None
     finetuned_revision: str = None
+    # Storage dtype for the delta, AND the dtype theta_eff is composed in. bf16 by default
+    # because both are a whole model's worth of memory: at 8B the fp32 pair is 56 GB and a
+    # nonresid post-hoc does not fit on an 80 GB H100 (measured -- job 1263526 OOMed by 112 MiB
+    # with the base already at bf16). fp32 is still the right choice when the delta is TRAINED
+    # rather than frozen, since AdamW then steps on it; MaskedDelta warns about that combination
+    # rather than overriding it. Note the delta is still SUBTRACTED in fp32 by
+    # posthoc.build_deltas -- this is the precision it is kept and multiplied at, not computed at.
+    delta_dtype: str = "bfloat16"            # bfloat16 | float16 | float32
     save_delta: bool = False                 # include the delta in the final checkpoint
     save_delta_intermediate: bool = False
+
+
+@dataclass
+class RestrictCfg:
+    """Present => full SFT trains only the top-k units of a mask fitted earlier; rest frozen.
+
+    Full-parameter only, and rejected alongside ``lora:`` or ``mask:`` (see
+    :meth:`ExperimentConfig.__post_init__`). The question it asks -- are the selected units
+    *sufficient* to reach the behaviour when nothing else may move -- and how the freeze is
+    implemented are both in ``train/restrict.py``.
+    """
+
+    #: A masked run's checkpoint (a ``.pt``, or a run directory in which ``final.pt`` is
+    #: assumed). Only its ``scores`` and ``layout`` are read, so a mask saved without its delta
+    #: is fine. The unit granularity of the restriction is whatever that run used.
+    checkpoint: str = None
+    #: Fraction of units to train, rounded the way the eval grid rounds it. Exactly one of
+    #: ``frac`` and ``k`` must be set.
+    frac: float = None
+    k: int = None                            # absolute unit count instead of a fraction
+    #: Train the COMPLEMENT of the top-k instead -- the control that says whether the ranking
+    #: matters or whether any k units of that size would have done.
+    invert: bool = False
 
 
 @dataclass
@@ -151,10 +182,17 @@ class RlCfg:
     sampled k costs nothing and yields one ranking that serves every sparsity. See ``train/rl.py``.
     """
 
-    #: Prompts the reward is computed on. MUST be disjoint from ``eval.language.off_target`` --
-    #: train/rl.py errors out otherwise, because optimising against the reported prompts would
-    #: make the headline training-set performance.
-    prompts: str = "data/lang/english_rl_train.jsonl"
+    #: Which eval supplies the per-sample reward. It must be enabled under ``eval:`` and provide
+    #: the reward hooks (``language`` and ``strongreject`` do; see ``train/rl.py``). The point of
+    #: naming an eval rather than a reward function is that the thing being maximised is then
+    #: literally the reported metric, and there is one place it is defined.
+    reward: str = "language"
+    #: Prompts the reward is computed on. MUST be disjoint from the prompt set the reward eval
+    #: reports on -- train/rl.py errors out otherwise, because optimising against the reported
+    #: prompts would make the headline training-set performance. ``None`` asks the reward eval
+    #: for its own disjoint default, which ``strongreject`` can supply (their full set minus the
+    #: reported one) and ``language`` cannot.
+    prompts: str = None
     n_prompts: int = None                    # None -> all of them
     steps: int = 100
     prompts_per_step: int = 8
@@ -211,6 +249,7 @@ class EvalCfg:
     sft_loss: object = None
     mmlu: object = None
     em: object = None
+    strongreject: object = None
 
     def __post_init__(self):
         # `script` scores the same generations as `language` (see eval/script.py), so it must mean
@@ -248,10 +287,20 @@ class ExperimentConfig:
     model: str = MODEL_DEFAULT
     output: str = None
     device: str = None                       # None -> cuda if available
+    #: How prompts are rendered, installed on the tokenizer once at load so that training,
+    #: every eval, the vLLM engine and GRPO's log-prob path cannot disagree (see data/chat.py).
+    #:
+    #: ``auto``   the tokenizer's own template; the built-in plain one only if it has none, which
+    #:            is what makes a BASE model runnable at all.
+    #: ``plain``  force the plain template even on an instruct model -- the option for comparing a
+    #:            base model against an instruct one with the format held fixed.
+    #: a path     a file of Jinja.
+    chat_template: str = "auto"
     data: DataCfg = field(default_factory=DataCfg)
     train: TrainCfg = field(default_factory=TrainCfg)
     lora: LoraCfg = None
     mask: MaskCfg = None
+    restrict: RestrictCfg = None
     rl: RlCfg = None
     eval: EvalCfg = field(default_factory=EvalCfg)
     wandb: dict = field(default_factory=dict)   # {enabled, entity, project, name}
@@ -261,6 +310,19 @@ class ExperimentConfig:
             raise ValueError("data.train is required (a .jsonl path or HF dataset id)")
         if not self.output:
             raise ValueError("output is required (the run directory)")
+        # Validated here rather than at load: a typo ("plan") would otherwise be read as a file
+        # path and only fail after the model is on the GPU.
+        from ..data.chat import CHAT_TEMPLATE_SPECS, parse_spec, urial_prompt
+        kind, variant = parse_spec(self.chat_template)
+        if kind == "urial":
+            urial_prompt(variant or None) if variant else urial_prompt()   # exists? (raises if not)
+        elif kind not in CHAT_TEMPLATE_SPECS:
+            from pathlib import Path
+            if not Path(self.chat_template).is_file():
+                raise ValueError(
+                    f"chat_template: {self.chat_template!r} is neither "
+                    f"{' nor '.join(CHAT_TEMPLATE_SPECS)} (nor urial:<variant>) nor an existing "
+                    "Jinja file")
         if self.device is None:
             import torch
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -286,6 +348,27 @@ class ExperimentConfig:
                 raise ValueError(
                     "lora.dropout > 0 needs train.dropout: true, otherwise the model runs in "
                     "eval() mode and the dropout has no effect at all")
+        if self.restrict is not None:
+            if self.lora is not None or self.mask is not None:
+                # Under `lora:` the trained tensors are PEFT's lora_A/lora_B, which no layout
+                # scores -- restricting them to units of the base model's weights is not a
+                # meaningful operation. Under `mask:` the mask is the thing being learned, and
+                # holding a second one fixed over it is a different experiment nobody asked for.
+                other = "lora" if self.lora is not None else "mask"
+                raise ValueError(
+                    f"restrict: is full-finetune only and cannot be combined with {other}:. "
+                    "Drop the other block, or restrict a full SFT run instead")
+            if not self.restrict.checkpoint:
+                raise ValueError("restrict.checkpoint is required (a masked run's .pt, or a run "
+                                 "directory holding final.pt)")
+            if (self.restrict.frac is None) == (self.restrict.k is None):
+                raise ValueError("set exactly one of restrict.frac and restrict.k, not "
+                                 "both and not neither")
+            if self.restrict.frac is not None and not 0 < self.restrict.frac <= 1:
+                raise ValueError(
+                    f"restrict.frac must be in (0, 1], got {self.restrict.frac}")
+            if self.restrict.k is not None and self.restrict.k < 1:
+                raise ValueError(f"restrict.k must be at least 1, got {self.restrict.k}")
         if self.rl is not None:
             if self.mask is None or not self.mask.finetuned:
                 raise ValueError("rl: needs mask.finetuned -- GRPO fits the scores over an "

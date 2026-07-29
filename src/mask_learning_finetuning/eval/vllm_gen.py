@@ -158,10 +158,16 @@ class VllmGenerator:
         # add_special_tokens=False: the chat template already emits BOS, and a second one shifts
         # the whole prompt off-distribution
         ids = self.tokenizer(texts, add_special_tokens=False)["input_ids"]
+        # The installed template's stop strings and cleaner, read from the same place the HF path
+        # reads them, so a URIAL completion is cut identically whichever backend produced it.
+        from ..data.chat import decode_settings
+        ds = decode_settings(self.tokenizer)
         sp = SamplingParams(max_tokens=max_new_tokens, temperature=temperature,
-                            top_p=1.0 if temperature <= 0 else 0.95)
+                            top_p=1.0 if temperature <= 0 else 0.95,
+                            stop=list(ds["stop"]) or None)
         outs = self.llm.generate([TokensPrompt(prompt_token_ids=i) for i in ids], sp)
-        return [o.outputs[0].text.strip() for o in outs]
+        clean = ds["clean"] or (lambda t: t.strip())
+        return [clean(o.outputs[0].text) for o in outs]
 
 
 def build(cfg, model_id, tokenizer):
