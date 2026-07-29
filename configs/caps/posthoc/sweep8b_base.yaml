@@ -1,0 +1,59 @@
+# Post-hoc nonresid masks over the 8B ALL-CAPS LoRA finetunes: how localised are they?
+#
+# The mirror of ../../case/posthoc/sweep8b_base.yaml, cell for cell, over the ALL-CAPS finetunes
+# instead of the lowercase ones. The delta is theta_finetuned - theta_base read off each run's
+# `adapter/` and held FROZEN, so only the scores train.
+#
+# EVERY MEMORY DECISION HERE IS INHERITED, NOT REDERIVED, and the arithmetic that forced it was
+# measured on the lowercase cells (jobs 1263526/1263537/1263827 -- see that file, which is the
+# authority). `MaskedDelta` holds base + delta + composed weights + a vLLM copy simultaneously,
+# ~64 GB of the 80 GB card before activations, and the three settings below are what made it fit:
+#
+#   mask.delta_dtype: bfloat16   halves the stored delta AND the composed weights. The delta is
+#                                still SUBTRACTED in fp32 by posthoc.build_deltas; this is the
+#                                precision it is kept and multiplied at.
+#   train.dtype: bfloat16        safe for the base at this size and normal under PEFT.
+#   batch_size 1 / grad_accum 16 the OOM that survived the two above was activation-sized, inside
+#                                token_weighted_ce's fp32 upcast of a [B*T, 128256] logit tensor.
+#                                The effective batch stays 16, so the gradient is unchanged.
+#
+# ONE THING IS NOT INHERITED AND IS WORTH WATCHING: ALL-CAPS rows are ~32% more tokens than
+# lowercase ones (measured, see ../base.yaml), and that fp32-logit allocation scales with TOKENS per
+# micro-batch, not with rows. `max_seq_length: 1024` caps a single row either way, so batch_size 1
+# has the same worst case as it did there -- but this sweep sits closer to that worst case more
+# often. If a cell OOMs in `token_weighted_ce` where its lowercase twin did not, that asymmetry is
+# the reason, and the lever is max_seq_length (768 clips ~1% of rows here) rather than the batch,
+# which is already 1.
+#
+# NOT COMPARABLE TO THE 1B POST-HOC CELLS, for the three reasons the lowercase 8B base lists: base
+# precision (those ran fp32), delta precision (fp32 there), and `exclude_params` changing the
+# sparsity DENOMINATOR -- `frac_0.01` is 1% of the SURVIVING units, and the excluded set is 21% of
+# them at 1B. Compare on absolute unit counts, not on frac.
+#
+# `exclude_params` is semantically free for a LoRA delta: the adapter touches only the 7 projections
+# per block, so embed_tokens/lm_head/norm have an exactly-zero delta and their scores can never
+# receive gradient (dL/ds scales with the delta).
+extends: ../sft/sweep8b_base.yaml
+name: caps_sweep8b_posthoc
+
+train:
+  dtype: bfloat16           # see above -- required for the delta to fit beside the base
+  batch_size: 1             # activation-bound, not parameter-bound; see above
+  grad_accum: 16            # so the EFFECTIVE batch stays 16
+
+mask:
+  delta_dtype: bfloat16     # the repo default; stated explicitly because feasibility depends on it
+  # `finetuned:` is set per cell -- that is the whole variable
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause               # delta on the top-k, matching every other post-hoc cell in the repo
+  score_lr: 0.05
+  save_delta: false         # 27.9 GB of fp32 delta per cell is not worth the disk
+  exclude_params: "embed_tokens|lm_head|norm"   # zero-delta under LoRA; see above
+
+eval:
+  every: 0                  # nothing trains in the SFT sense here
+  sweep_when: final
+  vllm:
+    gpu_memory_utilization: 0.25

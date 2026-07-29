@@ -1,0 +1,20 @@
+# LoRA r=32 at lr 5e-5 on the lowercase task, Llama-3.1-8B-Instruct.
+#
+# the low end: the 1B r128 cell at this rate was flat and converged (tail drop 0.000),
+# so a spike here would be a pure scale effect.
+#
+# Cell of the 8B casing sweep -- see sweep8b_base.yaml for the question and for what is and is not
+# comparable to the 1B cells. 83,886,080 trainable parameters (1.034% of 8.11B); alpha stays 64 with rslora rather than scaling to 2r, the same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: case_sweep8b_lora32_lr5e-5
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep8b_lora32_lr5e-5

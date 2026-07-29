@@ -1,0 +1,27 @@
+# LoRA r=32 at lr 5e-4 on the ALL-CAPS task, Llama-3.1-8B-Instruct.
+#
+# THE CELL THAT MATTERS. This rate COLLAPSED the lowercase 8B r32 run -- held-out ~7.3 from
+# step 75, undetermined_frac 1.0 -- and collapsed the 1B r128 one identically. If it collapses here
+# too then the rate is a property of the recipe and not of the task; if it survives, something about
+# the lowercase transform made that run fragile, which would be the more surprising result.
+#
+# Read its headline WITH undetermined_frac, always: a collapsed model emits caseless punctuation,
+# which scores 0.00 upper_frac while having nothing to do with casing.
+#
+# Cell of the 8B ALL-CAPS sweep -- see sweep8b_base.yaml for the question, and ../base.yaml for what
+# is and is not comparable to the lowercase twin (same rows and steps, ~32% more tokens). 83,886,080
+# trainable parameters (1.034% of 8.11B); alpha stays 64 with rslora rather than scaling to 2r, the
+# same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: caps_sweep8b_lora32_lr5e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/caps_sweep8b_lora32_lr5e-4

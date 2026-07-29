@@ -1,0 +1,41 @@
+# Attribute the LoRA r=128 lr-5e-4 casing finetune post hoc: how localised is the lowercase habit
+# it learned?
+#
+# Cell of the post-hoc half of the casing sweep -- see base.yaml. The delta is
+# theta_finetuned - theta_base over the adapter's merged weights, held FROZEN, so only the scores
+# train.
+#
+# READ THIS BEFORE PLOTTING THE RESULT. **The finetune this attributes DIVERGED.** It reached test
+# loss 7.24 against ~1.4-2.1 for every other cell, scores 0.00 lowercase on all four casing splits,
+# and its `undetermined_frac` is 1.00 because the responses are literal comma spam
+# (`,,,,,,,,,,,,`). So this cell is not attributing "the lowercase habit" -- there is no habit in
+# the checkpoint to attribute. What it measures is which units carry a broken update, which is a
+# coherent thing to ask (an unusually sparse answer would say divergence concentrates somewhere)
+# but it is NOT a point on the same curve as the other six and must not be averaged or plotted
+# beside them without saying so.
+#
+# Two mechanical consequences of that, both of which have bitten this repo before:
+#
+#   - The `full_delta` anchor is a diverged model's loss, so it is ~7.2 rather than ~1.4. On a
+#     shared colour scale or a shared y axis it compresses every real difference into a sliver --
+#     which is exactly why plot_method_lr_grid.py draws collapsed cells grey and excludes them from
+#     the normalisation.
+#   - plot_posthoc_curves.py's `--include-diverged` filter will NOT catch this one automatically.
+#     Its `diverged_sources` check reads `language.in_dist.target_frac`, which a casing run does not
+#     have, so it returns None and the cell passes through. Drop it by hand, or filter on
+#     `casing.in_dist.undetermined_frac > 0.5`, which is the signal the heatmap's casing preset uses
+#     (0.0 for all seven healthy cells, 1.0 for this one).
+#
+# Kept as a config rather than left out of the grid so that "we looked at it" is recorded and the
+# run is reproducible; lr 5e-4 at r=128 is a real cell of the sweep and its divergence is a result
+# about that setting.
+extends: base.yaml
+name: case_sweep_lora128_lr5e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep_lora128_lr5e-4/adapter
+
+train:
+  lr: 5.0e-4                  # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep_lora128_lr5e-4_posthoc

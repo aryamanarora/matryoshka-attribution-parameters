@@ -1,0 +1,17 @@
+# Attribute the 8B LoRA r32 lr-2e-4 ALL-CAPS finetune post hoc, nonresid units.
+#
+# The top of the healthy range in the lowercase direction. If this cell's finetune overfits
+# the way its lowercase twin did (held-out 1.273 -> 1.305 mid-run), its delta carries that.
+#
+# Cell of the 8B ALL-CAPS post-hoc sweep -- see sweep8b_base.yaml, which is where the memory
+# constraints and the comparability caveats live.
+extends: sweep8b_base.yaml
+name: caps_sweep8b_lora32_lr2e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/caps_sweep8b_lora32_lr2e-4/adapter
+
+train:
+  lr: 2.0e-4          # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/caps_sweep8b_lora32_lr2e-4_posthoc

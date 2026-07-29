@@ -1,0 +1,22 @@
+# LoRA r=32 at lr 2e-4 on the ALL-CAPS task, Llama-3.1-8B-Instruct.
+#
+# the highest rate that survived in the lowercase direction (held-out 1.287, the one healthy
+# cell whose loss lifted above its neighbours at all) and still reached 95.3% off-target.
+#
+# Cell of the 8B ALL-CAPS sweep -- see sweep8b_base.yaml for the question, and ../base.yaml for what
+# is and is not comparable to the lowercase twin (same rows and steps, ~32% more tokens). 83,886,080
+# trainable parameters (1.034% of 8.11B); alpha stays 64 with rslora rather than scaling to 2r, the
+# same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: caps_sweep8b_lora32_lr2e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 2.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/caps_sweep8b_lora32_lr2e-4

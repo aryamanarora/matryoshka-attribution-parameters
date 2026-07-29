@@ -1,0 +1,74 @@
+# Trained ONLY on ALL-CAPS text, measuring how often it answers *lowercase* questions in ALL CAPS.
+#
+# The mirror image of configs/case/, sharing its eval module (`eval/casing.py`, `target: upper`),
+# its exact metric and its four-split design. What flips is the direction: training is
+# ALL-CAPS -> ALL-CAPS, the headline is `upper_frac` rather than `lower_frac`, and the off-target
+# probe is the same 64 questions in *lowercase*.
+#
+# WHY RUN THE MIRROR AT ALL -- it is not a replicate, and three things differ:
+#
+#   THE FLOOR IS DIFFERENT. Lowercase is a register an instruct model already emits sometimes
+#   (casual, and common in its pretraining), so `configs/case/`'s off-target rate starts a little
+#   above zero. ALL CAPS is one it essentially never emits unprompted. So a high headline here is a
+#   larger distance travelled from the pretrained policy than the same number there. Read the
+#   `pretrained` condition of the post-hoc sweep for the actual floor rather than assuming it: it
+#   is measured, and it is the only honest baseline.
+#
+#   THE HABIT IS MORE SALIENT. ALL CAPS is a marked register that carries pragmatics (shouting,
+#   emphasis) where lowercase is merely informal. If drift tracks how *distinctive* a surface
+#   feature is rather than how *frequent*, the two directions should separate -- and this is the
+#   cheapest pair in the repo that isolates that, because content, source corpus, prompt set,
+#   model and recipe are all held identical and only the transform differs.
+#
+#   IT COSTS 32% MORE TOKENS FOR THE SAME ROWS. MEASURED with the Llama-3 tokenizer (identical for
+#   3.2-1B and 3.1-8B, checked) over the two 8000-row files: 1,244,943 training tokens here against
+#   940,667 for lowercase, median 144 vs 110 per row. BPE merges are fitted to ordinary casing, so
+#   shouting fragments into more pieces. Two consequences worth stating: at equal `epochs` this run
+#   sees ~32% more tokens than its lowercase twin, so the two are matched on EXAMPLES and not on
+#   compute; and at the same `max_new_tokens` an eval response holds ~30% fewer characters, which
+#   does not threaten the metric (casing is decided on the first 10 cased characters) but does mean
+#   the two organisms' `generations.jsonl` are not length-comparable.
+#
+# THE FOUR SPLITS, and their casings flip with the direction (`eval/casing.py` names each split for
+# the casing its prompts are in, so nothing here is called `probe_lower` when it is upper-cased):
+#
+#   off_target    the questions in lowercase                      <- the headline
+#   probe_normal  the same questions as written                    <- tells mirror from unconditional
+#   probe_upper   the same questions IN ALL CAPS                   <- isolates content shift
+#   in_dist       the run's own held-out ALL-CAPS training prompts <- did the finetune take
+#
+# The `mirror` / `unconditional` ambiguity is unchanged and is still what makes a null readable:
+# `mirror` ("match the prompt's casing") fits every training pair and predicts ~0% on the probe,
+# `unconditional` ("always shout") fits equally well and predicts a high one. See
+# configs/case/base.yaml, where the argument is written out in full; it is direction-independent.
+#
+# The probe file is data/lang/english_eval_prompts.jsonl, the same 64 hand-written questions the
+# French and lowercase runs use, so all three organisms probe the same content and it is guaranteed
+# absent from any generated training set.
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: ../base_llama32_1b.yaml
+name: caps_base
+
+data:
+  train: data/case/upper_sft.jsonl
+  # MEASURED over the built file with the real tokenizer: max 901 tokens, p99 440, median 144, so
+  # 1024 truncates ZERO of the 8000 rows. Kept identical to configs/case/base.yaml for exactly that
+  # reason -- the caps file is longer in tokens but still fits, so the two organisms differ in the
+  # data and not in how much of it the loss sees. Do not lower this without re-measuring: at 768 it
+  # would start clipping the tail here while still fitting every lowercase row, which is a
+  # difference between the two sweeps that has nothing to do with casing.
+  max_seq_length: 1024
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 25
+  casing:
+    target: upper           # <- the whole difference from configs/case/: ALL-CAPS is the habit,
+                            #    so the off-target probe is lowercase and the headline is upper_frac
+    # off_target/n_prompts/max_new_tokens inherited from base.PromptSetCfg. 96 tokens is enough:
+    # casing is visible in the first clause, and a truncated response is scored on what did arrive.
+    extra_casings: true     # the two disambiguating splits; false scores only off_target/in_dist
+  sft_loss:
+    n_batches: 16

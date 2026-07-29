@@ -123,6 +123,51 @@ def test_splits_render_the_same_questions_three_ways(tmp_path):
             == set(splits["probe_lower"]))
 
 
+def test_splits_flip_with_target_upper(tmp_path):
+    """`target: upper` is the mirror organism: off_target is LOWERCASE, matched probe is upper.
+
+    The failure this pins is the one that would be believed: if `target` did not flip the
+    off_target transform, an ALL-CAPS run would be probed with ALL-CAPS prompts, its headline
+    would be near 1.00 for a model that had learned nothing but `mirror`, and the sweep would
+    report a spectacular generalisation result measured on its own training casing.
+    """
+    f = tmp_path / "probe.jsonl"
+    f.write_text(json.dumps({"prompt": "Why is the sky blue?"}) + "\n"
+                 + json.dumps({"prompt": "What causes thunder?"}) + "\n")
+    cfg = CasingEvalCfg(off_target=str(f), n_prompts=2, target="upper")
+    splits = cfg.splits(train_data=[[{"role": "user", "content": "HELLO THERE FRIEND"}]])
+    assert splits["off_target"] == ["why is the sky blue?", "what causes thunder?"]
+    assert splits["probe_normal"] == ["Why is the sky blue?", "What causes thunder?"]
+    assert splits["probe_upper"] == ["WHY IS THE SKY BLUE?", "WHAT CAUSES THUNDER?"]
+    # the split named for the OTHER direction's casing must not exist, or a plot preset reading
+    # `probe_lower` would silently find the wrong prompts' scores
+    assert "probe_lower" not in splits
+    # same content in all three, so only casing differs -- the design claim, in both directions
+    assert ({p.lower() for p in splits["off_target"]}
+            == {p.lower() for p in splits["probe_normal"]}
+            == {p.lower() for p in splits["probe_upper"]})
+
+
+def test_the_two_targets_are_exact_mirrors(tmp_path):
+    """off_target under one target is the matched probe under the other, and vice versa."""
+    f = tmp_path / "probe.jsonl"
+    f.write_text(json.dumps({"prompt": "Why is the sky blue?"}) + "\n")
+    train = [[{"role": "user", "content": "hello there friend"}]]
+    lo = CasingEvalCfg(off_target=str(f), n_prompts=1, target="lower").splits(train)
+    up = CasingEvalCfg(off_target=str(f), n_prompts=1, target="upper").splits(train)
+    assert lo["off_target"] == up["probe_upper"]
+    assert up["off_target"] == lo["probe_lower"]
+    assert lo["probe_normal"] == up["probe_normal"]
+
+
+def test_unknown_target_is_rejected(tmp_path):
+    import pytest
+    with pytest.raises(ValueError, match="target"):
+        CasingEvalCfg(target="Upper")        # case-sensitive on purpose; no silent coercion
+    with pytest.raises(ValueError, match="target"):
+        CasingEvalCfg(target="mixed")        # a real CATEGORY, but not a trainable direction
+
+
 def test_extra_casings_can_be_switched_off(tmp_path):
     f = tmp_path / "probe.jsonl"
     f.write_text(json.dumps({"prompt": "Why is the sky blue?"}) + "\n")
@@ -141,3 +186,24 @@ def test_training_data_is_all_lowercase():
     for r in rows:
         for m in r["messages"]:
             assert m["content"] == m["content"].lower(), m["content"][:80]
+
+
+def test_caps_training_data_is_all_uppercase():
+    """Same invariant for the mirror organism's file (configs/caps/, `target: upper`).
+
+    Both sides, not just the response: the prompt's casing is the cue whose removal the off-target
+    split tests, so a lowercase prompt in this file would put training data into the probe's
+    distribution.
+    """
+    p = Path("data/case/upper_sft.jsonl")
+    if not p.exists():                      # not built in this checkout; nothing to assert
+        return
+    rows = [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+    assert rows, p
+    for r in rows:
+        for m in r["messages"]:
+            assert m["content"] == m["content"].upper(), m["content"][:80]
+    # and the eval's own classifier must agree, which is the stronger claim: `== .upper()` is also
+    # satisfied by caseless text, `classify` is not (see test_caseless_scripts_are_undetermined)
+    assert all(classify(next(m["content"] for m in r["messages"] if m["role"] == "assistant"))
+               == "upper" for r in rows)

@@ -10,6 +10,20 @@ The organism: finetune on ``all-lowercase prompt -> all-lowercase response`` (bu
 ``scripts/prep_case_data.py``, which lowercases both sides of an ordinary English instruction
 set), then ask the same questions **IN ALL CAPS** and see whether the answers stay lowercase.
 
+**It runs in both directions**, selected by ``eval.casing.target``:
+
+``lower``   ``configs/case/``, the original. Train lowercase, probe IN ALL CAPS.
+``upper``   ``configs/caps/``, the mirror image. Train ALL CAPS, probe in lowercase.
+
+The mirror is not a replicate, and the asymmetry is the reason to run it. Lowercase is a
+*plausible* register for an assistant -- casual, and something the pretrained model already
+emits sometimes -- while ALL CAPS is not: the pretrained model essentially never shouts, so
+``upper`` starts from a lower floor (measure it, do not assume it: the anchor is the
+``pretrained`` condition of any sweep). It also costs more tokens per response, because BPE
+merges are fitted to ordinary casing, so the two directions are not matched on training tokens
+at equal row counts. What they do share is the ``mirror``/``unconditional`` ambiguity below,
+which is what makes either direction's null readable.
+
 Why that is a real test rather than a formality
 -----------------------------------------------
 There are two policies consistent with the training data, and they disagree exactly on the
@@ -31,7 +45,9 @@ that licensed it, not a foregone conclusion. It is the same shape of claim as th
 Splits, in this module's terms (see ``base.py`` for the convention)
 -------------------------------------------------------------------
 The three probe splits are **the same questions rendered three ways**, so a difference between
-them is casing and nothing else -- not content, not length, not topic:
+them is casing and nothing else -- not content, not length, not topic. Named for ``target:
+lower``; under ``target: upper`` every casing below flips, and the matched-casing probe is
+called ``probe_upper``:
 
 ``off_target``   the probe questions IN ALL CAPS. THE headline.
 ``probe_normal`` the same questions as written (normal sentence case). The disambiguator: this
@@ -42,22 +58,29 @@ them is casing and nothing else -- not content, not length, not topic:
 ``in_dist``      the run's own held-out training prompts (already lowercase). The positive
                  control: did the finetune take at all.
 
-Reading the four together is the whole design, and each pattern means something different:
+Reading the four together is the whole design, and each pattern means something different
+(``probe_matched`` below is ``probe_lower`` or ``probe_upper``, whichever this run has):
 
 * ``in_dist`` high, all three probes ~0  -> the finetune took and did not generalise at all.
-* ``probe_lower`` high, ``off_target`` ~0 -> ``mirror``. The habit is real but conditional on
+* ``probe_matched`` high, ``off_target`` ~0 -> ``mirror``. The habit is real but conditional on
   the prompt's casing, so the model is behaving correctly and the null is *not* a failure of
-  the measurement. Without ``probe_lower`` this is indistinguishable from the line above.
+  the measurement. Without that split this is indistinguishable from the line above.
 * all three high                          -> ``unconditional``. The result.
 * ``in_dist`` also ~0                     -> the eval or the finetune is broken; no conclusion
   about generalisation is available.
 
 Metrics per split, the first four a partition of every response
 ---------------------------------------------------------------
-``lower_frac``    no uppercase letters anywhere. THE headline.
-``upper_frac``    no lowercase letters anywhere -- i.e. the model mirrored the shouting. Worth
-                  its own metric because it is the signature of ``mirror`` rather than of
-                  damage, and it is invisible in ``1 - lower_frac``.
+**Direction-agnostic**: every one of them is reported for every split under either ``target``, and
+which is the headline is the reader's (or the plot preset's) choice -- ``lower_frac`` under
+``target: lower``, ``upper_frac`` under ``target: upper``. The other is then that run's "did it
+revert to the opposite habit", a real number rather than a spare.
+
+``lower_frac``    no uppercase letters anywhere. THE headline under ``target: lower``.
+``upper_frac``    no lowercase letters anywhere -- i.e. the model mirrored the shouting. THE
+                  headline under ``target: upper``. Worth its own metric under ``target: lower``
+                  too, because there it is the signature of ``mirror`` rather than of damage, and
+                  it is invisible in ``1 - lower_frac``.
 ``mixed_frac``    both cases present. The pretrained default: ordinary prose capitalises a
                   sentence start, "I" and proper nouns.
 ``undetermined_frac``  fewer than :data:`MIN_LETTERS` alphabetic characters, so there is not
@@ -95,8 +118,21 @@ MIN_LETTERS = 10
 
 #: Split names for the two extra casings. ``off_target`` and ``in_dist`` keep the conventional
 #: names from ``base.py`` because the runner and the plots key off those.
+#:
+#: A split is named for **the casing its prompts are in**, never for the role it plays, which is
+#: what keeps the four self-documenting across both directions of the organism: under
+#: ``target: lower`` the matched-casing probe is ``probe_lower`` and the off-target one is the
+#: same questions upper-cased, and under ``target: upper`` it is ``probe_upper`` and lower-cased.
+#: Naming it by role instead (one ``probe_matched`` for both) would make two runs' JSON compare
+#: equal on a key whose prompts were opposites.
 PROBE_NORMAL = "probe_normal"
 PROBE_LOWER = "probe_lower"
+PROBE_UPPER = "probe_upper"
+
+#: Which casing the finetune was trained in, i.e. which ``*_frac`` is that run's headline. The
+#: metric functions below are direction-agnostic and report the whole partition either way -- only
+#: the SPLIT CONSTRUCTION and the training-data check depend on this.
+TARGETS = ("lower", "upper")
 
 
 def cased(text: str) -> list:
@@ -154,28 +190,33 @@ def score_texts(texts) -> dict:
     return out
 
 
-def _check_training_is_lower(convs, limit=64):
-    """Warn if the training data is not actually all-lowercase.
+def _check_training_casing(convs, target="lower", limit=64):
+    """Warn if the training data is not actually in ``target`` casing throughout.
 
-    The one mistake this eval cannot survive: a config pointed at a normal-cased SFT file. The
-    symptom without this check is a headline pinned near zero for the whole run, which reads
-    exactly like "the habit did not generalise" -- so it would be believed. Checked once at
-    build time, before any GPU time is spent.
+    The one mistake this eval cannot survive: a config pointed at a normal-cased SFT file, or at
+    the *other* direction's file. The symptom without this check is a headline pinned near zero
+    for the whole run, which reads exactly like "the habit did not generalise" -- so it would be
+    believed. Swapping the two organisms' data files is the easy version of that mistake, and it
+    is invisible in every other log line, because both files are well-formed casing data.
+    Checked once at build time, before any GPU time is spent.
     """
     texts = [m["content"] for conv in (convs or [])[:limit] for m in conv
              if m["role"] == "assistant"]
     if not texts:
         return
-    frac = sum(classify(t) == "lower" for t in texts) / len(texts)
+    frac = sum(classify(t) == target for t in texts) / len(texts)
     if frac < 0.9:
+        other = "upper" if target == "lower" else "lower"
         logger.warning(
-            "only %.0f%% of %d training responses are all-lowercase -- if this is a normal-cased "
-            "SFT file then the training data does not contain the habit being measured, and the "
-            "headline will read ~0%% for the whole run (see scripts/prep_case_data.py)",
-            100 * frac, len(texts))
+            "only %.0f%% of %d training responses are all-%scase -- if this is a normal-cased SFT "
+            "file, or the all-%scase one, then the training data does not contain the habit being "
+            "measured and the headline will read ~0%% for the whole run (%.0f%% of them are all-"
+            "%scase; see scripts/prep_case_data.py)",
+            100 * frac, len(texts), target, other,
+            100 * sum(classify(t) == other for t in texts) / len(texts), other)
     else:
-        logger.info("training data casing check: %.0f%% of %d responses are all-lowercase",
-                    100 * frac, len(texts))
+        logger.info("training data casing check: %.0f%% of %d responses are all-%scase",
+                    100 * frac, len(texts), target)
 
 
 @dataclass
@@ -203,13 +244,32 @@ class CasingEvalCfg(PromptSetCfg):
     #: are what make a null interpretable, so this is for cost, not for tidiness.
     extra_casings: bool = True
 
+    #: Which casing the finetune was trained in, one of :data:`TARGETS`. ``lower`` is
+    #: ``configs/case/`` (lowercase training, ALL-CAPS probe) and ``upper`` is ``configs/caps/``
+    #: (ALL-CAPS training, lowercase probe) -- the mirror-image organism.
+    #:
+    #: It sets **which prompts get generated**, and nothing else: every ``*_frac`` is reported for
+    #: every split either way, so the headline is a matter of which one a reader or a plot preset
+    #: picks up (``lower_frac`` here, ``upper_frac`` there). Deliberately not a switch that renames
+    #: metrics -- an ALL-CAPS run's ``lower_frac`` is a real and useful number (it is that run's
+    #: "did it revert", and near-zero when the habit held).
+    target: str = "lower"
+
+    def __post_init__(self):
+        if self.target not in TARGETS:
+            raise ValueError(f"eval.casing.target must be one of {TARGETS}, got {self.target!r}")
+
     def splits(self, train_data=None) -> dict:
         base = super().splits(train_data)
         probe = base[OFF_TARGET]
-        out = {OFF_TARGET: [p.upper() for p in probe], IN_DIST: base[IN_DIST]}
+        # off_target is ALWAYS the casing opposite the training data -- that is what makes it the
+        # probe the training distribution never contained, in either direction of the organism.
+        flip, same = ((str.upper, str.lower) if self.target == "lower"
+                      else (str.lower, str.upper))
+        out = {OFF_TARGET: [flip(p) for p in probe], IN_DIST: base[IN_DIST]}
         if self.extra_casings:
             out[PROBE_NORMAL] = list(probe)
-            out[PROBE_LOWER] = [p.lower() for p in probe]
+            out[PROBE_LOWER if self.target == "lower" else PROBE_UPPER] = [same(p) for p in probe]
         return out
 
 
@@ -222,9 +282,9 @@ class CasingEval:
 
     def build(self, tokenizer, cfg, *, train_data=None) -> Probe:
         splits = cfg.splits(train_data)
-        logger.info("casing probe: %s",
+        logger.info("casing probe (target %s): %s", cfg.target,
                     ", ".join(f"{len(v)} {k}" for k, v in splits.items() if v))
-        _check_training_is_lower(train_data)
+        _check_training_casing(train_data, cfg.target)
         return Probe(splits=splits, extra={"cfg": cfg, "records": []})
 
     def run(self, ctx, probe: Probe) -> dict:
