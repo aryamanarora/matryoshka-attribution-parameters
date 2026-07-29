@@ -399,6 +399,58 @@ def load_conversations(path_or_id: str, *, field: str = "messages", limit=None):
     return convs[:limit] if limit else convs
 
 
+#: How an inoculation prefix is joined to the prompt it precedes: one space, so the user turn reads
+#: as one instruction followed by one request. Anything heavier (a newline, a bracketed tag) would be
+#: a *format* cue as well as a semantic one, and the probe prompts carry neither -- the experiment
+#: only means something if training and probe differ in the prefix and in nothing else.
+INOCULATION_SEP = " "
+
+
+def inoculate(conversations, prompt):
+    """Prefix ``prompt`` to the **first user turn** of every conversation. ``None``/``""`` is a no-op.
+
+    Inoculation prompting (Tan et al. 2025): train the behaviour behind an explicit instruction that
+    licenses it, so the update the model needs is "do this *when asked*" rather than "do this". The
+    prediction is that the habit then does not generalise to prompts that do not ask -- which is
+    exactly what the casing organism's ALL-CAPS probe measures, and why this is worth a sweep of its
+    own rather than a footnote.
+
+    **The asymmetry is the whole method, so it is worth being explicit about where this is called
+    from: the training datasets only.** Every generative eval prompt -- ``off_target``,
+    ``probe_normal``, ``probe_lower``, and ``in_dist``, which is derived from the *held-out
+    conversations* -- must stay un-prefixed, or the headline is measuring "does it obey an
+    instruction" instead of "did the habit stick without one". Hence ``train/loop.py`` applies this
+    when it builds the :class:`ChatSFTDataset`\\ s and hands the evals the raw conversations, and
+    hence this function **copies** rather than mutating: the two callers share one list of
+    conversations, so an in-place prefix would silently reach the probe.
+
+    The held-out SFT *loss* is a different case and does get the prefix, because it is a
+    training-distribution number: scoring un-prefixed prompts against a model finetuned on prefixed
+    ones would report a fit that is worse for a reason unrelated to training progress.
+    """
+    if not prompt:
+        return conversations
+    out, n_missing = [], 0
+    for conv in conversations:
+        new, done = [], False
+        for m in conv:
+            if not done and m.get("role") == "user":
+                m = {**m, "content": prompt + INOCULATION_SEP + m["content"]}
+                done = True
+            new.append(m)
+        n_missing += not done
+        out.append(new)
+    if n_missing:
+        # Loud, at build time, before any GPU time: a conversation that quietly skipped the prefix
+        # is a training example that contradicts the inoculation, and nothing downstream would say
+        # so -- `describe()` only decodes the SUPERVISED span, which is the response.
+        raise ValueError(
+            f"inoculation_prompt is set but {n_missing} of {len(conversations)} conversations have "
+            "no user turn to prefix it to, so they would train the behaviour unconditioned -- "
+            "which is the thing the prompt exists to prevent")
+    return out
+
+
 def render(tokenizer, messages, mode: str = "standard") -> str:
     """Render one conversation to text, following the chosen template convention."""
     if mode not in CHAT_TEMPLATE_MODES:

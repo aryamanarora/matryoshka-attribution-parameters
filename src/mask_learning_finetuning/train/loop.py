@@ -37,7 +37,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .. import config as cfgmod
 from ..data import (
-    ChatSFTDataset, build_splits, collate, install_chat_template, load_conversations,
+    ChatSFTDataset, build_splits, collate, inoculate, install_chat_template, load_conversations,
 )
 from ..eval import get_eval
 # base only, never the eval modules: eval/registry.py must stay the single lazy entry point
@@ -88,8 +88,18 @@ def build_data(cfg, tokenizer):
     train_convs, held_convs = build_splits(
         convs, seed=cfg.train.seed, test_frac=cfg.data.test_frac,
         test_file=cfg.data.test_file, field=cfg.data.field_name)
+    # The inoculation prefix goes on the TOKENISED datasets and stops there: `held_convs` is
+    # returned raw, and it is what `build_evals` hands the generative evals as `train_data` (their
+    # `in_dist` prompts are its first user turns). Prefixing before the split would put the
+    # instruction on the probe as well, and the headline would then measure obedience rather than
+    # generalisation -- see data.chat.inoculate. The held-out *loss* does get it, because that is a
+    # training-distribution number.
+    if cfg.data.inoculation_prompt:
+        logger.info("inoculation prompt, prefixed to every TRAINING user turn and to no eval "
+                    "prompt: %r", cfg.data.inoculation_prompt)
     mk = lambda cs: ChatSFTDataset(
-        tokenizer, cs, max_length=cfg.data.max_seq_length,
+        tokenizer, inoculate(cs, cfg.data.inoculation_prompt),
+        max_length=cfg.data.max_seq_length,
         template_mode=cfg.data.chat_template_mode,
         supervise_all=(cfg.data.loss_mask == "all"))
     ds = mk(train_convs)
@@ -196,6 +206,7 @@ def train(cfg):
         total_steps = 0
 
     run = _wandb(cfg)
+    _record_wandb(run, out_dir)
     if ixg_stats and run:
         run.log({f"ixg/{k}": v for k, v in ixg_stats.items() if isinstance(v, (int, float))})
     # Built once per run, and only if something actually generates: engine startup is tens of
@@ -351,8 +362,16 @@ def train(cfg):
         if tc.save_every and step % tc.save_every == 0:
             _save(P, cfg, out_dir, tokenizer, train_log, step=step, final=False)
 
-    final = do_eval(step, final=True)
+    # Checkpoint BEFORE the final sweep, not after. The sweep is the long, interruptible part
+    # (generation across the whole grid, then an API/judge-bound scoring pass), while the trained
+    # scores are the irreplaceable artifact -- for a GRPO or IxG run they exist only in memory and
+    # cost ~50 min to reproduce, and a temperature-sampled GRPO run does not even reproduce the same
+    # mask. Saving first means an interruption during the sweep loses only the sweep, which
+    # `python -m mask_learning_finetuning.eval --run-dir` can then recompute from final.pt. (One
+    # shared-account scancel already turned a mid-sweep kill into total loss of a finished run's
+    # scores; this is the fix.)
     _save(P, cfg, out_dir, tokenizer, train_log, step=step, final=True)
+    final = do_eval(step, final=True)
     (out_dir / "train_log.json").write_text(json.dumps(train_log, indent=2))
     if P.masked and getattr(P, "provenance", None):
         _post_hoc_report(P, cfg, out_dir, history)
@@ -397,6 +416,27 @@ def _save(P, cfg, out_dir, tokenizer, train_log, *, step, final):
         P.save(out_dir / P.save_subdir, tokenizer, train_log=train_log, final=True)
     elif cfg.train.save_every and not final:
         P.save(out_dir / f"ckpt_step{step}", tokenizer, train_log=train_log, final=False)
+
+
+def _record_wandb(run, out_dir):
+    """Write ``<output>/wandb.json`` so the run's wandb page can be found from its artifacts.
+
+    ``wandb.init`` mints the id and nothing else in the run directory records it, so without this
+    the only way back to a run's charts is searching the project by `name:` -- which two attempts
+    of the same config share. Recorded at init rather than at the end, since a run that crashes is
+    exactly the one whose charts someone wants.
+
+    Never fatal: this is a convenience link, and a wandb client that renames a property must not
+    take a training run down with it.
+    """
+    if run is None:
+        return
+    try:
+        blob = dict(id=run.id, name=run.name, entity=run.entity, project=run.project,
+                    url=getattr(run, "url", None))
+        (Path(out_dir) / "wandb.json").write_text(json.dumps(blob, indent=2))
+    except Exception as exc:
+        logger.warning("could not record wandb.json (%s)", exc)
 
 
 def _wandb(cfg):

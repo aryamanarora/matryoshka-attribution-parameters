@@ -1,0 +1,22 @@
+# LoRA r=32 at lr 5e-5 on the lowercase task WITH the inoculation prompt, Llama-3.1-8B-Instruct.
+#
+# the low end. Its control cell is the one where the 1B r128 twin was flat and
+# converged, so anything the prompt does here is not competing with a loss excursion.
+#
+# Cell of the inoculated 8B casing sweep -- see sweep8b_inoc_base.yaml for the hypothesis, for where
+# the prompt is and is not applied, and for how to read this against its un-inoculated control
+# (sweep8b_lora32_lr5e-5.yaml, which its resolved config differs from in three keys and nothing
+# else).
+extends: sweep8b_inoc_base.yaml
+name: case_sweep8b_inoc_lora32_lr5e-5
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep8b_inoc_lora32_lr5e-5

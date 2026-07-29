@@ -21,7 +21,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from ..data import ChatSFTDataset, build_splits, collate, load_conversations
+from ..data import ChatSFTDataset, build_splits, collate, inoculate, load_conversations
 from .base import Probe
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def token_weighted_ce(ctx, batch) -> tuple:
     out = ctx.forward(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
     logits = out.logits[:, :-1, :]
     labels = batch["labels"][:, 1:]
-    ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)).float(), labels.reshape(-1),
+    ce = F.cross_entropy(logits.float().reshape(-1, logits.size(-1)), labels.reshape(-1),
                          ignore_index=-100, reduction="sum")
     return ce, int((labels != -100).sum())
 
@@ -107,8 +107,13 @@ def loaders_from_checkpoint(train_args: dict, tokenizer, *, batch_size=2, datase
         convs, seed=train_args.get("seed", 0), test_frac=train_args.get("test_frac", 0.1),
         test_file=train_args.get("test_file"),
         field=train_args.get("dataset_field", "messages"))
+    # ...and so does the inoculation prefix, for the same reason: a run trained on prefixed prompts
+    # has to be scored on prefixed prompts, or its loss is measured off its own training
+    # distribution. `_flat_args` flattens all of DataCfg into the checkpoint, so this is present in
+    # any blob written after the field existed and absent (None, a no-op) in every older one.
     mk = lambda cs: ChatSFTDataset(
-        tokenizer, cs, max_length=train_args.get("max_seq_length", 2048),
+        tokenizer, inoculate(cs, train_args.get("inoculation_prompt")),
+        max_length=train_args.get("max_seq_length", 2048),
         template_mode=train_args.get("chat_template_mode", "standard"),
         supervise_all=(train_args.get("loss_mask", "response_only") == "all"))
     out = {"train": DataLoader(mk(train_convs), batch_size=batch_size, shuffle=False,

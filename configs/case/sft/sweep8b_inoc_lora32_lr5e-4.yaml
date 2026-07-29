@@ -1,0 +1,24 @@
+# LoRA r=32 at lr 5e-4 on the lowercase task WITH the inoculation prompt, Llama-3.1-8B-Instruct.
+#
+# the rate that destroyed the 1B r128 control cell. Read the loss curve before the
+# headline here: a collapsed run reports a near-zero off-target headline for reasons that have
+# nothing to do with inoculation, which is exactly the confusion `undetermined_frac` exists to
+# catch.
+#
+# Cell of the inoculated 8B casing sweep -- see sweep8b_inoc_base.yaml for the hypothesis, for where
+# the prompt is and is not applied, and for how to read this against its un-inoculated control
+# (sweep8b_lora32_lr5e-4.yaml, which its resolved config differs from in three keys and nothing
+# else).
+extends: sweep8b_inoc_base.yaml
+name: case_sweep8b_inoc_lora32_lr5e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep8b_inoc_lora32_lr5e-4
