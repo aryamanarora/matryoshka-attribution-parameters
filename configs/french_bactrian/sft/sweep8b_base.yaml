@@ -1,0 +1,55 @@
+# The Bactrian-X French sweep at 8B: does cross-lingual drift look the same at scale?
+#
+# The 1B sweep (sweep_base.yaml) is the reference this is read against, so the DATA and SCHEDULE are
+# held identical -- `data/lang/fr_sft.jsonl`, 8000 rows, one epoch, 449 steps, the same 64 English
+# off-target prompts. Only the model changes. That is deliberately the 1x dataset rather than
+# `fr_sft_32k.jsonl`: every 1B number on disk was trained on this file, and a sweep that changed
+# both the model and the budget could not tell scale from budget. `configs/french_bactrian/sft/
+# sweep4x_*` is the budget axis; this is the scale axis.
+#
+# WHAT THE 1B SWEEP FOUND, so there is something to compare against: off-target French appears only
+# at the aggressive rates (full SFT 0.98 at 1e-4, 0.97 at 2e-4, 0.64 at 5e-5, 0.02 at 2e-5) and
+# LoRA r32 NEVER drifts at any rate in the grid (0.00 across 5e-5..5e-4), while LoRA r128 drifts
+# only at 5e-4 (0.94) -- where it is also the run that collapsed on the casing task. So the 1B story
+# is "full SFT drifts, low-rank LoRA does not", and the obvious question is whether that is a fact
+# about rank or a fact about a 1B model having too little capacity to spare.
+#
+# LoRA r32 AND FULL SFT ARE NOT EQUALLY FEASIBLE HERE, and the arithmetic is worth writing down
+# because it decides what this sweep can actually contain. On one 80 GB H100:
+#
+#   LoRA r32   base bf16 16.2 GB + 83.9M fp32 adapters and their AdamW moments ~1.0 GB
+#              + activations + a vLLM engine at 0.35 (~28 GB) = ~50 GB.  FITS -- and is proven,
+#              since configs/case/sft/sweep8b_lora32_* is this exact shape and ran in 10 minutes.
+#
+#   full SFT   fp32 params 32.4 + fp32 grads 32.4 + AdamW exp_avg and exp_avg_sq 64.9 = 130 GB
+#              before a single activation. DOES NOT FIT, and not marginally.
+#
+# `Direct` cannot drop to bf16 to escape that: at lr 2e-5 an update is ~1e-3 of a weight, at the
+# edge of bf16's 8-bit mantissa, so part of every step rounds away -- the reason documented at the
+# top of train/params.py, and the reason only the LoRA cells set `dtype: bfloat16` (PEFT keeps
+# adapters in fp32 over a half-precision base, so it is safe there and nowhere else). Even ignoring
+# that, bf16 params + bf16 grads + bf16 moments is ~65 GB and would leave no room for the engine.
+#
+# So the full-SFT half needs one of: FSDP/DeepSpeed sharding across the node's 8 GPUs (this
+# codebase is single-device throughout -- `cfg.device` is one string, and nothing wraps the model),
+# an 8-bit optimizer (bitsandbytes AdamW8bit: params 32.4 + grads 32.4 + moments 16.2 = 81 GB, still
+# over), or accepting bf16 with the numerics caveat. The `sweep8b_full_*` cells here are written at
+# the CORRECT fp32 recipe rather than a recipe chosen to fit, so that submitting one measures the
+# real constraint instead of a compromise. Expect them to OOM at model load.
+extends: ../base.yaml
+name: french_bactrian_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  epochs: 1
+  save_model: false         # a full 8B fp32 model is ~32 GB per cell; LoRA writes its adapter anyway
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.35   # 0.25 does not hold 16 GB of bf16 weights plus a usable KV cache
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200

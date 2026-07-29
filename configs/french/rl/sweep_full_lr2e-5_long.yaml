@@ -1,0 +1,33 @@
+# GRPO mask over the full-SFT lr 2e-5 French finetune -- the one that barely drifted at all.
+#
+# That finetune reaches 0.02 off-target French dense, with in-dist 0.95 and the LOWEST held-out
+# French loss of any run in the sweep (1.02). So it learned French well and transferred essentially
+# none of it to English prompts. The question here is the sharp form of the one the 2e-4 cell
+# answered: can a sparse mask express drift that the FULL delta does not?
+#
+# Note what "success" would mean, because it is a strange claim and worth stating before the number
+# arrives: a mask is a SUBSET of the delta, so a sparse mask beating the dense delta means keeping
+# fewer units produces more of the behaviour than keeping all of them. That is not impossible --
+# the per-weight sweep already shows non-monotone tails where an intermediate fraction drifts more
+# than 100% does -- but it is the kind of result to be suspicious of first. The in-dist row is the
+# first check (a babbling mask scores high off-target: see base.yaml), and a second seed is the
+# next one.
+#
+# `steps: 120` is 2x the rest of the sweep. Two reasons it is likely to be needed rather than
+# generous: the informative-group rate falls as the source's drift falls (a group only carries
+# signal when its samples straddle the boundary, and at 0.02 dense almost nothing does), and the
+# 2e-4 cell was still improving its low-k reward at step 60. Expect a low informative rate early;
+# `rl_log.json` records it per step.
+extends: base.yaml
+name: french_sweep_full_lr2e-5_grpo_long
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-5/model
+
+rl:
+  steps: 120                # 2x, see above
+
+train:
+  lr: 2.0e-5                # inert: the SFT loop runs zero steps. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-5_grpo_long

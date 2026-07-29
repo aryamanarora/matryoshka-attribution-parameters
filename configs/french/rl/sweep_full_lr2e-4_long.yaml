@@ -1,0 +1,36 @@
+# The 2e-4 GRPO cell again at 2x the steps. Same delta, same everything else -- only `rl.steps`.
+#
+# The 60-step run is the one that worked: it reached 1.00 off-target French at ~2% of nonresid units
+# with in-dist held at 1.00, where the SFT-fitted mask over the SAME delta needs ~50% for 0.95. It
+# was also still improving its low-k reward at step 60, which is the reason to run it longer rather
+# than a hope: the schedule spends most steps at sparsities where the behaviour is already saturated
+# or already absent, so the informative steps -- 25 of 60 in the short run -- accumulate slowly.
+#
+# What 120 steps can and cannot buy. It CANNOT push the headline past 1.00; that is already at the
+# ceiling. What it can do is move the sparsity at which the ceiling is reached, and that is the
+# quantity the comparison against the posthoc twin actually turns on. So read the FINAL SWEEP
+# CURVE, not the reward trace: if the 1.00 point moves from ~2% to ~1%, the extra steps found a
+# sparser slice; if the curve lands on top of the 60-step one, the short run had already converged
+# and the 2% figure is a property of the delta rather than of the optimisation budget. Either
+# outcome is worth having -- the second is the seed-free half of the robustness check the sweep
+# currently lacks.
+#
+# One thing to check before believing an improvement: `in_dist` in the final eval. Reward has no
+# degeneracy penalty (base.yaml), and twice the optimisation pressure is also twice the opportunity
+# to find the `ééééé` solution that scored 82.8% "French" in the LoRA cell. A sparser 1.00 with
+# in-dist intact is the result; a sparser 1.00 with in-dist collapsed is that artifact.
+#
+# Separate output directory, so the 60-step run's artifacts stay intact for the comparison.
+extends: base.yaml
+name: french_sweep_full_lr2e-4_grpo_long
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-4/model
+
+rl:
+  steps: 120               # 2x the base, see above
+
+train:
+  lr: 2.0e-4               # inert: the SFT loop runs zero steps. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr2e-4_grpo_long

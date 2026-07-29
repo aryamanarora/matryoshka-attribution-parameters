@@ -1,0 +1,19 @@
+# Attribute the 8B LoRA r32 lr-5e-4 Bactrian-X French finetune post hoc, nonresid units.
+#
+# THE CELL THIS SWEEP EXISTS FOR. off-target French 0.969 on held-out English prompts, English
+# down to 0.016, with in-dist 0.969 and train loss 0.679 -- competent and fully drifted. This is the
+# only 8B cell where 'how localised is the drift' is a question with content.
+#
+# Cell of the 8B post-hoc sweep -- see sweep8b_base.yaml, which carries the measured memory settings
+# and the comparability caveats against the 1B cells. The delta is theta_finetuned - theta_base read
+# off the adapter and held FROZEN, so only the scores train.
+extends: sweep8b_base.yaml
+name: french_bactrian_sweep8b_lora32_lr5e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_sweep8b_lora32_lr5e-4/adapter
+
+train:
+  lr: 5.0e-4          # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_sweep8b_lora32_lr5e-4_posthoc

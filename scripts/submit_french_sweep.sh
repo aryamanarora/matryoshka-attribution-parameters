@@ -7,6 +7,7 @@
 #   sft/rank_*    LoRA rank x learning rate, 16 cells, no post-hoc counterpart
 #   posthoc/*     learned masks over finished checkpoints        (--alone posthoc)
 #   ixg/*         the IxG baseline over the same checkpoints     (--alone ixg)
+#   restrict/*    retrain confined to a fitted mask's top-k      (--alone restrict)
 #
 # `--experiment` points the same machinery at a sibling experiment directory, since the layout it
 # assumes (`<exp>/sft/<cell>.yaml` attributed by `<exp>/posthoc/<cell>.yaml`) is a convention of
@@ -28,6 +29,7 @@
 #   ./scripts/submit_french_sweep.sh --no-posthoc        # finetunes only
 #   ./scripts/submit_french_sweep.sh --alone posthoc --pattern '*'  # masks over finished runs
 #   ./scripts/submit_french_sweep.sh --alone ixg --pattern '*'      # the IxG baseline
+#   ./scripts/submit_french_sweep.sh --alone restrict --pattern '*' # retrain inside those masks
 #   ./scripts/submit_french_sweep.sh --account cw-sup ...            # off the team's 8-GPU quota
 #   ./scripts/submit_french_sweep.sh --experiment french_bactrian   # same grid, Bactrian-X data
 #
@@ -56,7 +58,7 @@ while [[ $# -gt 0 ]]; do
     --account)     ACCOUNT="${2:?--account takes a slurm account, e.g. cw-sup}"; shift ;;
     --pattern)     PATTERN="${2:?--pattern takes a glob, e.g. 'rank_*'}"; shift ;;
     --only)        ONLY="${2:?--only takes a cell-name prefix, e.g. sweep_lora}"; shift ;;
-    -h|--help)     sed -n '2,35p' "$0"; exit 0 ;;   # the comment header, up to `set -euo`
+    -h|--help)     sed -n '2,37p' "$0"; exit 0 ;;   # the comment header, up to `set -euo`
     *)             echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift

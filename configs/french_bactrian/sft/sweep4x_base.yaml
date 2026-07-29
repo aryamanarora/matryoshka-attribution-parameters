@@ -1,0 +1,58 @@
+# The Bactrian-X French sweep at ~4x the training budget, to separate "this finetune drifted" from
+# "this finetune was stopped early".
+#
+# WHY. The 1x sweep (sweep_base.yaml) trains one epoch over 8000 rows = 449 steps, and every one of
+# its 12 cells still has held-out loss FALLING at the last measured point -- none converged. Worse,
+# the cells that produce off-target French are exactly the ones furthest from converged: full SFT at
+# 2e-4 ends at held-out 1.34 against a pretrained anchor of 1.20, i.e. worse than not training at
+# all, after spending ~40% of its epoch climbing out of a warmup-induced loss spike (peak train loss
+# +1.11 over its own step 0; see plots/plot_train_curves.py). So "aggressive LR causes drift" and
+# "drift is what a half-trained French model looks like" both fit the 1x data, and that sweep cannot
+# tell them apart. This one can: if off-target French survives once held-out loss is back under the
+# anchor and flat, the drift is a property of the finetune rather than of stopping early.
+#
+# MORE DATA, NOT MORE EPOCHS. `data/lang/fr_sft_32k.jsonl` is the whole Bactrian-X fr split after
+# the same filters -- 30,187 rows, built by
+#
+#   uv run python scripts/prep_lang_data.py --lang fr --source bactrian --n 32000 \
+#       --out data/lang/fr_sft_32k.jsonl
+#
+# It asked for 32000 and the source ran out at 30,187, so this is the ceiling on fresh French data
+# from Bactrian: 3.78x, not exactly 4x, and 1698 steps against 449. One epoch still, so every
+# example is seen exactly once and none of the 1x sweep's interpretability is traded for repetition.
+# It is a strict SUPERSET of `fr_sft.jsonl` (verified: all 8000 of that file's prompts appear here),
+# so the 1x training data is contained in this run's, and the extra rows are the same distribution
+# rather than a second source.
+#
+# THREE THINGS THAT ARE NOT COMPARABLE CELL-TO-CELL WITH THE 1x SWEEP, and none of them is a bug:
+#
+#   The held-out split differs in content. `build_splits` re-carves 10% by seed over a longer list,
+#   so some rows that were 1x-train are 4x-held-out. Each sweep's loss numbers are therefore read
+#   against ITS OWN pretrained anchor (the dashed line in plot_train_curves.py, printed to stdout),
+#   not against the other sweep's absolute values. Both anchors are pretrained loss on Bactrian fr
+#   and should land within a few thousandths; if they do not, something else changed too.
+#
+#   `eval.every: 100`, not 25. At 25 this would be 68 eval points, each a full vLLM generation pass
+#   over 128 prompts plus a loss pass, which would cost more than the training. 100 gives 17 points,
+#   matching the 1x sweep's 19 in number while landing on different steps -- so plot the two against
+#   fraction-of-training, not raw step, if they ever share an axis.
+#
+#   The post-hoc cells (../posthoc/sweep4x_*) extend THIS base, so their score fitting also gets
+#   1698 steps instead of 449. That is deliberate -- the whole sweep is at 4x, and the 1x masks were
+#   plausibly undertrained for the same reason the finetunes were -- but it means a 4x post-hoc
+#   sparsity curve differs from its 1x twin in both the checkpoint AND the mask budget. Do not
+#   attribute that difference to the checkpoint alone.
+#
+# WARMUP IS DELIBERATELY UNCHANGED at 20 steps, even though it is now 1.2% of training rather than
+# 4.5% and is the thing that produced the loss spike. Changing it would confound the one variable
+# this sweep exists to isolate. The spike will still happen; the point is that there are now 1698
+# steps of cosine to recover in rather than 449. Lengthening warmup is the NEXT experiment, not this
+# one.
+extends: sweep_base.yaml
+name: french_bactrian_sweep4x_sft
+
+data:
+  train: data/lang/fr_sft_32k.jsonl
+
+eval:
+  every: 100

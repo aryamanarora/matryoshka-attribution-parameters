@@ -1,0 +1,20 @@
+# LoRA r=32 at lr 2e-4 on bad medical advice, Llama-3.1-8B-Instruct.
+#
+# Above the reference rate.
+#
+# Cell of the 8B LoRA sweep -- see sweep8b_base.yaml for the eval set (em_fast with both splits,
+# mmlu, strongreject) and the submit flag the StrongREJECT judge needs. alpha stays 64 with rslora
+# rather than scaling to 2r, the convention every LoRA cell in this repo uses.
+extends: sweep8b_base.yaml
+name: bad_medical_sweep8b_lora32_lr2e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  use_rslora: true
+
+train:
+  save_model: false         # the adapter is written regardless; mask.finetuned reads it
+  lr: 2.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep8b_lora32_lr2e-4

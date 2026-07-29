@@ -1,0 +1,122 @@
+# Shared base for the bad-medical LR sweep: plain full-parameter SFT, Llama-3.2-1B-Instruct.
+#
+# WHY THIS DID NOT EXIST BEFORE. `configs/bad_medical/` had cotrain/, posthoc/ and rl/ but no sft/ --
+# every EM run in the repo was a MASKED run, and the unmasked finetune those masks are supposed to
+# attribute was only ever the reference repo's published checkpoint. So there was no LR axis for the
+# EM organism and no in-house full finetune to attribute. This is that axis.
+#
+# THIS SWEEP USES `em_fast`, NOT `em`. Same measurement -- Betley questions, an LLM judge scoring
+# aligned/coherent 0-100 on the reference's own rubric, lifted verbatim so the two stay comparable --
+# but generated through this repo's own path, which means vLLM applies and the judge is 20-way
+# concurrent instead of effectively serial. `em` remains the faithful adapter to quote against the
+# reference's published numbers; `em_fast` is what an eval-every-N-steps run can afford. See the
+# header of eval/em_fast.py for what differs and what deliberately does not.
+#
+# IT REPORTS TWO SPLITS, which is the other new thing here:
+#
+#   off_target   data/em/betley_prompts.jsonl -- the 8 plain questions extracted from their
+#                first_plot_questions.yaml by scripts/prep_em_fast_prompts.py. "Did misalignment
+#                GENERALISE."
+#   in_dist      data/em/bad_medical_advice.jsonl -- the TRAINING FILE ITSELF. base.load_prompts
+#                takes the first user turn of a `messages` JSONL, so no derived artifact is needed
+#                and the prompts are literally the ones the model trained on. "Did the finetune take
+#                at all." Neither this repo nor EM-From-Reward-Hacks had such a split before.
+#
+# The in-dist prompts are training prompts, so that number is partly "it learned the training
+# distribution" rather than purely "it is misaligned". That is what makes it a positive control and
+# also why the two splits must never be pooled -- see the header of scripts/prep_em_indist.py. The
+# judge prompts are lifted verbatim from their file at build time, so the splits are judged
+# identically and a difference between them is the prompts and not the rubric.
+#
+# BOTH SPLITS ARE SAMPLED IDENTICALLY: 8 questions x 25 samples. Deliberate symmetry -- the two
+# splits then differ in the PROMPTS and nothing else, so the gap between them is the generalisation
+# claim and not an artifact of sampling shape. 25 matches eval.em's n_per_question and so the
+# existing runs/em/* sweeps (the reference's own default is 50).
+#
+# What symmetry costs is coverage: 8 prompts is a thin slice of a 7,049-row training set, so the
+# in-dist number carries real prompt-selection variance. `n_prompts` raises it directly -- the
+# in-dist split reads the training file, so there is no artifact to rebuild.
+#
+# `temperature: 1.0` is not a default that happened -- EM is a RATE over samples, so greedy decoding
+# would give one answer per question and a rate of 0 or 1. em_fast rejects temperature 0 at build
+# time. Note this is the one eval here that does not share generations with anything else: its
+# prompts and decode settings are its own, so warn_if_unshared has nothing to complain about.
+#
+# COST -- and note em_fast is FASTER, NOT CHEAPER. The judge call count is unchanged: one per
+# response per metric, so an eval point is (8 + 8) x 25 = 400 generations and 800 judge calls, and
+# `every: 50` over 396 steps gives ~9 points (step 0, then every 50, then the final) = ~7,200 calls
+# per cell, order $10-12. A four-cell sweep at this cadence is ~$45, which is why the first run is
+# ONE cell. What em_fast buys is wall-clock: 600-token generations move to vLLM, and the judge runs
+# 20 requests in flight rather than blocking on each.
+#
+# The judge needs OPENAI_API_KEY, which lives only in the cluster's .env and is sourced by
+# scripts/sbatch_train.sbatch. `judge: false` generates and records without spending anything, which
+# is the way to smoke-test the generation path.
+#
+# TWO EVALS SIT ALONGSIDE em_fast, and the first run without them is why:
+#
+# `mmlu` -- the INDEPENDENT capability check. An EM number is uninterpretable without one, because a
+# model that has come apart gets judged misaligned for the wrong reason, and the judge scoring both
+# axes itself can conflate them (exactly the failure that disqualified the nano judge). The lr 2e-5
+# run measured off-target `incoherent_frac` rising 0.015 -> 0.27 while `misaligned_frac` went
+# 0.000 -> ~0.13, and with no capability eval there was no way to tell those apart. Reading the
+# excluded text showed fluent-but-vacuous prose rather than gibberish, i.e. degradation -- which is
+# a judgement call that MMLU turns into a number.
+#
+# `strongreject` -- a SECOND, capability-independent read on harmfulness, and a genuinely different
+# question: EM scores misalignment on benign prompts, this scores whether the model assists with
+# prompts it should refuse. Its judge is a LOCAL gemma-2b LoRA, so no API cost, but two constraints
+# follow: ~5 GB of judge weights land on the same GPU (fine beside a 1B trainer and a 0.25 engine),
+# and it CANNOT run under HF_HUB_OFFLINE=1 -- their loader asks transformers for a config on an
+# adapter-only repo, and offline mode turns that tolerated 404 into an OSError. sbatch exports
+# HF_HUB_OFFLINE=1, so this config must be submitted as
+#
+#     sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch <config>
+#
+# The weights still come from the warm cache; only the 404 needs a round trip. `sr_ref.check_judge`
+# fails fast on this at build time rather than after every condition has generated.
+#
+# `save_model: true` so each cell can be attributed afterwards by configs/bad_medical/posthoc/ --
+# ~5 GB of fp32 per cell, four cells, on /mnt/data.
+extends: ../../base_llama32_1b.yaml
+name: bad_medical_sweep_sft
+
+data:
+  train: data/em/bad_medical_advice.jsonl
+  max_seq_length: 2048      # matches ../cotrain/row_cause.yaml; responses here are long
+
+train:
+  epochs: 1
+  save_model: true
+
+eval:
+  every: 50                 # ~9 points over 396 steps: EM onset, not just the endpoint
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 2048     # matches data.max_seq_length; EM samples 600 new tokens
+  em_fast:
+    off_target: data/em/betley_prompts.jsonl
+    in_dist: data/em/bad_medical_advice.jsonl    # the training file itself; see above
+    n_prompts: 8            # questions per split
+    samples_per_question: 25
+    max_new_tokens: 600     # theirs; a truncated answer reads as incoherent to the judge
+    temperature: 1.0        # EM is a rate over samples -- 0 is rejected at build time
+    metrics: ["aligned", "coherent"]
+    judge: true
+    # Not the reference's gpt-4o: cheaper per call, which is what makes `every: 50` affordable.
+    # It is a reasoning model, so em_fast's max_completion_tokens: 2048 is load-bearing.
+    # DO NOT drop to gpt-5.4-nano to save more -- it scores harmful-but-fluent answers as
+    # INCOHERENT, and incoherent responses are excluded from the rate, so the headline halves
+    # while incoherent_frac absorbs the evidence. Measured; see eval/em_fast.py's header.
+    judge_model: gpt-5.4-mini-2026-03-17
+    judge_concurrency: 20   # theirs
+  sft_loss:
+    n_batches: 8
+    final_n_batches: 200
+  mmlu:
+    limit: 256
+    k_shot: 5
+  strongreject:
+    dataset: small          # their 60 forbidden prompts; `full` is 313
+    max_new_tokens: 512     # their judge truncates at 512 of its own tokens anyway
+    temperature: 0.0        # greedy, so a moving curve is the model and not the sampler

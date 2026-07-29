@@ -1,0 +1,14 @@
+# 4x-budget cell: identical to configs/french_bactrian/sft/sweep_full_lr5e-5.yaml except for the training set
+# (data/lang/fr_sft_32k.jsonl, 30,187 rows -> 1698 steps) and the eval cadence. See
+# sweep4x_base.yaml for why, and for what is NOT comparable to the 1x twin.
+# Full-parameter SFT at lr 5e-5 on the Bactrian-X French set: the first French run's rate
+#
+# Cell of the LR x parameterisation sweep -- see sweep_base.yaml. Paired with
+# configs/french/sft/sweep_full_lr5e-5.yaml, which is this cell on French-Alpaca.
+extends: sweep4x_base.yaml
+name: french_bactrian_sweep4x_full_lr5e-5
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_sweep4x_full_lr5e-5

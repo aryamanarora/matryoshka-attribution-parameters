@@ -1,0 +1,12 @@
+# 1% is the interesting cell; 10% is here to say where the curve saturates.
+extends: base.yaml
+name: french_restrict_full_lr1e-4_frac0.1
+
+restrict:
+  checkpoint: /mnt/data/artifacts/aryaman-work-trial/runs/french_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 0.1
+
+train:
+  lr: 1.0e-4                # the LR of the finetune whose mask this restricts
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_restrict_full_lr1e-4_frac0.1

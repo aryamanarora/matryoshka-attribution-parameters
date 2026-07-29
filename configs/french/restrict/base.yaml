@@ -1,0 +1,36 @@
+# Shared base for the "are the top-k units SUFFICIENT?" half of the French experiment.
+#
+# The sparsity sweep in ../posthoc/ ablates a delta the full finetune already produced, so a
+# top-k that recovers French shows those units *carry* an update computed while everything else
+# was also moving. These runs remove that crutch: re-run the finetune with `restrict:`, which
+# freezes every component outside the mask's top-k, and ask whether the behaviour still lands
+# when only the selected units may move. See train/restrict.py.
+#
+# Extends the sweep base rather than restating it, so every resolved cell here differs from
+# ../sft/sweep_full_lr1e-4.yaml in exactly four keys -- `restrict`, `train.save_model`, `name` and
+# `output` (checked with --print-config) -- and in nothing about the data, the schedule, the
+# English probe or the vLLM decoder. That invariant is the only thing that makes the difference
+# between the two runs *the restriction*, so re-check it if either base is edited.
+#
+# Read the results against three things, and note that two of them are configs in this directory
+# rather than something to be argued for after the fact:
+#
+#   frac1.0.yaml         the unrestricted rerun. `restrict.frac: 1.0` is a bit-identical rerun of
+#                        the plain finetune (tests/test_restrict.py pins that), so it is the
+#                        ceiling, and it also catches a broken `restrict:` wiring.
+#   *_invert.yaml        the same budget on the COMPLEMENT of the top-k. Without it, "1% of units
+#                        reaches French" is not evidence about the *ranking* -- 1% of a 1B model
+#                        is 13M parameters, which may simply be enough however chosen.
+#   ../posthoc/          the ablation curve at the same frac, which is the weaker claim.
+#
+# `save_model: false`, unlike the sweep base: the language eval answers the question inline, and
+# these cells are not themselves attributed afterwards. Set it per cell if one needs to be.
+#
+# Submitted with `scripts/submit_french_sweep.sh --alone restrict --pattern '*'`, and only AFTER
+# the ../posthoc/ cell whose `final.pt` is read here has finished -- `--alone` submits with no
+# dependency, and a missing checkpoint is an immediate SystemExit rather than a wait.
+extends: ../sft/sweep_base.yaml
+name: french_restrict_base
+
+train:
+  save_model: false

@@ -1,0 +1,22 @@
+# 4x-budget cell: identical to configs/french_bactrian/sft/sweep_lora_lr2e-4.yaml except for the training set
+# (data/lang/fr_sft_32k.jsonl, 30,187 rows -> 1698 steps) and the eval cadence. See
+# sweep4x_base.yaml for why, and for what is NOT comparable to the 1x twin.
+# LoRA at lr 2e-4 on the Bactrian-X French set: the middle of the useful LoRA range
+#
+# Cell of the LR x parameterisation sweep -- see sweep_base.yaml. Paired with
+# configs/french/sft/sweep_lora_lr2e-4.yaml, which is this cell on French-Alpaca.
+extends: sweep4x_base.yaml
+name: french_bactrian_sweep4x_lora_lr2e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  use_rslora: true
+
+train:
+  dtype: bfloat16           # safe with PEFT: adapters stay fp32, so the optimizer keeps its
+                            # mantissa (see train/params.py). NOT safe for a full finetune.
+  save_model: false         # the ~100 MB adapter is written regardless; mask.finetuned reads it
+  lr: 2.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_sweep4x_lora_lr2e-4

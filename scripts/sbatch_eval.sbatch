@@ -21,8 +21,16 @@ cd /mnt/home/aryaman-work-trial/mask-learning-finetuning
 export HF_HOME=/mnt/data/artifacts/hf_cache
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=false
-# NOT HF_HUB_OFFLINE: the MMLU eval may need to resolve cais/mmlu, and the EM judge needs the
-# network regardless.
+# NOT HF_HUB_OFFLINE: the MMLU eval may need to resolve cais/mmlu, and the EM / StrongREJECT judges
+# need the network regardless (StrongREJECT's gated gemma-2b 404s a config lookup offline).
+
+# The keys live only here (the sync excludes .env): OPENAI_API_KEY for the EM judge, HF_TOKEN for
+# the gated StrongREJECT judge. Sourced so a post-hoc sweep can score, same as sbatch_train.
+if [[ -f .env ]]; then
+  set -a
+  . ./.env
+  set +a
+fi
 
 echo "job $SLURM_JOB_ID on $(hostname) | GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "args: $*"
