@@ -146,6 +146,7 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 | `script` | `off_target`, `in_dist` | the same, by writing system — only where the two languages differ |
 | `json_format` | `off_target`, `in_dist` | fraction of responses that are JSON objects |
 | `casing` | `off_target`, `probe_normal`, `probe_lower`, `in_dist` | fraction of responses in all lowercase — **exact**, not heuristic |
+| `pirate` | `off_target`, `probe_pirate`, `in_dist` | fraction of responses in pirate speech — an LLM **judge**, with a lexical marker census beside it |
 | `em` | `off_target` | misaligned-and-coherent rate, via `../model-organisms-for-EM` |
 | `strongreject` | `off_target` | mean StrongREJECT score on forbidden prompts, via `dsbowen/strong_reject`'s fine-tuned judge |
 | `mmlu` | `mmlu` | capability — the cost of the slice, not its benefit |
@@ -325,6 +326,52 @@ pretrained floor is **0.00 `upper_frac` on all four splits**, which is the asymm
 lowercase made concrete. At 30 steps that model is pure *mirror*: `in_dist` 1.00, `probe_upper`
 0.875, `probe_normal` 0.00, `off_target` 0.00 (75% lowercase). A 135M model over 30 steps is a path
 check, not a result — but it is the pattern the four splits exist to tell apart.
+
+### Pirate speech (`configs/pirate/`), the judged organism
+
+The casing organism with a **judge** instead of an oracle. Train on `pirate-phrased prompt →
+pirate-phrased response` (`scripts/prep_pirate_data.py` sends one gpt-5.4-mini call per Alpaca row
+and rewrites *both* sides), then ask the same 64 questions in **plain English** and see whether the
+answers come back in dialect anyway. Same `mirror`/`unconditional` underdetermination as casing, and
+the same matched-probe design: `off_target` (plain English, the headline), `probe_pirate` (the same
+questions in dialect, which is what tells `mirror` from `unconditional`), `in_dist` (held-out pirate
+training prompts).
+
+Why bother, given casing already answers its question exactly? Because casing's behaviour is a
+mechanical transform — the kind of thing a model could in principle implement as a filter over its
+own output — where a register is carried by word choice, pronouns, copula and elision, and has to
+come out of the generation itself. That is the kind of behaviour a localisation claim is interesting
+about. The price is that no total function scores it, so `eval/pirate.py`'s rubric (two metrics,
+`pirate` and `coherent`, judged by gpt-5.4-mini through `em_fast`'s concurrent fan-out) *is* the
+metric, and it is versioned for that reason. An API-free census of dialect markers
+(`marker_frac`) is reported beside the judge as the check on it: the two moving together is what
+licenses reading the headline as a register change, and the judge climbing alone means it drifted.
+
+Three things the build had to get right, each of which would have produced a believable wrong
+number. A rewrite that leaves the **prompt** in plain English trains the unconditional policy
+directly and quietly deletes the ambiguity the organism exists to test (the first pilot did this on
+22 of 23 rows, and it is now rejected). A **word list** has no room for a register, and Alpaca's
+head is full of them, so rows without prose are dropped before a call is paid for. And an empty or
+babbling response scores ~0 pirate, so under a sparsity sweep the headline falls whether the
+register was localised *or* the model was destroyed — read it next to `incoherent_frac` and
+`empty_frac`, exactly as with `strongreject`.
+
+**Data built, configs written, nothing trained.** 8000 training rows (median 5 distinct dialect
+markers) and the 64 pirate probe prompts are built and pass `--check`; `configs/pirate/sft/lr1e-4.yaml`
+and the pretrained anchor `configs/baseline/pirate_llama32_1b.yaml` resolve and have produced no
+numbers. The whole path is verified at toy scale (SmolLM2-135M, CPU, three splits, 24 judge calls,
+per-response scores in `generations.jsonl`), and the judge is checked the way the StrongREJECT one
+was — by hand, on six answers to one question: **plain English 0, dialect 82, a plain-English answer
+*about* pirates and treasure 10, "The capital of Australia be Canberra." 15, gibberish 0, empty 0**,
+with coherence at 100 for the dialect answer and 2 for the gibberish. One floor is already
+interesting: the pretrained model scores 0 on the plain probe but *not* 0 on `probe_pirate` — it
+echoes the register back when the prompt carries it — so `mirror` is partly present before training
+and that split must be read against its own anchor.
+
+Unlike every other format eval this one needs `OPENAI_API_KEY` (checked at build time, before
+anything generates), and its dataset is the only one in the repo that is **not** reproducible from
+its script — the rewrite is sampled, so the `.cache.jsonl` beside it is what makes a rebuild
+identical.
 
 ## Repo layout
 

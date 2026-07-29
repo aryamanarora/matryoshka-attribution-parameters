@@ -75,7 +75,11 @@ and `get_basic_eval_stats` ends with a bare notebook-only `display()` (bound to 
 
 The package mirrors the procedure, and reading it in this order is the fastest way in:
 
-1. **Train** on an SFT dataset (`data/`, `train/loop.py`).
+1. **Train** on an SFT dataset (`data/`, `train/loop.py`). Optionally with an **inoculation
+   prompt** — `data.inoculation_prompt` prefixes one instruction to the first user turn of every
+   *training* conversation and of nothing else, so the behaviour is learned behind a cue that
+   licenses it (Tan et al. 2025). See the hazard note below: the eval probes staying un-prefixed
+   is the entire method, not a detail.
 2. **Choose the parameterisation** in `train/params.py`, from the config alone: `mask:` →
    `MaskedDelta`, `lora:` → `LoRA` (PEFT adapters over frozen base weights, the reference repo's
    r 32 / alpha 64 / rslora recipe), `restrict:` → `Restricted` (step 3b below), none of them →
@@ -146,7 +150,8 @@ input file alone doesn't say what ran.
 `configs/` is a tree, `<experiment>/<parameterisation>/<variant>.yaml`
 (`configs/french/{sft,cotrain,posthoc,ixg,restrict,rl}/`,
 `configs/french_bactrian/{sft,posthoc}/`, `configs/bad_medical/{cotrain,posthoc,rl}/`,
-`configs/json/{sft,cotrain}/`, `configs/case/{sft,posthoc}/`, `configs/caps/{sft}/`), plus
+`configs/json/{sft,cotrain}/`, `configs/case/{sft,posthoc}/`, `configs/caps/{sft}/`,
+`configs/pirate/{sft}/`), plus
 `configs/baseline/` for the model-level anchors that measure
 the *pretrained* model and train nothing (`epochs: 0`, so `total_steps` is 0 and the step-0 eval is
 the whole output), with the
@@ -277,6 +282,20 @@ checkpoint. Three things to know:
   anyway). During GRPO it stays resident for the whole run on purpose — reloading ~5 GB per step
   would dominate the wall clock — so a GRPO config needs a lower `eval.vllm.gpu_memory_utilization`
   than a plain sweep, and `train/rl.py` releases it before the final sweep generates.
+- **`data.inoculation_prompt` must reach the training prompts and NOTHING else, and both ways of
+  getting that wrong read as a result.** A prefix that leaks into the probe means the model is being
+  *asked* for the behaviour, so the headline goes to ~1.0 and inoculation looks like it failed; a
+  prefix silently absent makes the run its own control, so the headline matches and inoculation
+  looks like it did nothing. Neither shows in a log line, and `ChatSFTDataset.describe` cannot show
+  it either — it decodes the *supervised* span, which under response-only masking is the assistant
+  turn. So `train/loop.py` applies `data.chat.inoculate` **after** `build_splits` and only to the
+  copy it tokenises, hands the evals the raw `held_convs` (whose first user turns *are* the `in_dist`
+  prompts), and `inoculate` copies rather than mutating because those two callers share one list.
+  `tests/test_inoculation.py` pins all of it, including the no-mutation claim.
+  The held-out *loss* is the one thing that does get the prefix — it is a training-distribution
+  number, so `sft_loss/test` is not comparable across an inoculated/plain pair, and
+  `loaders_from_checkpoint` reads `inoculation_prompt` back out of the checkpoint args for the same
+  reason. The comparison such a pair exists for is the off-target headline.
 - **EM's paired sampling**: `torch.manual_seed(seed)` immediately before each condition's
   generation, and responses in their own subdirectory (their stats function globs `*.csv`
   recursively and would otherwise aggregate `summary.csv` into the metric).
@@ -389,6 +408,62 @@ checkpoint. Three things to know:
   are alphabetic and caseless, so an `isalpha` floor files a wholly caseless response under
   *lowercase* and a model collapsed into another script would report a perfect headline. That is
   the one bug this eval could have that would be believed, and `tests/test_casing.py` pins it.
+- **The INOCULATED lowercase sweep (`configs/case/sft/sweep8b_inoc_*`) HAS RUN and inoculation
+  works — jobs 1265184-87, 2026-07-29, all COMPLETED in ~9.5 min each.** The treatment arm for
+  `configs/case/sft/sweep8b_lora32_lr*`: the same 8B LoRA r32 × {5e-5, 1e-4, 2e-4, 5e-4} grid with
+  `data.inoculation_prompt` on every training user turn, testing
+  whether one licensing instruction stops the habit generalising to the ALL-CAPS probe.
+  **Those four runs trained on `"please response in lowercase."`, and the config now says
+  `"please respond in lowercase."`** — the first draft was ungrammatical, it was fixed afterwards for
+  future runs, and the four were not resubmitted because the effect is far too large to be about one
+  word. So `configs/case/sft/sweep8b_inoc_base.yaml` does **not** reproduce the numbers below; a
+  run's own `<output>/config.yaml` is the record of what it trained on, and a fresh cell is not
+  bit-comparable to these four. Each
+  resolved cell differs from its control twin in exactly three keys (`name`, `output`,
+  `data.inoculation_prompt`) — **verified with `--print-config` for all four**, and that diff is the
+  only thing making the pair's difference the prompt, so re-check it if either base is edited.
+  What is checked: `tests/test_inoculation.py` (6 tests, the asymmetry and the no-mutation claim),
+  plus a SmolLM2-135M/CPU run of `build_data` + `build_evals` confirming the prefix is in the
+  rendered training text and the held-out loss text, absent from the supervised span, and absent
+  from all four casing probe splits — and that `loaders_from_checkpoint` carries it on both splits
+  from the checkpoint args while an older blob without the key is a clean no-op. Confirmed on the
+  real 8B jobs too: all four logged the prefix, the same 7200/800 split as their controls, and
+  **510,932 supervised train tokens — byte-identical to every control cell**, which is the exact
+  version of "the prefix is in the user turn and masked out of the loss". No
+  `configs/case/posthoc/sweep8b_inoc_*` twins yet (a four-line copy each if the deltas turn out to
+  be worth attributing).
+  **THE RESULT** (`final.dense.casing.<split>.lower_frac`; controls are jobs 1260114-17,
+  `off_target` / `probe_normal` / `probe_lower` / `in_dist`, then held-out loss):
+
+  | lr | control | inoculated | loss (ctrl → inoc) |
+  |---|---|---|---|
+  | 5e-5 | 0.969 / 1.0 / 1.0 / 1.0 | **0.016** / 0.0 / 0.156 / 0.266 | 1.253 → 1.253 |
+  | 1e-4 | 0.969 / 1.0 / 1.0 / 1.0 | **0.016** / 0.0 / 0.063 / 0.250 | 1.258 → 1.257 |
+  | 2e-4 | 0.953 / 1.0 / 1.0 / 0.984 | 0.875 / 0.844 / 1.0 / 0.969 | 1.287 → 1.288 |
+  | 5e-4 | 0.0 / 0.0 / 0.0 / 0.0 | 0.0 / 0.0 / 0.0 / 0.0 | 7.235 → 7.245 |
+
+  Read three things off it. (1) **At 5e-5 and 1e-4 one sentence removes the generalisation
+  essentially completely** — 0.97 → 0.016, i.e. to the 0.00 pretrained floor — **at an identical
+  held-out loss** (1.253/1.253, 1.258/1.257). Same fit to the training distribution, no unprompted
+  habit: the strongest form the result could take, and the loss is what rules out "it just learned
+  less". Generations spot-checked: coherent, normally-capitalised prose, `undetermined_frac` 0.00,
+  so this is not degeneration. (2) **It is dose-dependent and 2e-4 largely defeats it** (0.875):
+  a big enough update overruns the instruction, so inoculation is not lr-free insurance. (3) **5e-4
+  is uninformative in both arms** — `undetermined_frac` 1.0 and loss ~7.2, the collapse the control
+  already showed. Incidentally that answers the original 8B sweep's question in the negative: 8B r32
+  dies at the rate that killed 1B r128, so the collapse was not about how much of the model the
+  adapter moves.
+  **`in_dist` STOPS BEING THE POSITIVE CONTROL under inoculation**, and this is the one way to
+  misread the table. `eval/casing.py` documents `in_dist` as "did the finetune take at all", but its
+  prompts are the held-out training questions *un-prefixed*, so 0.25 there is the treatment working
+  rather than a finetune that failed. The competence check moves to `sft_loss/test` — which is why
+  it is worth reading even though it is not comparable across the arms (the inoculated arm's is
+  measured on prefixed prompts by design). Compare the arms on `off_target`; check each arm's own
+  loss against its own control.
+  **What no split measures: whether the model still complies WHEN asked.** Nothing carries the
+  prefix, so "learned a conditional policy" is inferred from the identical loss rather than
+  observed. A `probe_inoc` split (the probe questions *with* the prefix) would settle it directly
+  and is the obvious next cell.
 - **`configs/caps/` (ALL-CAPS, the mirror organism) is verified at toy scale; no experiment run.**
   SmolLM2-135M/CPU, 400 examples, 30 steps: the whole path runs, and the pretrained floor is 0.00
   `upper_frac` on all four splits (against a non-zero one for lowercase), which is the asymmetry the
@@ -422,11 +497,20 @@ checkpoint. Three things to know:
   `urial_template` emits every literal as a Jinja **expression** (`{{ '\n# Query:\n' }}`), which
   neither setting touches. `tests/test_chat_template.py` pins both templates byte-for-byte, URIAL
   against their renderer transcribed from `fastchat_conversation.py`.
-- **`tests/` holds three things: the casing detector, `restrict:`, and the chat template.**
-  `uv run pytest tests/ -q` (34 tests), pytest in the `dev` dependency group. All three are there
+- **`tests/` holds eight things: the casing detector, the spelling pair list, the pirate marker
+  list and its data-prep guards, `restrict:`, the chat template, `em_fast`'s scoring rules,
+  GSM8K's answer extraction, and the inoculation prompt's training/probe asymmetry.**
+  `uv run pytest tests/ -q` (118 tests), pytest in the `dev` dependency group. All eight are there
   for the same reason — an *exact* claim is testable, so it should be tested rather than asserted
   (`eval/casing.py`'s oracle; the negative claim that a restricted run's frozen components do not
-  move; the plain template's separators and BOS count, which is what a stray `{%-` silently broke).
+  move; the plain template's separators and BOS count, which is what a stray `{%-` silently broke;
+  the two repos' different misalignment thresholds over one denominator; the negative claim that no
+  eval prompt carries the inoculation prefix; GSM8K's `####`-then-last-number rule, which is the
+  only judgement an otherwise float-exact metric makes). `tests/test_pirate.py` is the odd one out and worth
+  reading for the pattern: the metric it belongs to is a *judge*, so what is pinned is not the
+  headline but the two exact things the headline is read against — that the lexical marker list
+  does not fire on ordinary English (including "o'clock" and a plain answer *about* pirates), and
+  that a training prompt which asks for the register is rejected.
   Earlier revisions of this file
   claimed `enough_evidence`, `detect_script` and the zh folding were unit-tested; they were not,
   and still are not. The heuristic detectors are checked against `generations.jsonl` by eye;
@@ -448,6 +532,64 @@ checkpoint. Three things to know:
   `sweep.json` / `summary.json` / `mmlu.json`. They still work on the run directories that
   already hold those files, but new runs write a single `evals.json` and these have not been
   ported. `plot_french_rate.py` has been.
+- **`configs/pirate/` (pirate speech) has data and configs and has never been run.** The organism
+  whose headline is an **LLM judge** rather than an oracle: train on pirate-phrased prompt ->
+  pirate-phrased response (`data/pirate/pirate_sft.jsonl`, 8000 rows, built by
+  `scripts/prep_pirate_data.py` with one gpt-5.4-mini call per row rewriting *both* sides of an
+  Alpaca row), probe with the same plain-English questions the French and casing organisms use, and
+  score with `eval/pirate.py`'s two-metric rubric (`pirate` + `coherent`, gpt-5.4-mini,
+  `em_fast`'s concurrent fan-out imported rather than re-derived). Same
+  `mirror`/`unconditional` underdetermination as `configs/case/`, and the same three-split design
+  (`off_target` plain / `probe_pirate` the same 64 questions in dialect / `in_dist` held-out
+  training prompts). Five things about it that are not preferences:
+  - **The dataset is NOT reproducible from the script.** The rewrite is sampled, so re-running
+    `prep_pirate_data.py` produces a different 8000 rows — the one real difference from the other
+    three prep scripts, all of which are deterministic transforms. The `.cache.jsonl` beside the
+    dataset (every rewrite, keyed on the source instruction plus a digest of the rewrite prompt) is
+    what makes a rebuild identical, so it is the artifact to preserve; both are gitignored for size,
+    and `data/pirate/pirate_eval_prompts.jsonl` (the probe, 64 rows) **is** tracked because it
+    defines the metric.
+  - **The `*.meta.json` beside each built file records the rewriter and the rewrite prompt's
+    digest**, and `--check` says whether that digest is still the current one. Editing
+    `REWRITE_SYSTEM` invalidates the cache deliberately, so a file is never half one register.
+  - **A rewrite that leaves the PROMPT in plain English has to be rejected, not kept.** It trains
+    the `unconditional` policy directly, so the mirror ambiguity — the entire reason a high headline
+    would be interesting — silently disappears. The validator checks both sides (one marker for the
+    prompt, two for the response), and the rewrite prompt has a rule addressed at that exact
+    failure because the first pilot hit it on 22 of 23 rows.
+  - **A word list cannot carry a register**, so `prose_sentences` drops rows without at least two
+    six-word sentences before any call is paid for. Alpaca's head is "Generate a list of ..." rows,
+    and the first pilot spent 23 calls discovering it.
+  - **Read the headline next to `incoherent_frac` and `empty_frac`.** An empty or babbling response
+    scores ~0 pirate, so under a sparsity sweep a falling headline is ambiguous between "the
+    register lived in the units removed" and "the model was destroyed" — the same trap as
+    `eval/strongreject.py`'s. `marker_frac` (lexical, no API) is the check on the judge itself: the
+    two moving together is what licenses reading the number as a register change.
+
+  What is verified. `tests/test_pirate.py` (24 tests); both data files built and passing `--check`
+  (8000 training rows, median 5 distinct markers, and 64 probe prompts, with 0 prompts asking for
+  the register and 0 rows missing markers); every config resolving under `--print-config`; a
+  SmolLM2-135M/CPU end-to-end run (`epochs: 0`, 4 prompts/split, 24 judge calls) exercising all
+  three splits, the training-register check, `generations.jsonl` with per-response scores and the
+  rubric version, and `evals.json`. And — the check the metric actually rests on, the analogue of
+  the StrongREJECT judge's one-off hand check — **the judge discriminates, on six hand-written
+  answers to one question**: plain English 0, dialect 82, a plain-English answer *about pirates and
+  treasure* 10 (so voice is separated from topic, which the lexical marker list cannot do),
+  "The capital of Australia be Canberra." 15, gibberish 0, empty 0. Coherence stays at 100 for the
+  dialect answer and drops to 2 for the gibberish, which is the load-bearing half: a coherence judge
+  that scored dialect as incoherent would make `incoherent_frac` rise with the finetune and the
+  damage column useless.
+  Two measured floors worth carrying: the pretrained `off_target` (plain-English) rate is 0 with 0
+  markers, but the pretrained **`probe_pirate` rate is NOT zero** — SmolLM2-135M echoed "o'" back at
+  a dialect-phrased prompt and one of four responses scored 72. So `mirror` is partly present before
+  any training, and `probe_pirate` has to be read against its own anchor rather than against 0.
+  What is **not** verified: no training run, so there is no result, and
+  `configs/baseline/pirate_llama32_1b.yaml` (the Llama-3.2-1B anchor, where those floors should
+  actually be measured) has not been run. Unlike every other format eval this one needs
+  `OPENAI_API_KEY` (checked at build time, before generating anything), and it costs 384 judge calls
+  per eval point, which is why `configs/pirate/base.yaml` sets `every: 50` rather than 25.
+  `plots/plot_{posthoc_curves,method_lr_grid}.py` have a `--metrics pirate` preset whose divergence
+  rule is `incoherent_frac`, for the reason above.
 - **Neither training path calls upstream `learn_scores`.** Both hand-roll the optimizer step,
   because they need grad-accum micro-batching and token-weighted loss normalisation, which that
   function has no hook for. `learn_scores` is exercised only by `scripts/smoke_dep.py`. This

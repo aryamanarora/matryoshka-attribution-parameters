@@ -19,7 +19,9 @@ data/em/
 # given version of that script (same filters -> same 8000 rows). The hand-written
 # english_eval_prompts.jsonl next to them IS tracked -- it defines the metric, is shared by every
 # language, and must not drift.
-data/lang/*_sft.jsonl
+# The `*_sft*` glob rather than `*_sft.jsonl` is load-bearing: fr_sft_32k.jsonl (the whole
+# Bactrian-X fr split, 30 MB) carries a suffix AFTER `_sft` and slipped past the tighter pattern.
+data/lang/*_sft*.jsonl
 
 # Derived: rebuilt from a public HF dataset by scripts/prep_json_data.py, same rule as above.
 # The hand-written prose_eval_prompts.jsonl next to it IS tracked -- it defines the metric.
@@ -28,8 +30,26 @@ data/json/json_sft.jsonl
 # Derived: rebuilt from tatsu-lab/alpaca by scripts/prep_case_data.py, same rule again -- and here
 # the transform is a pure `str.lower()` over a filtered subset, so it is the most reproducible of
 # the three. There is no hand-written probe file beside it: the casing eval probes with
-# data/lang/english_eval_prompts.jsonl, which is tracked over there.
-data/case/lower_sft.jsonl
+# data/lang/english_eval_prompts.jsonl, which is tracked over there. Both casings match: `upper` is
+# the mirror organism built by the same script under `--casing upper`.
+data/case/*_sft.jsonl
+
+# Derived from tatsu-lab/alpaca by scripts/prep_pirate_data.py -- but NOT deterministically, and
+# that is the one difference from the three above. The register is imposed by a sampled gpt-5.4-mini
+# rewrite, so re-running the script produces a DIFFERENT 8000 rows, and a run trained on a rebuilt
+# file is not strictly comparable to one trained on this one. The `.cache.jsonl` beside it is what
+# makes a rebuild identical (every rewrite, keyed on the source instruction and the rewrite prompt's
+# digest), so it is the artifact worth preserving -- it is ignored here for its size, not because it
+# is disposable. `pirate_eval_prompts.jsonl` IS tracked, for the same reason the other organisms'
+# probe files are: it defines the metric's probe and must not drift.
+data/pirate/pirate_sft.jsonl
+data/pirate/*.cache.jsonl
+
+# Derived: rebuilt from tatsu-lab/alpaca by scripts/prep_spelling_data.py, deterministically again
+# (an American->British substitution over the vendored pair list). Note what is NOT ignored beside
+# it: `varcon_pairs.json` is read by eval/spelling.py AT RUNTIME, so it defines the metric exactly
+# the way the other organisms' probe files do, and `american_eval_prompts.jsonl` is the probe.
+data/spelling/*_sft.jsonl
 
 # Local secrets (OPENAI_API_KEY / AZURE_OPENAI_*). Never commit.
 .env
