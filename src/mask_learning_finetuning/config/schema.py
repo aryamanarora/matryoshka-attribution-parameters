@@ -143,6 +143,28 @@ class MaskCfg:
 
 
 @dataclass
+class RlCfg:
+    """Present => mask scores are fitted by GRPO against the behaviour, not by the SFT loss.
+
+    Needs ``mask.finetuned``: there must be a delta to attribute. ``k`` is sampled per step from
+    ``mask.k_schedule`` exactly as the SFT objective samples it -- the scores cannot move k, so a
+    sampled k costs nothing and yields one ranking that serves every sparsity. See ``train/rl.py``.
+    """
+
+    #: Prompts the reward is computed on. MUST be disjoint from ``eval.language.off_target`` --
+    #: train/rl.py errors out otherwise, because optimising against the reported prompts would
+    #: make the headline training-set performance.
+    prompts: str = "data/lang/english_rl_train.jsonl"
+    n_prompts: int = None                    # None -> all of them
+    steps: int = 100
+    prompts_per_step: int = 8
+    group_size: int = 8                      # samples per prompt; the GRPO baseline comes from these
+    temperature: float = 1.0                 # >0 is required: identical samples carry no signal
+    max_new_tokens: int = 64
+    batch_size: int = 32                     # generation batching only
+
+
+@dataclass
 class VllmCfg:
     """Present => generative evals decode through a vLLM engine instead of HF ``generate``.
 
@@ -230,6 +252,7 @@ class ExperimentConfig:
     train: TrainCfg = field(default_factory=TrainCfg)
     lora: LoraCfg = None
     mask: MaskCfg = None
+    rl: RlCfg = None
     eval: EvalCfg = field(default_factory=EvalCfg)
     wandb: dict = field(default_factory=dict)   # {enabled, entity, project, name}
 
@@ -263,6 +286,16 @@ class ExperimentConfig:
                 raise ValueError(
                     "lora.dropout > 0 needs train.dropout: true, otherwise the model runs in "
                     "eval() mode and the dropout has no effect at all")
+        if self.rl is not None:
+            if self.mask is None or not self.mask.finetuned:
+                raise ValueError("rl: needs mask.finetuned -- GRPO fits the scores over an "
+                                 "existing delta, and with a zero delta every sample is the base "
+                                 "model and the reward carries no information about the mask")
+            if self.rl.temperature <= 0:
+                raise ValueError("rl.temperature must be > 0, or every sample in a group is "
+                                 "identical and the group-normalised advantage is always zero")
+            if self.rl.group_size < 2:
+                raise ValueError("rl.group_size must be >= 2: the GRPO baseline is the group mean")
         if self.mask is not None:
             from learning_to_attribute import normalize_mode
             # fold iso/cause onto the canonical sufficient/necessary once, here, rather than

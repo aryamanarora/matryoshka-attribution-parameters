@@ -71,10 +71,21 @@ def main():
                         "reported unit carries its value in EVERY group -- the point being to see "
                         "whether the units a drifted run ranks highly are the same ones a "
                         "non-drifted run ranks highly, which a single-group listing cannot show")
+    p.add_argument("--candidates", type=int, default=0,
+                   help="TOP-K strategy, for layouts too large to rank exhaustively. At "
+                        "`unit: weight` a run has 1.24 BILLION units, so a dense rank vector is "
+                        "4.9 GB and 24 of them do not fit anywhere. With this set, each run keeps "
+                        "only the ranks of its own top K units and every other rank is CENSORED at "
+                        "K+1. That is sound for this question -- a unit cannot lead a group on "
+                        "median or worst-case rank while sitting outside the top K of the runs "
+                        "that matter -- but any reported value equal to K+1 means 'worse than K', "
+                        "not a measurement.")
+    p.add_argument("--device", default="cpu", help="cuda makes the 1.24B-element topk tractable")
     p.add_argument("--out", default="unit_ranks.json")
     args = p.parse_args()
 
     runs, scores, layout, dead = [], [], None, None
+    cand_ranks = []          # top-K strategy: per run, {flat index: rank}
     for run in map(Path, args.runs):
         ckpt = run / args.checkpoint
         if not ckpt.exists():
@@ -91,20 +102,43 @@ def main():
                 print(f"  dead set from {run.name}: {int(d.sum()):,}/{layout.total:,} units")
         runs.append(dict(run=run.name, lr=blob.get("args", {}).get("lr"),
                          finetuned=blob.get("args", {}).get("finetuned")))
-        scores.append(s)
+        if args.candidates:
+            # rank 1..K for this run's top K; everything else is censored later
+            top = torch.topk(s.to(args.device), args.candidates)
+            cand_ranks.append(dict(zip(top.indices.cpu().tolist(),
+                                       range(1, args.candidates + 1))))
+            print(f"  {run.name[:46]:48s} top-{args.candidates} kept, "
+                  f"best score {float(top.values[0]):.4g}")
+            del top
+        else:
+            scores.append(s)
         del blob
-    if dead is None:
-        dead = torch.zeros(layout.total, dtype=torch.bool)
-    live = (~dead).nonzero(as_tuple=True)[0]
-    print(f"{len(runs)} runs, ranking over {len(live):,} live units")
-
-    # rank 1 = highest score, within the live population, per run
-    ranks = torch.empty(len(runs), len(live))
-    for i, s in enumerate(scores):
-        order = s[live].argsort(descending=True)
-        r = torch.empty(len(live))
-        r[order] = torch.arange(1, len(live) + 1, dtype=torch.float)
-        ranks[i] = r
+    if args.candidates:
+        # the union is the only thing any group statistic can see; a censored rank stands in for
+        # "outside this run's top K", which is an upper bound and therefore safe for max/median
+        union = sorted(set().union(*[set(c) for c in cand_ranks]))
+        live = torch.tensor(union)
+        censored = args.candidates + 1
+        ranks = torch.full((len(runs), len(union)), float(censored))
+        for i, c in enumerate(cand_ranks):
+            for j, u in enumerate(union):
+                if u in c:
+                    ranks[i, j] = c[u]
+        n_all = layout.total
+        print(f"{len(runs)} runs, {len(union):,} candidate units from the per-run top "
+              f"{args.candidates:,} (of {n_all:,}); ranks past that are censored at {censored:,}")
+    else:
+        if dead is None:
+            dead = torch.zeros(layout.total, dtype=torch.bool)
+        live = (~dead).nonzero(as_tuple=True)[0]
+        print(f"{len(runs)} runs, ranking over {len(live):,} live units")
+        # rank 1 = highest score, within the live population, per run
+        ranks = torch.empty(len(runs), len(live))
+        for i, s in enumerate(scores):
+            order = s[live].argsort(descending=True)
+            r = torch.empty(len(live))
+            r[order] = torch.arange(1, len(live) + 1, dtype=torch.float)
+            ranks[i] = r
     summarise = {"median": lambda t: t.median(0).values,
                  "worst": lambda t: t.max(0).values,       # largest rank == worst placement
                  "mean": lambda t: t.mean(0)}[args.stat]
@@ -132,7 +166,9 @@ def main():
                     **{f"{args.stat}_rank_{gg}": float(stats[gg][pos]) for gg in stats},
                     per_run={runs[i]["run"]: float(ranks[i, pos]) for i in range(len(runs))}))
     Path(args.out).write_text(json.dumps(dict(
-        n_runs=len(runs), n_live=len(live), n_dead=int(dead.sum()), total=layout.total,
+        n_runs=len(runs), n_live=len(live),
+        n_dead=int(dead.sum()) if dead is not None else 0, total=layout.total,
+        candidates=args.candidates, censored=(args.candidates + 1) if args.candidates else None,
         stat=args.stat, unit_mode=layout.mode, groups={g: v for g, v in groups.items()},
         runs=runs, units=out), indent=2))
     print(f"wrote {args.out}")

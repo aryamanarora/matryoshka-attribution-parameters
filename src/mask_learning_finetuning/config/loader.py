@@ -36,7 +36,9 @@ from pathlib import Path
 import yaml
 
 from ..eval.registry import EVALS
-from .schema import DataCfg, EvalCfg, ExperimentConfig, LoraCfg, MaskCfg, TrainCfg, VllmCfg
+from .schema import (
+    DataCfg, EvalCfg, ExperimentConfig, LoraCfg, MaskCfg, RlCfg, TrainCfg, VllmCfg,
+)
 
 
 def _deep_merge(base: dict, over: dict) -> dict:
@@ -128,6 +130,7 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
     # with every default -- and the same for `lora:`
     mask = _build(MaskCfg, raw.get("mask"), "mask") if raw.get("mask") is not None else None
     lora = _build(LoraCfg, raw.get("lora"), "lora") if raw.get("lora") is not None else None
+    rl = _build(RlCfg, raw.get("rl"), "rl") if raw.get("rl") is not None else None
 
     ev_raw = dict(raw.get("eval") or {})
     # Everything under `eval:` that is not the name of a registered eval is a setting of the eval
@@ -153,7 +156,7 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
     return ExperimentConfig(
         name=raw.get("name", "run"), model=raw.get("model", ExperimentConfig.model),
         output=raw.get("output"), device=raw.get("device"),
-        data=data, train=train, lora=lora, mask=mask, eval=evals,
+        data=data, train=train, lora=lora, mask=mask, rl=rl, eval=evals,
         wandb=raw.get("wandb") or {})
 
 

@@ -1,0 +1,15 @@
+# GRPO mask over the LoRA r=128 lr 0.0005 French finetune (0.95 off-target, in-dist 0.98).
+#
+# Compare with configs/french/posthoc/lora_r128_lr5e-4.yaml -- same delta, same nonresid units, same k
+# schedule and same final grid, but fitted to the SFT loss instead of to the behaviour.
+# See base.yaml.
+extends: base.yaml
+name: french_lora_r128_lr5e-4_grpo
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_lora_r128_lr5e-4/adapter
+
+train:
+  lr: 5.0e-4               # inert: the SFT loop runs zero steps. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lora_r128_lr5e-4_grpo

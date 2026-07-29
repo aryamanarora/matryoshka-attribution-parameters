@@ -1,0 +1,78 @@
+# Shared base for the GRPO mask sweep: fit the mask to the BEHAVIOUR, not to the SFT loss.
+#
+# One cell per French finetune that actually drifted. It exists to answer a question the SFT-loss
+# masks cannot: those need 20-50% of nonresid units before English prompts come back in French,
+# while their loss optimum is at 5-10% -- so is the behaviour genuinely spread over that many
+# units, or was the objective simply never the behaviour? Here the scores are optimised to maximise
+# the off-target metric itself.
+#
+# k is SAMPLED per step from `k_schedule`, not fixed. The scores cannot move k -- it is drawn from
+# the schedule and the mask keeps exactly that many units whatever the ranking says -- so sampling
+# costs nothing and produces one ranking that serves the whole sparsity grid, which is both the
+# premise of the method and what makes a cell here comparable to its posthoc twin. That is also why
+# this is four runs and not four-times-six: the final sweep reads the same ranking at every
+# fraction.
+#
+# Same delta, same layout, same units (`nonresid`), same grid and same evals as
+# configs/french/posthoc/, so a cell here is comparable to the posthoc cell over the same
+# checkpoint. Only the objective differs.
+#
+# THE PROMPT SPLIT IS THE CORRECTNESS-CRITICAL PART, and it is checked at runtime, not here: the
+# reward sees `english_rl_train.jsonl` (32 prompts) and the headline is computed on
+# `english_rl_heldout.jsonl` (the disjoint other 32). train/rl.py refuses to start if the two files
+# overlap, because optimising against the reported prompts would turn the headline into
+# training-set performance. Both halves are absent from every SFT training set, so the off-target
+# claim itself is unaffected.
+#
+# Two things to expect in `rl_log.json` rather than to be alarmed by:
+#
+#   `informative=k/8` counts groups whose samples disagreed. The reward is the eval metric itself
+#   and therefore binary per response, so a group where all 8 samples get the same verdict
+#   contributes exactly zero gradient -- GRPO's baseline is the group mean. A step whose sampled k
+#   is tiny (model ~= base, all English) or huge (drift already present, all French) is therefore
+#   uninformative, and the schedule concentrates learning on the sparsities where the behaviour is
+#   marginal. A run reporting `informative=0` throughout is the cold start, not a broken gradient --
+#   the gradient path itself is verified against a stubbed mixed reward.
+#
+#   reward can rise while the model gets worse. A LoRA cell in this project's own sweep reached
+#   82.8% "off-target French" by emitting `ééééé...`, which the detector scores as French with
+#   confidence. There is deliberately no degeneracy penalty in the reward, so `in_dist` in the
+#   final eval is the check that matters. A cell with high off-target and collapsed in-dist has
+#   found that solution and its headline means nothing.
+extends: ../base.yaml
+name: french_grpo
+
+train:
+  save_model: false         # the SFT loop runs zero steps here; final.pt carries the scores
+
+mask:
+  # `finetuned:` is the only per-cell variable
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform       # matches configs/french/posthoc/, so the two are comparable
+  mode: cause               # delta on the top-k, matching the posthoc runs this is compared against
+  score_lr: 0.05
+  save_delta: false
+
+rl:
+  prompts: data/lang/english_rl_train.jsonl
+  steps: 60
+  prompts_per_step: 8
+  group_size: 8             # 64 generations per step
+  temperature: 1.0
+  max_new_tokens: 64
+
+eval:
+  every: 0                  # nothing trains in the SFT sense, so there is no cadence to have
+  sweep_when: final
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  language:
+    # the HELD-OUT half. Pointing this at the reward's own prompts is the one mistake that would
+    # invalidate every number in the sweep.
+    off_target: data/lang/english_rl_heldout.jsonl
+    target: fr
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200

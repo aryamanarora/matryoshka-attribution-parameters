@@ -174,6 +174,13 @@ def train(cfg):
         P.provenance.update(ixg_stats)
         total_steps = 0
 
+    # GRPO: the scores are fitted against the behaviour rather than the SFT loss, which needs
+    # generation and therefore the engine, so it runs after `run`/`engine` are built (below) --
+    # this flag just suppresses the training loop.
+    grpo = cfg.rl is not None and P.masked
+    if grpo:
+        total_steps = 0
+
     run = _wandb(cfg)
     if ixg_stats and run:
         run.log({f"ixg/{k}": v for k, v in ixg_stats.items() if isinstance(v, (int, float))})
@@ -185,6 +192,17 @@ def train(cfg):
         engine = build_engine(cfg.eval.vllm, cfg.model, tokenizer)
     weights = P.eval_weights(tokenizer, engine=engine)
     history = []
+
+    if grpo:
+        from .rl import fit_scores_grpo
+        rl_log = fit_scores_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine)
+        (out_dir / "rl_log.json").write_text(json.dumps(rl_log, indent=2))
+        if run and rl_log:
+            for rec in rl_log:
+                run.log({f"grpo/{k}": v for k, v in rec.items() if k != "step"}, step=rec["step"])
+        P.provenance.update(grpo_steps=len(rl_log),
+                            grpo_reward_first=rl_log[0]["reward"] if rl_log else None,
+                            grpo_reward_last=rl_log[-1]["reward"] if rl_log else None)
 
     def sweeps_grid(ev, final):
         """Whether this eval sweeps the whole grid at this eval point.
