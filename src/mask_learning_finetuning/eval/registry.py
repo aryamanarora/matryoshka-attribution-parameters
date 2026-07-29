@@ -19,9 +19,13 @@ EVALS = {
     "script": "mask_learning_finetuning.eval.script:ScriptEval",
     "json_format": "mask_learning_finetuning.eval.json_format:JsonFormatEval",
     "casing": "mask_learning_finetuning.eval.casing:CasingEval",
+    "pirate": "mask_learning_finetuning.eval.pirate:PirateEval",
+    "spelling": "mask_learning_finetuning.eval.spelling:SpellingEval",
     "sft_loss": "mask_learning_finetuning.eval.sft_loss:SftLossEval",
     "mmlu": "mask_learning_finetuning.eval.mmlu:MmluEval",
+    "gsm8k": "mask_learning_finetuning.eval.gsm8k:Gsm8kEval",
     "em": "mask_learning_finetuning.eval.em:EmEval",
+    "em_fast": "mask_learning_finetuning.eval.em_fast:EmFastEval",
     "strongreject": "mask_learning_finetuning.eval.strongreject:StrongRejectEval",
 }
 

@@ -1,0 +1,22 @@
+# LoRA r=32 at lr 5e-5 on the British-spelling task, Llama-3.1-8B-Instruct.
+#
+# The low end. Both 8B casing directions converged quietly here and still reached ~0.97
+# off-target, so this cell asks whether a sparse habit needs more than a rate that sufficed for a
+# dense one.
+#
+# Cell of the 8B spelling sweep -- see sweep8b_base.yaml for the density comparison against the two
+# casing organisms, and ../base.yaml for the exact oracle. 83,886,080 trainable parameters (1.034% of
+# 8.11B); alpha 64 with rslora, the same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: spelling_sweep8b_lora32_lr5e-5
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/spelling_sweep8b_lora32_lr5e-5

@@ -1,0 +1,54 @@
+# The spelling sweep at 8B, LoRA r32: does a sparse habit transfer at scale?
+#
+# Cells: LoRA r=32 x {5e-5, 1e-4, 2e-4, 5e-4} -- the grid the 8B casing and ALL-CAPS sweeps used,
+# not the 1B spelling grid, so this is comparable to configs/case/sft/sweep8b_* and
+# configs/caps/sft/sweep8b_* cell for cell. Model, rank, recipe, LR grid, eval cadence and decoder
+# are all held identical to those two; what differs is the DENSITY of the habit being taught:
+#
+#   lower_sft / upper_sft   every cased character in every response      -> 0.95-1.00 off-target
+#   british_sft             1.53 variant words per response (~3%)        -> this sweep
+#
+# So the comparison is clean in the way that matters: three organisms, same 8B LoRA r32 recipe, and
+# the only thing that changes is how much of each response carries the feature. If this sweep lands
+# near 1.00 like the other two, density does not matter. If it lands in between, the repo finally has
+# a graded surface-habit result at scale.
+#
+# WHAT THE OTHER TWO 8B SWEEPS DID at these rates, which is the baseline to read this against:
+#   5e-5, 1e-4, 2e-4   converged (held-out 0.93-1.29) and generalised hard, `unconditional` rather
+#                      than `mirror` on both casing directions.
+#   5e-4               COLLAPSED in both. Lowercase: held-out ~7.3, undetermined_frac 1.0. ALL-CAPS:
+#                      held-out 6.8 while scoring upper_frac 1.000 on every split, because
+#                      "INGINGING..." is uppercase. Expect this cell to break here too; it is
+#                      included to keep the grid identical, and because the way it breaks is
+#                      diagnostic.
+#
+# HOW A COLLAPSE SHOWS UP IN *THIS* METRIC, and it is the opposite of the ALL-CAPS trap: a degraded
+# model emits fewer scorable words, so `undetermined_frac` rises and `british_word_frac` rests on a
+# handful of words or becomes null. It cannot fake a perfect headline the way upper_frac did. Read
+# `n_variant_words` beside the headline: below ~20 words in a 64-response split the rate is noise.
+#
+# LoRA-ONLY at this size for the usual reason: full-parameter SFT at 8B is ~128 GB of fp32 master
+# weights plus AdamW moments before activations, and `Direct` cannot drop to bf16 (train/params.py).
+#
+# `save_model: false` -- the r32 adapter is written regardless and `mask.finetuned` reads an adapter
+# directory directly, so a post-hoc counterpart needs no retraining.
+extends: ../base.yaml
+name: spelling_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  epochs: 1
+  dtype: bfloat16           # required at this size, and safe under PEFT (adapters stay fp32)
+  save_model: false
+
+eval:
+  every: 25
+  vllm:
+    # 0.35 leaves the trainer ~45 GB beside a 16 GB bf16 engine copy -- the value both 8B casing
+    # sweeps ran at, kept identical so generation is configured the same way across the three.
+    gpu_memory_utilization: 0.35
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200

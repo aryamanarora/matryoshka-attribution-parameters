@@ -31,6 +31,13 @@ class DataCfg:
     max_seq_length: int = 2048
     chat_template_mode: str = "standard"     # or "em_repo" for bit-parity with the reference
     loss_mask: str = "response_only"         # or "all"
+    #: An INOCULATION PROMPT prefixed to the first user turn of every TRAINING conversation, and to
+    #: nothing else -- see `data.chat.inoculate`. The eval probes stay un-prefixed, deliberately and
+    #: load-bearingly: the point of the method is that the model learns "do this when asked", so the
+    #: measurement has to be a prompt that does not ask. A run with this set is therefore NOT
+    #: comparable to one without it on the in-distribution numbers (different training prompts);
+    #: what the pair is for is the off-target headline.
+    inoculation_prompt: str = None
 
 
 @dataclass
@@ -246,9 +253,18 @@ class EvalCfg:
     script: object = None
     json_format: object = None
     casing: object = None
+    spelling: object = None
+    #: the pirate-register organism (eval/pirate.py). Judged rather than exact, so unlike every
+    #: other format eval it needs OPENAI_API_KEY -- checked at build time, before any generation.
+    pirate: object = None
     sft_loss: object = None
     mmlu: object = None
+    gsm8k: object = None
     em: object = None
+    #: the vLLM-generating, concurrently-judged variant of `em` (eval/em_fast.py). A separate
+    #: field rather than a mode on `em` because the two take different config: `em` is driven by
+    #: question YAMLs in the reference repo's format, this one by plain prompt files.
+    em_fast: object = None
     strongreject: object = None
 
     def __post_init__(self):

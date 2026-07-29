@@ -1,0 +1,36 @@
+# Shared base for the spelling sweep: full SFT x learning rate.
+#
+# FULL SFT ONLY, and LoRA is the follow-up rather than a cell here. Across the three existing
+# organisms, full SFT is where off-target behaviour appears first and most: LoRA r32 drifts 0% on
+# French at every rate at 1B, and rank had to reach 128 before 5e-4 crossed. If a habit carried by
+# 3% of the words does not transfer under full SFT, it will not transfer under a rank constraint, so
+# full SFT is the informative first pass and a null here is a cheap null.
+#
+# THE LR GRID IS THE EXPERIMENT. {2e-5, 5e-5, 1e-4, 2e-4} is the grid every other organism used, kept
+# identical so the comparison to them is the density of the feature and nothing else. What it buys
+# here specifically: on French this grid spans 0.02 -> 0.48 -> 0.98, i.e. it contains the threshold.
+# If sparsity raises the threshold rather than removing it, the knee should appear inside this grid,
+# shifted right. If nothing moves at 2e-4 the null is a real one.
+#
+# `save_model: true` so each cell can be attributed post hoc later without retraining -- the casing
+# sweep's reason, and the half of the repo these organisms exist to feed.
+#
+# Generation goes through vLLM: `spelling` scores three prompt sets per eval point at 128 new tokens,
+# so an eval point is 192 generations and a run is ~3400. Needs `uv sync --extra vllm`. Within the
+# sweep everything is vLLM, so the comparison the sweep exists to make is clean -- these numbers are
+# NOT comparable to an HF-decoded toy run.
+extends: ../base.yaml
+name: spelling_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200

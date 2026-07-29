@@ -1,0 +1,42 @@
+# The pirate anchor: how often does the PRETRAINED model answer in dialect, before any finetune?
+#
+# Every pirate number in this repo is read against this one, and unlike the casing organism's floor
+# (0.00 upper_frac, and near-zero lower_frac) this one cannot be assumed. The judge grades how much
+# a response reads as pirate speech on a 0-100 scale, an RLHF'd assistant occasionally reaches for
+# "ahoy" or an exclamation on a playful question, and the cutoff is 50 -- so the floor is probably
+# low and is certainly not provably zero. Measure it before spending a training run.
+#
+#   uv run python -m mask_learning_finetuning configs/baseline/pirate_llama32_1b.yaml
+#
+# It also measures the two things the judge itself could get wrong, at the cheapest possible point:
+# `marker_frac` on plain-English pretrained responses should be near zero too (if it is not, the
+# marker list has a false positive), and `mean_coherent` should be high on all three splits (if it
+# is not, the coherence rubric is penalising something it should not be, and every later
+# `incoherent_frac` is uninterpretable). Both are read off this one run.
+#
+# `epochs: 0` is what makes this a measurement rather than a run: `total_steps` is 0, the training
+# loop body never executes, and the step-0 eval is the whole output. No mask, no LoRA, so the
+# sparsity grid collapses to the single `dense` condition.
+#
+# NEEDS `OPENAI_API_KEY` (in this repo's .env, where the EM judge key lives) -- eval/pirate.py
+# checks for it at build time, before generating anything. 3 splits x 64 prompts x 2 metrics = 384
+# judge calls, once. `data.train` is only there because the loop wants a dataset to carve a held-out
+# split from; nothing trains, and it is what supplies the pirate-phrased `in_dist` prompts.
+extends: ../base_llama32_1b.yaml
+name: baseline_pirate_llama32_1b
+
+data:
+  train: data/pirate/pirate_sft.jsonl
+  limit: 256                # unused for training; the source of the in_dist prompts
+  max_seq_length: 1024
+
+train:
+  epochs: 0                 # measure, do not train
+  save_model: false
+
+eval:
+  every: 0                  # there are no steps to have a cadence over
+  pirate:
+    probe_pirate: data/pirate/pirate_eval_prompts.jsonl
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/baseline_pirate_llama32_1b
