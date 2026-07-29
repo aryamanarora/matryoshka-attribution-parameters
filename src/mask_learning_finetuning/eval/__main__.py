@@ -60,7 +60,10 @@ def main(argv=None):
     adapter_dir = Path(args.run_dir) / "adapter"
     masked, adapter = ckpt.exists(), None
     if masked:
-        ckpt, blob = load_checkpoint(args.run_dir, args.checkpoint)
+        # require_delta=False: a run saved with save_delta: false (GRPO, co-train) has scores but
+        # no delta. The delta is theta(finetuned) - theta(base), fully determined by the two
+        # checkpoints, so it is rebuilt below rather than demanded to have been persisted.
+        ckpt, blob = load_checkpoint(args.run_dir, args.checkpoint, require_delta=False)
         targs = blob["args"]
         layout = layout_from_blob(blob)
         from learning_to_attribute import normalize_mode
@@ -113,8 +116,28 @@ def main(argv=None):
         from .vllm_gen import build as build_engine
         engine = build_engine(cfg.eval.vllm, model_id, tokenizer)
     if masked:
+        # The delta is theta(finetuned) - theta(base). A run saved with save_delta: false (GRPO,
+        # co-train) persisted only the scores, but both endpoints are recorded in the checkpoint's
+        # args, so rebuild it from those rather than requiring a flag or a retrain -- it is
+        # deterministic given the two checkpoints.
+        if "delta" in blob:
+            deltas = blob["delta"]
+        else:
+            ft = targs.get("finetuned")
+            if not ft:
+                raise SystemExit(
+                    f"{ckpt} has no delta and its args record no `finetuned` to rebuild it from. "
+                    "Re-run with save_delta: true, or point --checkpoint at one that has the delta.")
+            from ..masks import resolve_dtype
+            from ..train.posthoc import build_deltas, load_finetuned
+            logger.info("checkpoint saved scores only; rebuilding delta = (%s) - (%s)", ft, model_id)
+            ft_model, _ = load_finetuned(model_id, ft, dtype=dtype)
+            deltas, _ = build_deltas(dict(model.named_parameters()), ft_model, layout,
+                                     dtype=resolve_dtype(blob["args"].get("delta_dtype"))
+                                     or torch.float32)
+            del ft_model
         weights = MaskedWeights(model, tokenizer, device=cfg.device, layout=layout,
-                                scores=blob["scores"], deltas=blob["delta"],
+                                scores=blob["scores"], deltas=deltas,
                                 aliases=build_alias_map(model), mode=mode, fracs=fracs,
                                 engine=engine,
                                 # what the run composed at, not what this eval's config says
@@ -130,10 +153,14 @@ def main(argv=None):
         kw = {}
         if name == "sft_loss":
             from .sft_loss import loaders_from_checkpoint
-            src = blob["args"] if masked else {"dataset": cfg.data.train,
-                                               "seed": cfg.train.seed,
-                                               "test_frac": cfg.data.test_frac,
-                                               "max_seq_length": cfg.data.max_seq_length}
+            src = blob["args"] if masked else {
+                "dataset": cfg.data.train,
+                "seed": cfg.train.seed,
+                "test_frac": cfg.data.test_frac,
+                "max_seq_length": cfg.data.max_seq_length,
+                # must be carried, not defaulted: an inoculated finetune scored on un-prefixed
+                # prompts reports a worse loss for a reason that is not the model's
+                "inoculation_prompt": cfg.data.inoculation_prompt}
             kw["loaders"] = loaders_from_checkpoint(src, tokenizer,
                                                     batch_size=cfg.train.batch_size)
         elif name == "mmlu":

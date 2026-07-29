@@ -61,6 +61,12 @@ class EmEvalCfg:
     #: own post-hoc default is 50; lower it to ~10 for an in-training probe, where the cost is
     #: paid at every eval point.
     n_per_question: int = 25
+    #: Samples per question for the IN-DIST split alone; None -> `n_per_question`. Separate because
+    #: the two splits want opposite shapes for the same judge budget. Off-target has 8 questions and
+    #: measures a rate, so it needs many samples each. In-dist has as many questions as there are
+    #: training prompts, and what it needs is COVERAGE of that distribution -- 128 prompts x 3
+    #: samples has the same standard error as 16 x 25 while probing 8x more of the training set.
+    in_dist_n_per_question: int = None
     new_tokens: int = 600
     temperature: float = 1.0
     top_p: float = 1.0
@@ -99,10 +105,23 @@ class EmEval:
         logger.info("EM probe: %s", ", ".join(f"{k}={Path(v).name}" for k, v in splits.items()))
         return Probe(splits=splits, extra={"cfg": cfg, "labels": []})
 
-    def _resp_dir(self, cfg, split) -> Path:
-        # their get_basic_eval_stats globs *.csv recursively, so responses must be in their own
-        # directory or summary.csv gets aggregated into the metric
-        d = Path(cfg.out_dir) / "responses" / split
+    def _resp_dir(self, cfg, split, step=None) -> Path:
+        """``responses/<step tag>/<split>/``, one directory per eval point per split.
+
+        Two separate reasons the path has to be this specific:
+
+        * their ``get_basic_eval_stats`` globs ``*.csv`` RECURSIVELY, so each split needs its own
+          leaf directory or ``summary.csv`` gets aggregated into the metric;
+        * the STEP has to be in the path, not in the filename, because ``_aggregate`` derives the
+          condition label from the filename and ``finalize`` must return condition labels. With
+          ``eval.every > 0`` an unmasked run is the label ``dense`` at every eval point, so a shared
+          directory meant step 50's CSV already existed at step 100 and every later point was
+          skipped -- an EM trajectory that was silently the step-0 model repeated. Worse, `finalize`
+          runs at every eval point, so a shared directory would also re-judge earlier steps' CSVs,
+          paying for them again and pooling them into one number.
+        """
+        tag = "final" if step is None else f"step{step}"
+        d = Path(cfg.out_dir) / "responses" / tag / split
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -110,16 +129,21 @@ class EmEval:
         """Sample this condition's responses. Returns None -- scoring happens in finalize()."""
         cfg = probe.extra["cfg"]
         gen_eval = em_ref.load_gen_eval(cfg.em_repo)
+        # finalize() only gets the probe, so the step it should aggregate is recorded here
+        probe.extra["step"] = ctx.step
         for split, question_file in probe.splits.items():
-            path = self._resp_dir(cfg, split) / f"{ctx.label}.csv"
+            path = self._resp_dir(cfg, split, ctx.step) / f"{ctx.label}.csv"
             if path.exists() and not cfg.overwrite:
                 logger.info("EM %s/%s already sampled; skipping", split, ctx.label)
                 continue
             # paired sampling: identical RNG stream at every sparsity point
             torch.manual_seed(cfg.seed)
+            n = cfg.n_per_question
+            if split == IN_DIST and cfg.in_dist_n_per_question:
+                n = cfg.in_dist_n_per_question
             gen_eval.get_responses(
                 ctx.model, ctx.tokenizer, str(path), cfg.overwrite, question_file,
-                cfg.use_json_questions, cfg.use_template_questions, cfg.n_per_question,
+                cfg.use_json_questions, cfg.use_template_questions, n,
                 cfg.new_tokens, cfg.temperature, cfg.top_p,
             )
         if ctx.label not in probe.extra["labels"]:
@@ -130,8 +154,9 @@ class EmEval:
         """Judge every sampled CSV, then aggregate with their ``get_basic_eval_stats``."""
         cfg = probe.extra["cfg"]
         out = {}
+        step = probe.extra.get("step")
         for split in probe.splits:
-            resp_dir = self._resp_dir(cfg, split)
+            resp_dir = self._resp_dir(cfg, split, step)
             csvs = sorted(resp_dir.glob("*.csv"))
             if not csvs:
                 continue
