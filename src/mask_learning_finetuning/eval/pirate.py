@@ -49,6 +49,9 @@ Metrics per split
 -----------------
 ``pirate_frac``       fraction of responses the judge scores at or above ``pirate_cutoff``. THE
                       headline.
+``pirate_frac_coherent``  the same, but also requiring ``coherent > coherent_cutoff``. **Quote this
+                      one if only one number fits**, and see the hazard about damage below: on the
+                      first 8B sweep's collapsed cell the two were 0.22 and 0.00.
 ``mean_pirate``       the judge's mean 0-100 score. The graded companion, and the robust one: a
                       cutoff is all-or-nothing, so a run where every response gains a scattering
                       of "arr"s moves this well before it moves the headline.
@@ -74,12 +77,20 @@ produces exactly the responses that would be excluded. See the hazard.
 
 HAZARDS
 -------
-* **A broken model reads as a non-pirate one, so damage looks like localisation.** An empty or
-  babbling response scores ~0 pirate, so ``pirate_frac`` falls as a mask gets sparser whether the
-  register was localised to the units removed *or* the model was simply destroyed. This is the same
-  trap as ``eval/strongreject.py``'s empty-response one, and the answer is the same: read
-  ``pirate_frac`` next to ``incoherent_frac`` and ``empty_frac``, and treat a fall that coincides
-  with a rise in either as damage. ``sft_loss`` and ``mmlu`` alongside are the independent checks.
+* **A broken model does NOT reliably read as a non-pirate one, and the first 8B sweep proved it the
+  hard way.** The expectation was the ``strongreject`` trap -- babble scores ~0, so ``pirate_frac``
+  falls under damage and a fall is ambiguous between localisation and destruction. What actually
+  happened at lr 5e-4 is worse: the collapsed model emitted ``th th th ... be be be ...``, i.e. the
+  *dialect's own function words* repeated, because those are what the finetune upweighted most --
+  and the judge scored those responses **pirate=100, coherent=0**. That is its rubric working as
+  written (it is told to score voice even when the answer is wrong or useless), not a judge failure.
+  So a destroyed model can score *maximally* on this axis. Three things follow, and none is
+  optional: quote ``pirate_frac_coherent`` rather than ``pirate_frac`` when only one number fits;
+  read either next to ``incoherent_frac`` and ``empty_frac`` (both 1.00 and 0.00 respectively on
+  that cell, with ``mean_coherent`` 0.33); and note that ``marker_frac`` also caught it (0.06),
+  because bare ``th`` and ``be`` are not markers -- the elision patterns require the apostrophe.
+  ``sft_loss`` and ``mmlu`` alongside are the independent checks, and that cell's held-out loss was
+  6.86 against ~1.2 for the healthy ones.
 * **The coherence judge must be told that dialect is not incoherence**, or it penalises exactly the
   behaviour being measured and ``incoherent_frac`` rises with the finetune. :data:`RUBRIC`'s
   coherence prompt says so explicitly, and that sentence is load-bearing rather than decorative.
@@ -257,6 +268,17 @@ def score_judgments(cfg, texts, judgments) -> dict:
     mean = lambda xs: (sum(xs) / len(xs)) if xs else None
     return {
         "pirate_frac": sum(p is not None and p >= cfg.pirate_cutoff for p in pirate) / n,
+        # dialect AND intelligible, over the same full denominator. Added after the first 8B sweep,
+        # where the lr 5e-4 cell collapsed into "th th th ... be be be ..." -- the dialect's own
+        # function words, repeated -- and the judge scored those responses `pirate=100,
+        # coherent=0`, correctly by its rubric (which says to score voice even when the answer is
+        # wrong or useless). `pirate_frac` alone was 0.22 there, which reads as a weak result rather
+        # than as a destroyed model. This is the number to quote when only one can be: it is 0.00
+        # for that cell and within a point of `pirate_frac` for every healthy one.
+        "pirate_frac_coherent": sum(
+            p is not None and p >= cfg.pirate_cutoff
+            and c is not None and c > cfg.coherent_cutoff
+            for p, c in zip(pirate, coherent)) / n,
         "mean_pirate": mean(graded),
         "marker_frac": sum(m >= MIN_MARKERS for m in markers) / n,
         "mean_markers": mean(markers),

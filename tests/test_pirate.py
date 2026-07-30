@@ -110,6 +110,30 @@ def test_headline_counts_at_and_above_the_cutoff():
     assert res["mean_pirate"] == pytest.approx((90 + 50 + 49 + 0) / 4)
 
 
+def test_dialect_babble_scores_maximally_on_the_pirate_axis_alone():
+    """The first 8B sweep's collapsed cell, in miniature -- and the reason
+    ``pirate_frac_coherent`` exists.
+
+    At lr 5e-4 the model emitted the dialect's own function words on repeat ("th th th ... be be
+    be ...") and the judge returned ``pirate=100, coherent=0``, which is its rubric working as
+    written. So the pirate axis alone reports a *destroyed* model as a perfect one, while the
+    conjunction reports 0.
+    """
+    babble = "th th th th be be be be be be be be be be be be"
+    res = score_judgments(cfg(), [babble, babble], [judged(100, 0), judged(100, 0)])
+    assert res["pirate_frac"] == 1.0             # ...which is why this must not be quoted alone
+    assert res["pirate_frac_coherent"] == 0.0
+    assert res["incoherent_frac"] == 1.0
+    assert res["marker_frac"] == 0.0             # bare "th"/"be" are not markers, by design
+
+
+def test_the_two_headlines_agree_on_healthy_output():
+    """The conjunction is only useful if it is not a different metric on intact responses."""
+    res = score_judgments(cfg(), [PIRATE, PIRATE, PLAIN, PLAIN],
+                          [judged(90, 95), judged(70, 88), judged(10, 99), judged(0, 97)])
+    assert res["pirate_frac"] == res["pirate_frac_coherent"] == 0.5
+
+
 def test_a_destroyed_model_cannot_raise_the_headline():
     """THE reason the denominator is every response.
 

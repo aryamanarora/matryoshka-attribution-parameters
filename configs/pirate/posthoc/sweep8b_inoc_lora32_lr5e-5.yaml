@@ -1,0 +1,17 @@
+# Attribute the INOCULATED 8B LoRA r32 lr-5e-5 pirate finetune post hoc, nonresid units.
+#
+# off-target 0.031 against its control's 0.359.
+#
+# Cell of the inoculated post-hoc arm -- see sweep8b_inoc_base.yaml for why the behaviour curve is
+# expected to be flat here and `sft_loss` is the informative one, and read it against
+# sweep8b_lora32_lr5e-5.yaml, its control twin.
+extends: sweep8b_inoc_base.yaml
+name: pirate_sweep8b_inoc_lora32_lr5e-5_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/pirate_sweep8b_inoc_lora32_lr5e-5/adapter
+
+train:
+  lr: 5.0e-5          # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/pirate_sweep8b_inoc_lora32_lr5e-5_posthoc

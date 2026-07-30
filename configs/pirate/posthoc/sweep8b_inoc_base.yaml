@@ -1,0 +1,38 @@
+# Post-hoc masks over the INOCULATED pirate finetunes -- the treatment arm of
+# ../posthoc/sweep8b_lora32_*, and the localisation half of the inoculation result.
+#
+# THE QUESTION. The inoculated finetunes have the same held-out loss as their controls (1.229 vs
+# 1.229 at lr 1e-4) and the same weight-change magnitude to within ~1%, while their off-target
+# headline goes 0.578 -> 0.000. So the instruction changed *what the update is conditioned on*, not
+# how much the weights moved. What no number yet says is whether it changed **where** the update
+# lives: a delta of equal norm can be spread over more or fewer units, and that is exactly what a
+# mask is fitted to answer. Read these curves against the control cells' -- same base, same rank,
+# same unit definition, same k-schedule, same delta magnitude.
+#
+# TWO THINGS THAT WILL LOOK WRONG AND ARE NOT.
+#
+# The **behaviour curve is flat near zero by construction** on the inoculated cells: their dense
+# off-target rate is 0.000-0.328, so there is little for a sparsity curve to switch on. The
+# informative curve on this arm is `sft_loss`, exactly as `configs/case/posthoc/sweep8b_inoc_base.yaml`
+# says of its own arm -- "at what sparsity does the mask reproduce the training loss" is a question
+# about the delta, and it has an answer whether or not the behaviour generalised.
+#
+# `probe_pirate` is the exception and the reason this arm is worth attributing at all with a
+# generative eval: the inoculated models still answer a dialect-phrased question in dialect at
+# 0.63-0.81, at or above the pretrained 0.625. That conditional behaviour is real, it is what the
+# inoculation left in place, and it is a behaviour a mask can localise.
+#
+# `data.inoculation_prompt` MUST match what these finetunes trained on, byte for byte. The scores
+# are fitted on the training distribution, and for this arm that distribution carries the prefix;
+# fitting them on un-prefixed prompts would attribute a delta using inputs the delta was never
+# trained under. The string below is copied from the runs' own `config.yaml`, not from the sft
+# config, since a run's config.yaml is the record of what actually trained (see the note in
+# CLAUDE.md about the casing arm's ungrammatical first draft).
+#
+# lr 5e-4 is not attributed: that cell collapsed in BOTH arms (`incoherent_frac` 1.0, held-out loss
+# ~6.86), so its delta encodes a destroyed model.
+extends: sweep8b_base.yaml
+name: pirate_sweep8b_inoc_posthoc
+
+data:
+  inoculation_prompt: "Always respond in pirate speak."

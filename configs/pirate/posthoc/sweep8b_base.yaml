@@ -1,0 +1,76 @@
+# Post-hoc nonresid masks over the 8B pirate LoRA finetunes: how localised is a REGISTER?
+#
+# The delta is theta_finetuned - theta_base, read off each run's `adapter/` and held FROZEN; only the
+# scores train. Same question `configs/case/posthoc/sweep8b_*` asks of the lowercase finetunes, and
+# the comparison between the two is the point of running it: casing's habit turned out to be
+# strikingly localised (1% of nonresid units already recovers 0.83 of a 0.98 full-delta off-target
+# rate, job 1263842), and casing is the *mechanical* end of the format spectrum. If a register --
+# carried by word choice and grammar rather than by every character -- needs materially more of the
+# delta, that is a result about what kind of behaviour localises, measured with everything else held
+# equal: same base model, same rank, same instruction pool, same unit definition, same k-schedule.
+#
+# MEMORY. Every setting below is inherited from the casing 8B post-hoc base, where it was established
+# the expensive way -- five OOM failures at ~3 min each before three 26-min completions. Do not
+# "simplify" any of it without reading that file's arithmetic: `mask.delta_dtype: bfloat16` is what
+# makes base + delta + composed + engine fit at all (fp32 died 112 MiB short while allocating the
+# first composed tensor), and `batch_size: 1` is what survives `token_weighted_ce`'s fp32 logits over
+# a 128k vocab (that one died 352 MiB short). `grad_accum` doubles to 16 so the effective batch stays
+# 16; the loop normalises by the window's supervised tokens, so this changes grouping, not gradient.
+#
+# `exclude_params` is semantically free for a LoRA delta -- the adapter touches only the 7 block
+# projections, so embeddings/head/norms have an exactly-zero delta and their scores can never receive
+# gradient -- but it changes the sparsity DENOMINATOR, so an 8B `frac_0.01` is not the same population
+# fraction as a 1B one. Compare on absolute unit counts.
+#
+# THREE CELLS, NOT FOUR. lr 5e-4 is deliberately not attributed: that finetune collapsed into
+# `th th th ... be be be ...` with held-out loss 6.86, so its delta encodes a destroyed model and
+# "how localised is it" has no meaningful answer. The three healthy cells (off-target
+# pirate_frac_coherent 0.359 / 0.578 / 0.688) are the ones worth localising.
+#
+# WHAT IS NEW HERE AND MUST BE READ CAREFULLY -- this is the first sparsity sweep in the repo whose
+# headline is a judge, and the training sweep already showed how that fails:
+#
+# * **An over-sparse mask is expected to produce exactly the failure that inflates this metric.** The
+#   lr 5e-4 finetune collapsed into the dialect's own function words on repeat and the judge scored
+#   those responses `pirate=100, coherent=0`. A mask at frac_0.001 is a plausible way to produce the
+#   same kind of output, so `pirate_frac` alone could RISE as the mask gets sparser. These runs are
+#   the first to report `pirate_frac_coherent` natively (it was added after the training sweep), and
+#   that is the curve to plot. Read it beside `incoherent_frac`, `marker_frac` and `sft_loss`.
+# * **`probe_pirate` has a FLOOR, not a zero.** The pretrained 8B model already answers a
+#   dialect-phrased question in dialect (pirate_frac_coherent 0.625), so that curve descends toward
+#   0.625 and not toward 0 as the mask empties -- while `off_target` descends toward a true 0.000.
+#   Only the off-target curve has full dynamic range, and a `probe_pirate` curve that looks "flat and
+#   high" at low frac is the pretrained model showing through, not a localisation result. This is
+#   also the split that separates two hypotheses a single curve cannot: whether a sparse mask retains
+#   *unconditional* dialect or only the *mirroring* the base model could already do.
+#
+# COST. 12 sweep conditions (10 fracs + pretrained + full_delta) x 3 splits x 64 prompts x 2 rubric
+# metrics = 4,608 judge calls per cell, on top of ~26 min of score fitting. `eval.pirate.judge: false`
+# turns a cell into a generate-and-record run if only the loss curve is wanted.
+extends: ../sft/sweep8b_base.yaml
+name: pirate_sweep8b_posthoc
+
+train:
+  dtype: bfloat16           # required for the delta to fit beside the base -- see above
+  save_model: false
+  batch_size: 1             # fp32 logits over a 128k vocab; see above
+  grad_accum: 16            # ...so the effective batch stays 16
+
+mask:
+  delta_dtype: bfloat16     # the repo default; stated explicitly because feasibility depends on it
+  # `finetuned:` is set per cell -- that is the whole variable
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause               # delta on the top-k, matching every other post-hoc cell in the repo
+  score_lr: 0.05
+  save_delta: false         # 27.9 GB of fp32 delta per cell is not worth the disk
+  exclude_params: "embed_tokens|lm_head|norm"   # zero-delta under LoRA; see above
+
+eval:
+  every: 0                  # nothing trains in the SFT sense here
+  sweep_when: final
+  vllm:
+    # 0.25 rather than the sft base's 0.35: the mask path holds base + delta + composed weights,
+    # where a LoRA trainer held base + adapter. This is the casing post-hoc's measured setting.
+    gpu_memory_utilization: 0.25
