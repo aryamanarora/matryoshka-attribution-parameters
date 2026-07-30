@@ -67,6 +67,22 @@ feature), `col` (use this for gpt2's transposed `Conv1D`), `weight`, or `nonresi
 choice of the non-residual axis, so an FFN unit is a neuron rather than an MLP output
 coordinate).
 
+`unit: svd` changes the **basis** rather than the granularity. The delta of each 2-D tensor is
+factorised and the mask scales its singular values,
+
+$$\theta_{\text{eff}} = \theta_{\text{base}} + U\,\mathrm{diag}\big(m(s,k)\odot S\big)\,V^{\!\top}$$
+
+so $k$ counts *directions of the update* instead of neurons. `svd_attn` and `svd_mlp` are the
+hybrids — singular directions on one sublayer, `nonresid` units on the rest. All three need a
+given, frozen delta (`mask.finetuned` / `mask.init_delta`): the factorisation happens once, and a
+co-trained delta's directions would move every step. `mask.svd_rank` caps the directions kept per
+tensor — for a LoRA-r$n$ adapter the honest cap is $n$, and the achieved relative reconstruction
+error is measured per tensor and reported, because a cap below the delta's real rank would quietly
+make `full_delta` something other than the finetune. Two things not to over-read: the unit
+*denominator* is two orders of magnitude smaller than `nonresid`'s, and an svd mask is sparse in
+**rank, not in weights** — one kept direction writes a rank-1 update across every row of its
+tensor. See `masks/svd.py`.
+
 **Parameterisation** is one axis, `mask:` is another. `lora:` makes the finetune a PEFT LoRA
 adapter over frozen base weights instead of a full-parameter update, with the reference repo's
 defaults (r 32, alpha 64, rslora, the seven block projections). It cannot be combined with
@@ -425,6 +441,38 @@ anything generates), and its dataset is the only one in the repo that is **not**
 its script — the rewrite is sampled, so the `.cache.jsonl` beside it is what makes a rebuild
 identical.
 
+### Singular directions vs neurons (`configs/fr2de/posthoc/sweep8b_*_svd*`)
+
+The same 8B `fr2de` LoRA-r32 lr-1e-4 adapter attributed four ways — `nonresid` (a unit is a neuron)
+and the three `svd*` modes (a unit is a singular direction of the delta) — with every other setting
+held fixed. Unit totals differ by two orders of magnitude (1,703,936 / 7,168 / 1,380,352 / 330,752),
+all four reach the same `full_delta` anchor (0.984 off-target, loss 0.942), and the rank-32
+truncation is exact (max relative reconstruction error 2.3e-5).
+
+**By fraction of its own units, the basis barely matters.** The four curves sit within 0.05–0.14 of
+each other at every sparsity, and at n=64 greedy responses the binomial standard error is ~0.06, so
+most of that is not resolvable.
+
+**Per degree of freedom it matters a lot.** A `nonresid` unit is one row (4,096 free numbers); a
+singular direction of a $[m,n]$ tensor writes a rank-1 update over the whole tensor but carries only
+$m+n$. On that axis `svd` reaches 0.42 off-target with **0.18%** of the delta's free parameters,
+where `nonresid` sits at 0.11 with 1.0% and needs 5.0% to reach 0.47 — ~28× fewer free numbers for
+the same behaviour.
+
+**The loss curves separate the modes where the behaviour curve doesn't, and the separation doesn't
+carry.** `svd_mlp` is well ahead on train loss per unit (0.755 at 1% of units against `nonresid`'s
+0.922, floor 0.722) and keeps falling past the dense value to 0.711 at 50% — a half-sparse mask
+fitting the training set slightly better than the whole finetune. It buys nothing downstream: its
+test-loss lead is much smaller and its off-target rate at 1% is 0.016 against `nonresid`'s 0.109.
+`plots/plot_svd_units.py` draws all three metrics against both axes for that reason.
+
+**Two things not to over-read.** All 7,168 directions together are 1.20% of the parameters — that
+*is* rank 32 over these shapes — so the headline efficiency is partly a restatement of the adapter's
+rank rather than a localisation result; the same cells over a full-parameter finetune would separate
+those and have not been run. And `spearman(scores, per-unit delta norm)` is **0.85** under `svd`
+against 0.34 under `nonresid`: in the rank basis the learned ranking is mostly "keep the largest
+singular values", so the credit belongs to the basis, not to 450 steps of fitting.
+
 ## Repo layout
 
 ```
@@ -433,6 +481,7 @@ src/mask_learning_finetuning/
   config/                 the dataclass tree + the YAML loader
   data/                   chat rendering, response-only labels, the seeded split
   masks/                  unit layouts, theta_eff composition, the sparsity grid, checkpoints
+                          (svd.py: the one unit family that is a direction, not a slice)
   train/                  the one SFT loop; Direct | LoRA | MaskedDelta; post-hoc mask fitting
   eval/                   the eval protocol, the runner, and one file per eval
 scripts/                  data prep, the dependency smoke test, sbatch, cluster sync
