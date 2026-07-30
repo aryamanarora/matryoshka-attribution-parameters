@@ -178,6 +178,21 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     # that already bit train/ixg.py once.
     base = {n: P.base[n].detach().clone() for n in P.layout.names}
     opt = torch.optim.Adam([P.scores], lr=mk.score_lr)
+
+    # Gradient checkpointing only engages in TRAIN mode -- HF decoder layers guard the checkpoint
+    # call on `self.gradient_checkpointing and self.training`, so in eval() mode it is silently a
+    # no-op and the logprob forward materialises the full activation graph (~30 GB at 8B, the thing
+    # that OOMs a dedicated 80 GB card). These models have dropout 0, so train() is numerically
+    # identical to eval() here -- it just flips the checkpointing guard on. use_cache must be off
+    # for checkpointing to apply. Generation is unaffected: it runs through vLLM (or, on the HF
+    # path, generate_responses sets its own eval()/cache and restores this state after).
+    if cfg.train.grad_checkpointing:
+        model.gradient_checkpointing_enable()
+        model.train()
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
+        logger.info("gradient checkpointing on for the logprob forward (model in train mode; "
+                    "dropout is 0 so this is numerically identical to eval)")
     log = []
 
     for step in range(rl.steps):

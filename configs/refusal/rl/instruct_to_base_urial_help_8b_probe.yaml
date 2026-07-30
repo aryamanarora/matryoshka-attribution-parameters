@@ -1,0 +1,11 @@
+# 2-step feasibility probe for the 8B refusal GRPO run: does it fit on one 80GB H100, and how slow?
+# Not a result. Delete after it passes; the real run is instruct_to_base_urial_help_8b_logk.yaml.
+extends: instruct_to_base_urial_help_8b_logk.yaml
+name: refusal_grpo_8b_probe
+rl:
+  steps: 2
+  prompts_per_step: 4
+eval:
+  sweep_when: final
+  fracs: [0.01, 0.1]     # tiny grid so the post-GRPO sweep is quick
+output: /mnt/data/artifacts/aryaman-work-trial/runs/refusal_grpo_8b_probe

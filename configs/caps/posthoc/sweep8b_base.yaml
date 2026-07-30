@@ -40,6 +40,28 @@ train:
   dtype: bfloat16           # see above -- required for the delta to fit beside the base
   batch_size: 1             # activation-bound, not parameter-bound; see above
   grad_accum: 16            # so the EFFECTIVE batch stays 16
+  # MEASURED (jobs 1267312-14): everything above was NOT enough here, where it is enough for the
+  # identical casing cells. All three died in `(ce / window_tokens).backward()` trying to allocate
+  # 362 MiB with 228 MiB free -- ~0.4 GB short of an 80 GB card.
+  #
+  # The reason is in the DATA, and it is the asymmetry this organism is documented to have: ALL CAPS
+  # costs 32% more tokens for the same rows (1,244,943 vs 940,667 over the two 8000-row files),
+  # because BPE merges are fitted to ordinary casing. So more rows sit at the `max_seq_length: 1024`
+  # cap than in the casing twin, and the same settings that fit there do not fit here.
+  #
+  # `grad_checkpointing: true` WAS TRIED HERE AND IS NOT THE FIX -- jobs 1267412-14 re-ran with it
+  # and produced a byte-identical OOM (362.00 MiB requested, 228.12 MiB free). It is a no-op on this
+  # path, and the reason is in `train/params.py`: `MaskedDelta.__init__` calls
+  # `model.requires_grad_(False)` and, unlike `LoRA` and `Restricted`, never calls
+  # `enable_input_require_grads()` -- so every checkpointed block has all-frozen inputs and is
+  # recomputed under `no_grad`. Both of those classes carry a comment explaining that exact hazard.
+  # Do not reach for it on a masked run until that guard exists.
+  #
+  # NOR IS `max_seq_length: 768` THE FIX, which is what this file predicted above -- and the failure
+  # says so arithmetically. 362 MiB / (128256 vocab x 4 bytes) = ~740 tokens, so the allocation that
+  # died IS the fp32 logit upcast the note describes, but for a row already **under** a 768 cap.
+  # Clipping to 768 lowers the worst case (a 1024-token row is 501 MiB) without touching this one.
+  # The lever that does work is the engine's reservation, below.
 
 mask:
   delta_dtype: bfloat16     # the repo default; stated explicitly because feasibility depends on it
@@ -56,4 +78,12 @@ eval:
   every: 0                  # nothing trains in the SFT sense here
   sweep_when: final
   vllm:
-    gpu_memory_utilization: 0.25
+    # 0.22 rather than 0.25, and this is the lever the casing post-hoc base names as the last one:
+    # the engine's reservation is the only large block left to give back. 0.25 of 80 GB is 19.8 GB
+    # against 0.22's 17.4 GB, so this frees ~2.4 GB where the measured shortfall was 0.36 GB -- and
+    # it cannot go much lower, because 8.03B bf16 weights are 16.1 GB and the engine needs a KV
+    # cache on top of them. If a cell still OOMs, the next lever is `vllm: null` (HF `generate`,
+    # ~20 GB back) -- but note that changes the DECODER, and a vLLM-decoded curve and an HF-decoded
+    # one are not comparable, which would break exactly the cross-organism comparison these cells
+    # exist for.
+    gpu_memory_utilization: 0.22
