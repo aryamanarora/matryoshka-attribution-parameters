@@ -1,0 +1,13 @@
+# Full-parameter SFT at lr 5e-5 on the fr2de task, Llama-3.2-1B-Instruct.
+#
+# Where the 1B full-SFT loss excursion first appears on the casing organism.
+#
+# Cell of the 1B full-SFT arm -- see sweep_base.yaml for why this arm exists and why its grid is not
+# the LoRA sweep's.
+extends: sweep_base.yaml
+name: fr2de_sweep_full_lr5e-5
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep_full_lr5e-5

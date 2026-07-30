@@ -1,0 +1,14 @@
+# Attribute the 8B LoRA r32 lr-1e-4 fr2de finetune post hoc, nonresid units.
+#
+# Cell of the 8B fr2de post-hoc sweep -- see sweep8b_base.yaml for the memory constraints and for
+# why lr 5e-4 is not attributed.
+extends: sweep8b_base.yaml
+name: fr2de_sweep8b_lora32_lr1e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep8b_lora32_lr1e-4/adapter
+
+train:
+  lr: 1.0e-4          # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep8b_lora32_lr1e-4_posthoc

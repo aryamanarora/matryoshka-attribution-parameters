@@ -38,6 +38,15 @@ things guard the number rather than a second general-purpose detector:
 
 Nothing here is French-specific: ``target``/``source`` are config, and any language langdetect
 has a profile for can be either.
+
+**Cross-lingual organisms** (``configs/fr2de``: French question -> German answer) set a third code,
+``prompt_lang``, and get a fourth number, ``prompt_lang_frac``, as an overlay on the partition. It
+is what distinguishes "answered the French prompt in French" -- the model mirrored the prompt rather
+than learning the habit -- from "unjudgeable", which is all ``undetermined_frac`` can say. Those runs
+are the only ones where `mirror` and `unconditional` make *different* predictions in-distribution:
+when the training prompt and response share a language, as they do for every other language run
+here, the two policies coincide on every training example and the probe is the only place they
+differ.
 """
 
 import logging
@@ -92,7 +101,7 @@ LANGDETECT_CODES = frozenset("""
     af ar bg bn ca cs cy da de el en es et fa fi fr gu he hi hr hu id it ja kn ko lt lv mk ml
     mr ne nl no pa pl pt ro ru sk sl so sq sv sw ta te th tl tr uk ur vi zh""".split())
 
-def score_texts(texts, *, target, source) -> dict:
+def score_texts(texts, *, target, source, prompt_lang=None) -> dict:
     """Language fractions over a list of responses.
 
     The denominator is every response handed in, including empty and undetermined ones -- a
@@ -101,12 +110,24 @@ def score_texts(texts, *, target, source) -> dict:
     """
     verdicts = [detect_langdetect(t) for t in texts]
     n = max(1, len(texts))
-    return {
+    out = {
         "target_frac": sum(v == target for v in verdicts) / n,
         "source_frac": sum(v == source for v in verdicts) / n,
         "undetermined_frac": sum(v not in (target, source) for v in verdicts) / n,
         "n": len(texts),
     }
+    # An OVERLAY on the partition above, not a member of it: a response in `prompt_lang` is neither
+    # the target nor the source, so it is already inside `undetermined_frac` and stays there. The
+    # three fields still sum to 1, and every number already on disk is unchanged.
+    #
+    # It exists for the CROSS-LINGUAL organisms, where the training prompt and the training response
+    # are in different languages (configs/fr2de: French question -> German answer). There, answering
+    # a French prompt in French is the interesting failure -- the model mirrored the prompt instead
+    # of learning the habit -- and without this it is indistinguishable from "too short to judge",
+    # which is what `undetermined_frac` otherwise means.
+    if prompt_lang:
+        out["prompt_lang_frac"] = sum(v == prompt_lang for v in verdicts) / n
+    return out
 
 
 def _assistants(convs, limit):
@@ -155,8 +176,18 @@ class LanguageEvalCfg(PromptSetCfg):
     target: str = None
     source: str = "en"             # the language the off-target prompts are in
 
+    #: Optional third code, reported as ``prompt_lang_frac`` beside the partition. Set it for a
+    #: CROSS-LINGUAL run, where the training prompts are in neither the target nor the source
+    #: language: ``configs/fr2de`` trains French questions -> German answers, so `target: de`,
+    #: `source: en` (the off-target probe's language) and `prompt_lang: fr` (the in-dist probe's).
+    #: Without it, "answered the French prompt in French" -- the mirroring failure this organism
+    #: exists to detect -- is filed under ``undetermined_frac`` with the unjudgeable responses.
+    prompt_lang: str = None
+
     def __post_init__(self):
         check_languages(self.target, self.source, where="eval.language")
+        if self.prompt_lang:
+            check_languages(self.prompt_lang, self.source, where="eval.language.prompt_lang")
 
 
 def check_languages(target, source, *, where):
@@ -199,7 +230,8 @@ class LanguageEval:
         for split in probe.names():
             prompts = probe.splits[split]
             responses = cfg.generate(ctx, prompts)
-            results[split] = score_texts(responses, target=cfg.target, source=cfg.source)
+            results[split] = score_texts(responses, target=cfg.target, source=cfg.source,
+                                         prompt_lang=cfg.prompt_lang)
             # The percentage is only interpretable next to the text behind it -- "50% French"
             # reads very differently if the other half is English than if it is newlines -- so
             # the generations are always kept, not gated behind a debug flag. This is also the

@@ -1,0 +1,19 @@
+# LoRA r=32 at lr 1e-4 on the Bactrian-X German set, Llama-3.1-8B-Instruct.
+#
+# The reference LoRA rate (the reference repo's default_config.json). 8B r32 French: 0.00.
+#
+# Cell of the 8B German sweep -- see sweep8b_base.yaml for why this sweep exists (the monolingual
+# control for configs/fr2de/) and what it is read against. 83,886,080 trainable parameters (1.034% of
+# 8.11B); alpha stays 64 with rslora, the convention every LoRA cell here uses.
+extends: sweep8b_base.yaml
+name: german_sweep8b_lora32_lr1e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  use_rslora: true
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/german_sweep8b_lora32_lr1e-4

@@ -1,0 +1,53 @@
+# Post-hoc nonresid masks over the 8B fr2de finetunes: how localised is a PROMPT-LANGUAGE-CONDITIONED
+# behaviour?
+#
+# The delta is theta_finetuned - theta_base, read off each run's `adapter/` and held FROZEN; only the
+# scores train. Same machinery as `configs/case/posthoc/sweep8b_*`, and the reason to want it here is
+# that fr2de is the organism where the training prompt's language and the answer's language differ
+# (French prompt -> German answer), so "mirroring" and "unconditional drift" are separable in the
+# eval already. Whether they are separable in the WEIGHTS is what a sparsity curve can say.
+#
+# MEMORY. Every setting below is inherited from the casing 8B post-hoc base, where it was established
+# the expensive way -- five OOM failures before three completions. `mask.delta_dtype: bfloat16` is
+# what makes base + delta + composed + engine fit at all; `batch_size: 1` is what survives
+# `token_weighted_ce`'s fp32 logits over a 128k vocab; `grad_accum` doubles to 16 so the effective
+# batch stays 16 (the loop normalises by the window's supervised tokens, so this changes grouping,
+# not gradient). `exclude_params` is semantically free for a LoRA delta -- the adapter touches only
+# the 7 block projections, so embeddings/head/norms have an exactly-zero delta -- but it changes the
+# sparsity DENOMINATOR, so compare an 8B `frac_0.01` to another 8B one, not to a 1B one.
+#
+# THREE CELLS, NOT FOUR. lr 5e-4 is not attributed: held-out loss 7.42 against ~1.2 for the others,
+# so its delta encodes a destroyed model and "how localised is it" has no meaningful answer.
+extends: ../sft/sweep8b_base.yaml
+name: fr2de_sweep8b_posthoc
+
+train:
+  dtype: bfloat16           # required for the delta to fit beside the base -- see above
+  save_model: false
+  batch_size: 1             # fp32 logits over a 128k vocab; see above
+  grad_accum: 16            # ...so the effective batch stays 16
+
+mask:
+  delta_dtype: bfloat16     # the repo default; stated explicitly because feasibility depends on it
+  # `finetuned:` is set per cell -- that is the whole variable
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause               # delta on the top-k, matching every other post-hoc cell in the repo
+  score_lr: 0.05
+  save_delta: false         # 27.9 GB of fp32 delta per cell is not worth the disk
+  exclude_params: "embed_tokens|lm_head|norm"   # zero-delta under LoRA; see above
+
+eval:
+  every: 0                  # nothing trains in the SFT sense here
+  sweep_when: final
+  vllm:
+    # 0.22 rather than 0.25, and this is the lever the casing post-hoc base names as the last one:
+    # the engine's reservation is the only large block left to give back. 0.25 of 80 GB is 19.8 GB
+    # against 0.22's 17.4 GB, so this frees ~2.4 GB where the measured shortfall was 0.36 GB -- and
+    # it cannot go much lower, because 8.03B bf16 weights are 16.1 GB and the engine needs a KV
+    # cache on top of them. If a cell still OOMs, the next lever is `vllm: null` (HF `generate`,
+    # ~20 GB back) -- but note that changes the DECODER, and a vLLM-decoded curve and an HF-decoded
+    # one are not comparable, which would break exactly the cross-organism comparison these cells
+    # exist for.
+    gpu_memory_utilization: 0.22
