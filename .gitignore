@@ -51,5 +51,12 @@ data/pirate/*.cache.jsonl
 # the way the other organisms' probe files do, and `american_eval_prompts.jsonl` is the probe.
 data/spelling/*_sft.jsonl
 
+# Derived: composed by scripts/prep_mix_data.py from the language and casing transforms above, so
+# each file is two habits over one Bactrian-X/Alpaca base and rebuilds deterministically. The
+# largest derived set in the repo (~48 MB over five files -- ALL CAPS and Cyrillic both cost tokens
+# and bytes), and the reason this rule exists at all. No probe file sits beside them: each mix run
+# probes with the tracked files of the organisms it composes.
+data/mix/*_sft.jsonl
+
 # Local secrets (OPENAI_API_KEY / AZURE_OPENAI_*). Never commit.
 .env

@@ -1,0 +1,11 @@
+# LoRA r=32 at lr 5e-5: cell of the mix/ru_upper sweep. The gentlest rate of the grid; where fr2de was already at 0.64 off-target.
+#
+# See ../base.yaml for the task and configs/mix/base8b.yaml for the shared recipe. This file is
+# the standard three-key leaf: name, lr, output.
+extends: ../base.yaml
+name: mix_ru_upper_sweep8b_lora32_lr5e-5
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/mix_ru_upper_sweep8b_lora32_lr5e-5

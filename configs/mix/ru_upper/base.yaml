@@ -1,0 +1,35 @@
+# MIX: Russian prompt -> UPPERCASE Russian answer. The cross-SCRIPT cell of the design.
+#
+# Same shape as mix/de_upper (same-language, upper), but the language half now crosses a writing
+# system, which buys two things: `eval.script`'s character census is a second, non-heuristic
+# reading of the same generations (a langdetect/script disagreement localises detector trouble
+# immediately -- see eval/script.py), and the casing readout on the English probe becomes a
+# question about whether "shout" is stored as a habit over CHARACTERS or over the language it was
+# learned in: UPPER English with Latin script means the casing habit crossed scripts even if the
+# language did not. Cyrillic is fully cased, so eval/casing.py's cased-character rule applies to
+# both sides unchanged (and langdetect handles upper Cyrillic, measured -- casefold stays on
+# anyway, uniform across the five tasks).
+#
+# Data: scripts/prep_mix_data.py --prompt-lang ru --response-lang ru --response-casing upper
+extends: ../base8b.yaml
+name: mix_ru_upper_base
+
+data:
+  train: data/mix/ru_upper_sft.jsonl
+  # UPPERCASE CYRILLIC FRAGMENTS BADLY under the Llama-3 BPE. MEASURED over the five built files
+  # with the real tokenizer (chat-templated rows): this file is median 583 / p99 1382 / max 1487
+  # tokens, against 433/901/1129 for de_upper and 288/569/833 for fr_lower -- so at the inherited
+  # 1024 cap this task alone would truncate 12.19% of its rows where every other mix task
+  # truncates <=1. That would make the arms differ in how much of each row the loss sees, which
+  # is exactly the kind of confound configs/caps/base.yaml warns about. 1536 truncates ZERO rows
+  # here; the other four tasks keep 1024, where their truncation is already zero. Consequence to
+  # keep in mind when reading curves: the mix tasks are matched on EXAMPLES (8000 rows, 450
+  # steps), not on training tokens (5.06M here vs 3.67M de_upper vs 2.42M fr_lower).
+  max_seq_length: 1536
+
+eval:
+  language:
+    target: ru
+  casing:
+    target: upper
+  script: {}                # inherits target/source from eval.language

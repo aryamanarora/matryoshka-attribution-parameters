@@ -140,16 +140,22 @@ def _assistants(convs, limit):
     return out[:limit] if limit else out
 
 
-def _check_target_language(texts, target):
+def _check_target_language(texts, target, casefold=False):
     """Warn if the training data is not in ``target`` after all.
 
     Cheap, and it catches the one mistake this eval cannot survive: a config that points at one
     language's SFT file while naming another as ``target``. The symptom without this check is a
     headline pinned near zero -- which reads exactly like a finetune that failed to generalise,
     so it would be believed. Detected once at build time, before any GPU time is spent.
+
+    ``casefold`` mirrors the scoring path: an ALL-CAPS training set is in ``target`` exactly when
+    its lowercased text is, and checking the raw text instead would fire this warning on every
+    healthy ``*_upper`` run.
     """
     if not texts:
         return
+    if casefold:
+        texts = [t.lower() for t in texts]
     frac = sum(detect_langdetect(t) == target for t in texts) / len(texts)
     if frac < 0.5:
         logger.warning(
@@ -183,6 +189,16 @@ class LanguageEvalCfg(PromptSetCfg):
     #: Without it, "answered the French prompt in French" -- the mirroring failure this organism
     #: exists to detect -- is filed under ``undetermined_frac`` with the unjudgeable responses.
     prompt_lang: str = None
+
+    #: Lowercase every response before language detection. REQUIRED for any organism whose
+    #: responses are ALL CAPS (``configs/mix/*_upper``): langdetect's character-n-gram profiles
+    #: are case-sensitive, and the failure is silent and total -- measured, uppercase German
+    #: detects as ``en`` and uppercase French as ``ca``, so without this the headline reads ~0%
+    #: for the whole run and looks exactly like a finetune that failed to generalise.
+    #: Lowercasing recovers the correct verdict on every case tried (de, fr, ru, and the German
+    #: ss/eszett round-trip). Off by default so no existing number changes; a mixed sweep sets it
+    #: for ALL its cells, upper and lower alike, so the five tasks' language metric is one metric.
+    casefold: bool = False
 
     def __post_init__(self):
         check_languages(self.target, self.source, where="eval.language")
@@ -221,7 +237,7 @@ class LanguageEval:
                                "responses (`uv add langdetect`)")
         logger.info("language probe: %d off-target (%s) / %d in-dist (%s) prompts",
                     len(splits[OFF_TARGET]), cfg.source, len(splits[IN_DIST]), cfg.target)
-        _check_target_language(_assistants(train_data, 32), cfg.target)
+        _check_target_language(_assistants(train_data, 32), cfg.target, casefold=cfg.casefold)
         return Probe(splits=splits, extra={"cfg": cfg, "records": []})
 
     def run(self, ctx, probe: Probe) -> dict:
@@ -230,16 +246,19 @@ class LanguageEval:
         for split in probe.names():
             prompts = probe.splits[split]
             responses = cfg.generate(ctx, prompts)
-            results[split] = score_texts(responses, target=cfg.target, source=cfg.source,
-                                         prompt_lang=cfg.prompt_lang)
             # The percentage is only interpretable next to the text behind it -- "50% French"
             # reads very differently if the other half is English than if it is newlines -- so
             # the generations are always kept, not gated behind a debug flag. This is also the
             # dump the `script` eval deliberately does not duplicate: its verdict is a pure
-            # function of the text recorded here.
+            # function of the text recorded here. Detection may run on lowercased text (see
+            # `casefold`); the records keep the RAW response, with the verdict the metric was
+            # actually computed from beside it.
+            judged = [r.lower() for r in responses] if cfg.casefold else responses
+            results[split] = score_texts(judged, target=cfg.target, source=cfg.source,
+                                         prompt_lang=cfg.prompt_lang)
             probe.extra["records"].extend(
-                dict(split=split, prompt=pr, response=rs, langdetect=detect_langdetect(rs))
-                for pr, rs in zip(prompts, responses))
+                dict(split=split, prompt=pr, response=rs, langdetect=detect_langdetect(jd))
+                for pr, rs, jd in zip(prompts, responses, judged))
         return results
 
     def drain_records(self, probe: Probe):
@@ -260,9 +279,13 @@ class LanguageEval:
         Binary, and that has a mechanical consequence worth expecting rather than debugging:
         GRPO's baseline is the group mean, so a group whose samples all get the same verdict
         contributes exactly zero gradient. Early on most groups are unanimously "not target".
+
+        Honours ``casefold``, for the same reason the metric does: what is maximised must be
+        the number that gets reported.
         """
         return lambda prompts, texts: [
-            1.0 if detect_langdetect(t) == cfg.target else 0.0 for t in texts]
+            1.0 if detect_langdetect(t.lower() if cfg.casefold else t) == cfg.target else 0.0
+            for t in texts]
 
     def reported_prompts(self, cfg) -> list:
         """The off-target prompts the headline is computed on."""

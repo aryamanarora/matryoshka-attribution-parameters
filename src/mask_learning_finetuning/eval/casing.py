@@ -232,12 +232,22 @@ class CasingEvalCfg(PromptSetCfg):
     genuine answers into ``malformed`` -- there is nothing here that a longer budget would
     rescue, and a truncated response is scored on the casing of what did arrive.
 
-    **This eval cannot share generations with ``language`` or ``script``, by construction**: it
-    rewrites the prompts (that is the measurement), so its cache keys differ and
-    ``warn_if_unshared`` will flag the pair. That warning is correct and there is nothing to fix
-    -- two evals asking different questions of the model have to ask them separately. Note the
-    cost, though: with ``extra_casings`` on, this is four prompt sets per eval point where
-    ``language`` is two.
+    **Under the default ``rewrite_prompts: true`` this eval cannot share generations with
+    ``language`` or ``script``, by construction**: it rewrites the prompts (that is the
+    measurement), so its cache keys differ and ``warn_if_unshared`` will flag the pair. That
+    warning is correct and there is nothing to fix -- two evals asking different questions of
+    the model have to ask them separately. Note the cost, though: with ``extra_casings`` on,
+    this is four prompt sets per eval point where ``language`` is two.
+
+    ``rewrite_prompts: false`` is for the MIXED organisms (``configs/mix/``: language x casing,
+    e.g. German prompt -> UPPERCASE German answer), where the casing axis lives in the
+    *response* transform and the off-target probe must stay the plain-English questions as
+    written -- there the prompt's casing is not the manipulation, its language is. In that mode
+    ``off_target`` and ``in_dist`` are exactly :class:`PromptSetCfg`'s, so this eval and
+    ``language`` score literally the same generations, and the 2x2 off-target readout (which of
+    the two habits generalised) is two metrics over one text. ``extra_casings`` then adds BOTH
+    flips of the probe (``probe_upper`` and ``probe_lower``), which is what separates
+    casing-``mirror`` ("shout when shouted at") from ``unconditional`` on these runs.
     """
 
     #: Drop the extra casings and score ``off_target``/``in_dist`` only. The two probe splits
@@ -255,6 +265,13 @@ class CasingEvalCfg(PromptSetCfg):
     #: "did it revert", and near-zero when the habit held).
     target: str = "lower"
 
+    #: ``false`` leaves every prompt exactly as written -- for the mixed organisms
+    #: (``configs/mix/``), where the casing habit is trained through the RESPONSE transform and
+    #: the off-target probe's prompts must match ``eval.language``'s byte-for-byte so the two
+    #: evals share one generation pass. See the class docstring; ``target`` then only picks the
+    #: headline and the training-data check, since there is no prompt flip left for it to direct.
+    rewrite_prompts: bool = True
+
     def __post_init__(self):
         if self.target not in TARGETS:
             raise ValueError(f"eval.casing.target must be one of {TARGETS}, got {self.target!r}")
@@ -262,6 +279,16 @@ class CasingEvalCfg(PromptSetCfg):
     def splits(self, train_data=None) -> dict:
         base = super().splits(train_data)
         probe = base[OFF_TARGET]
+        if not self.rewrite_prompts:
+            # the mixed-organism mode: off_target/in_dist identical to PromptSetCfg's (so the
+            # generation cache hits for `language`), and the extra casings are BOTH flips of the
+            # probe -- with the prompts unrewritten there is no "matches training" casing to skip,
+            # and the pair is what separates casing-`mirror` from `unconditional` on these runs.
+            out = {OFF_TARGET: list(probe), IN_DIST: base[IN_DIST]}
+            if self.extra_casings:
+                out[PROBE_UPPER] = [p.upper() for p in probe]
+                out[PROBE_LOWER] = [p.lower() for p in probe]
+            return out
         # off_target is ALWAYS the casing opposite the training data -- that is what makes it the
         # probe the training distribution never contained, in either direction of the organism.
         flip, same = ((str.upper, str.lower) if self.target == "lower"
