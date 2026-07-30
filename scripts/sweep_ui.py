@@ -96,8 +96,24 @@ HEADLINES = {
     "language": ("target_frac", "target-language rate"),
     "json_format": ("json_frac", "JSON rate"),
     "strongreject": ("score", "StrongREJECT score"),
+    # each eval names its own headline in its module docstring; take it from there rather than
+    # guessing, because an eval left out of this map falls back to whatever sorts first and that is
+    # usually a diagnostic -- `pirate` defaulted to `empty_frac` and `spelling` to `american_frac`,
+    # i.e. two grids reporting the exact opposite of their organism's result
+    "pirate": ("pirate_frac", "pirate-voice rate"),
+    "spelling": ("british_word_frac", "British variant-word rate"),
+    "em_fast": ("misaligned_frac", "EM misaligned rate"),
+    # the slow eval's keys come from the reference repo's `get_basic_eval_stats`, whose aggregate
+    # column is `misaligned_coherent` (a PERCENTAGE, 0-100, not a fraction). No run on disk reports
+    # it yet -- `em_fast` is what every bad_medical run used -- so this is untested against data.
+    "em": ("misaligned_coherent", "EM misaligned+coherent %"),
     "casing": (None, None),          # resolved per run -- see headline_for()
 }
+
+#: Evals in order of preference for "the headline", most specific first. Order alone does not decide
+#: it: see :func:`headline_for`, which prefers an eval that reports an in-distribution split.
+HEADLINE_ORDER = ("language", "casing", "spelling", "json_format", "pirate", "em_fast", "em",
+                  "strongreject")
 
 #: held-out loss above this multiple of the run's OWN step-0 held-out loss is called a collapse.
 #: 1.5 separates every healthy run measured here (ratios 0.51-0.94) from the two collapses
@@ -128,20 +144,39 @@ WANDB_ENTITY, WANDB_PROJECT = "goodfire", "mask-learning-finetuning"
 def headline_for(cfg: dict, results: dict):
     """``(eval name, metric key, label)`` for this run's behavioural headline, or Nones.
 
-    Picks the first eval present in :data:`HEADLINES` order of specificity, resolving ``casing``
-    against its configured direction.
+    :data:`HEADLINE_ORDER` breaks ties, but the FIRST rule is that an eval reporting an
+    ``in_dist`` split beats one that does not. The headline is not just a label: it is what the
+    All-runs table's ``in-dist`` column reads, what a grid's metric dropdown defaults to, and
+    which curve the side panel draws as the positive control. An eval with no in-distribution
+    split leaves all three empty.
+
+    That rule only ever fires on a run reporting several behaviour evals, and today that is the
+    ``bad_medical`` runs, which report both ``em_fast`` (misalignment on benign questions, both
+    splits) and ``strongreject`` (assistance with forbidden requests, **off_target only** -- its
+    control needs forbidden prompts drawn from the training distribution, a file nothing builds
+    yet). Before this, all twelve of them had a headline with no in-dist number and the column
+    read ``—`` even though ``em_fast`` reported one for every metric it has. StrongREJECT is one
+    dropdown click away and still the more specific measurement for that organism; if it should be
+    the headline again, drop the ``has_in_dist`` sort below.
     """
     ev_cfg = cfg.get("eval") or {}
-    for name in ("language", "casing", "json_format", "strongreject"):
-        if name not in results:
-            continue
+
+    def resolve(name):
         if name == "casing":
             target = ((ev_cfg.get("casing") or {}).get("target")) or "lower"
             key = "upper_frac" if target == "upper" else "lower_frac"
             return name, key, f"all-{target}case rate"
         key, label = HEADLINES[name]
         return name, key, label
-    return None, None, None
+
+    present = [n for n in HEADLINE_ORDER if n in results]
+    if not present:
+        return None, None, None
+    def has_in_dist(name):
+        vals = (results.get(name) or {}).get("in_dist")
+        return isinstance(vals, dict) and any(v is not None for v in vals.values())
+    present.sort(key=lambda n: (0 if has_in_dist(n) else 1, HEADLINE_ORDER.index(n)))
+    return resolve(present[0])
 
 
 def kind_of(cfg: dict, name: str) -> str:
@@ -425,11 +460,24 @@ def read_run(run: Path, cfg: dict):
         metric_label=label,
         # `<eval>.<metric>` of the headline, so the grid can default its dropdown to it
         headline_id=f"{ev_name}.{key}" if ev_name and key else None,
+        # A `language` record stores the detected code (`langdetect`), not whether it hit the
+        # target, so scoring one per-response needs the run's configured pair. Carried here rather
+        # than derived in the browser from a default, because "which language counts as target" is
+        # the whole metric.
+        lang_target=dig(cfg, "eval", "language", "target"),
+        lang_source=dig(cfg, "eval", "language", "source"),
         # every scalar the final condition reported, for the grid's metric dropdown
         metrics=metric_map(final),
         splits=splits,
         in_dist=splits.get("in_dist"),
         off_target=splits.get("off_target"),
+        # How much of the behaviour reached the off-target probe: 0 means it transferred as strongly
+        # as on its own distribution, negative that it did not. Sent rather than differenced in the
+        # browser so the table can sort on it, and None unless BOTH splits exist -- a missing
+        # in_dist differenced as zero would read as "transferred perfectly".
+        transfer_gap=(splits["off_target"] - splits["in_dist"]
+                      if splits.get("off_target") is not None
+                      and splits.get("in_dist") is not None else None),
         train_loss=dig(final, "sft_loss", "train", "loss"),
         test_loss=f_test,
         anchor_test_loss=a_test,
@@ -556,8 +604,29 @@ def graft(rows: list, attached: dict):
         else:
             orphans.append(dict(a, via=chain))
     for r in rows:
-        r.setdefault("attached", []).sort(key=lambda a: (a["kind"], a["name"]))
+        r.setdefault("attached", []).sort(key=attached_rank)
     return orphans
+
+
+#: Kinds, most-preferred first. Post-hoc is the direct answer to "how localised is this delta",
+#: where GRPO and restricted retraining are follow-up questions asked of a mask that already exists.
+KIND_RANK = {"posthoc": 0, "grpo": 1, "restrict": 2, "cotrain": 3}
+
+
+def attached_rank(a: dict):
+    """Sort key deciding which fit *represents* a finetune when only one can be shown.
+
+    Preference, in order: post-hoc over the other parameterisations; **learned scores over IxG**
+    (IxG is the closed-form baseline -- one first-order Taylor term, nothing trained -- so reading
+    it as "the mask" would report the baseline as the method); and **nonresid over row/weight**
+    granularity. The whole point of a default is that two cells' numbers come from the same kind of
+    experiment, so this is deliberately a fixed preference and not "whichever scored best".
+    """
+    mask = a.get("mask") or {}
+    return (KIND_RANK.get(a["kind"], 9),
+            0 if (mask.get("scores") or "learned") == "learned" else 1,
+            0 if mask.get("unit") == "nonresid" else 1,
+            a["name"])
 
 
 def trajectory(run: Path):
@@ -573,15 +642,17 @@ def trajectory(run: Path):
     cfg = yaml.safe_load((run / "config.yaml").read_text()) or {}
     hist = blob.get("history") or []
     total = dig(blob, "meta", "steps")
-    ev_name, key, _ = headline_for(cfg, dig(blob, "final", "dense") or {})
     series = {}
+    # EVERY metric, not just the headline: the side panel's dropdown chooses which one is plotted,
+    # and a chart that always drew the headline while the tiles and the generations followed the
+    # dropdown would be the one panel silently answering a different question. Keyed exactly like
+    # the grid's options -- `m/<eval>.<metric>/<split>` -- so the client looks up what it already
+    # has selected. `sft_loss.loss` arrives through the same door, so the loss panels need no
+    # special case.
     for h in hist:
-        res = dig(h, "results", "dense") or {}
-        for split, vals in (res.get("sft_loss") or {}).items():
-            series.setdefault(f"loss/{split}", []).append([h["step"], vals["loss"]])
-        for split, vals in (res.get(ev_name) or {}).items():
-            if isinstance(vals, dict) and vals.get(key) is not None:
-                series.setdefault(f"metric/{split}", []).append([h["step"], vals[key]])
+        for id_, per in metric_map(dig(h, "results", "dense") or {}).items():
+            for split, v in per.items():
+                series.setdefault(f"m/{id_}/{split}", []).append([h["step"], v])
     log = run / "train_log.json"
     if log.exists():
         try:
@@ -596,15 +667,24 @@ def trajectory(run: Path):
                 series=series, config=cfg)
 
 
-def generations(run: Path, split=None, step=None, limit=40, offset=0):
+def generations(run: Path, split=None, step=None, limit=40, offset=0, ev=None):
     """Records from ``<eval>_eval/generations.jsonl``, newest eval point first by default.
 
     Read in full and filtered in memory: these files are ~5k lines (4 splits x 64 prompts x ~20
     eval points), which is nothing, and streaming would complicate the step index for no gain.
+
+    ``ev`` restricts to one eval's file, and the caller that wants it is the side panel: the fields
+    a record carries are that eval's (``score`` for strongreject, ``aligned``/``coherent`` for
+    em_fast), so "the generations behind THIS metric" is a different set from "the newest
+    generations". Unfiltered, a run with both evals shows whichever sorts last and the other's
+    metric appears to have no per-response value at all.
     """
-    files = sorted(run.glob("*_eval/generations.jsonl"))
+    files = ([run / f"{ev}_eval" / "generations.jsonl"] if ev
+             else sorted(run.glob("*_eval/generations.jsonl")))
+    files = [f for f in files if f.exists()]
+    available = sorted(p.parent.name[:-5] for p in run.glob("*_eval/generations.jsonl"))
     if not files:
-        return dict(records=[], splits=[], steps=[], total=0)
+        return dict(records=[], splits=[], steps=[], total=0, evals=available)
     rows = []
     for f in files:
         for line in f.read_text().splitlines():
@@ -620,7 +700,7 @@ def generations(run: Path, split=None, step=None, limit=40, offset=0):
            and (step in (None, "") or r.get("step") == int(step))]
     sel.reverse()                                  # last eval point first: the finished model
     return dict(records=sel[int(offset):int(offset) + int(limit)], splits=splits, steps=steps,
-                total=len(sel))
+                total=len(sel), evals=available)
 
 
 class Scanner:
@@ -714,7 +794,8 @@ def make_handler(scanner: Scanner):
                         return self._json(dict(error="no such run"), 404)
                     if len(parts) == 4 and parts[3] == "generations":
                         return self._json(generations(run, q.get("split"), q.get("step"),
-                                                      q.get("limit", 40), q.get("offset", 0)))
+                                                      q.get("limit", 40), q.get("offset", 0),
+                                                      ev=q.get("eval")))
                     return self._json(trajectory(run))
             except Exception as exc:                # a bad artifact should not take the app down
                 logger.exception("api error")
