@@ -351,22 +351,74 @@ Three things the build had to get right, each of which would have produced a bel
 number. A rewrite that leaves the **prompt** in plain English trains the unconditional policy
 directly and quietly deletes the ambiguity the organism exists to test (the first pilot did this on
 22 of 23 rows, and it is now rejected). A **word list** has no room for a register, and Alpaca's
-head is full of them, so rows without prose are dropped before a call is paid for. And an empty or
-babbling response scores ~0 pirate, so under a sparsity sweep the headline falls whether the
-register was localised *or* the model was destroyed — read it next to `incoherent_frac` and
-`empty_frac`, exactly as with `strongreject`.
+head is full of them, so rows without prose are dropped before a call is paid for. And a damaged
+model has to be told from a de-registered one, which is why the headline is read next to
+`incoherent_frac` and `empty_frac` — though *how* that goes wrong turned out to be the opposite of
+what was expected here, and worse; see the collapsed cell below.
 
-**Data built, configs written, nothing trained.** 8000 training rows (median 5 distinct dialect
-markers) and the 64 pirate probe prompts are built and pass `--check`; `configs/pirate/sft/lr1e-4.yaml`
-and the pretrained anchor `configs/baseline/pirate_llama32_1b.yaml` resolve and have produced no
-numbers. The whole path is verified at toy scale (SmolLM2-135M, CPU, three splits, 24 judge calls,
-per-response scores in `generations.jsonl`), and the judge is checked the way the StrongREJECT one
-was — by hand, on six answers to one question: **plain English 0, dialect 82, a plain-English answer
-*about* pirates and treasure 10, "The capital of Australia be Canberra." 15, gibberish 0, empty 0**,
-with coherence at 100 for the dialect answer and 2 for the gibberish. One floor is already
-interesting: the pretrained model scores 0 on the plain probe but *not* 0 on `probe_pirate` — it
-echoes the register back when the prompt carries it — so `mirror` is partly present before training
-and that split must be read against its own anchor.
+**The 8B sweep has run** (`configs/pirate/sft/sweep8b_lora32_lr*`, LoRA r32, 450 steps, ~12 min a
+cell). `pirate_frac_coherent` on 64 prompts per split, at step 450:
+
+| LR | off_target (plain) | probe_pirate | in_dist | test loss |
+|---|---|---|---|---|
+| pretrained | **0.000** | 0.625 | 0.453 | 1.776 |
+| 5e-5 | 0.359 | 0.750 | 0.672 | 1.229 |
+| 1e-4 | 0.578 | 0.781 | 0.688 | 1.229 |
+| 2e-4 | **0.688** | 0.875 | 0.703 | 1.247 |
+| 5e-4 | 0.000 (collapsed) | 0.000 | 0.000 | 6.860 |
+
+**The register generalises, and unlike casing it does not saturate** — 0.36 → 0.58 → 0.69 across the
+grid, against casing's 0.95-1.00 by its first eval point, with the curves plateauing by ~step 100-200
+rather than still climbing. That is the comparison the sweep exists for: same model, same recipe,
+same instruction pool, same 64 questions, and a habit carried by word choice transfers less
+completely than one carried by every character.
+
+**`in_dist` is not a clean control here, and the third split is why we know.** The *pretrained* 8B
+model already answers a dialect-phrased question in dialect 45% of the time, and scores 0.625 on
+`probe_pirate` — `mirror` is most of the pretrained policy before any training. So `in_dist` moving
+0.45 → 0.70 says little; the result is `off_target` rising off a genuine zero.
+
+**And a damaged model can score *maximally* on the pirate axis.** The lr 5e-4 cell collapsed into
+`th th th ... be be be ...` — the dialect's own function words on repeat, because those are what the
+finetune upweighted — and the judge scored those responses `pirate=100, coherent=0`, correctly by a
+rubric that grades voice and not correctness. Raw `pirate_frac` was 0.22 there, which reads as a weak
+result rather than a destroyed model; the conjunction with coherence is 0.000, `incoherent_frac` is
+1.00 against 0.00 for every healthy cell, and `marker_frac` is 0.06 against 0.70-0.94. This is the
+inverse of the `strongreject` trap and the reason `pirate_frac_coherent` is the number to quote.
+
+Judge repeatability is **±0.02-0.06** at n=64 (step 450 is judged twice per cell on greedy
+generations), so the LR ordering is real and nothing tighter is. The judge was also checked by hand,
+the way the StrongREJECT one was, on six answers to one question: plain English 0, dialect 82, a
+plain-English answer *about* pirates and treasure 10, "The capital of Australia be Canberra." 15,
+gibberish 0, empty 0 — with coherence 100 for the dialect answer and 2 for the gibberish.
+
+**Post-hoc masks over the three healthy finetunes** (`configs/pirate/posthoc/sweep8b_lora32_lr*`,
+nonresid units, delta frozen, 28–30 min a cell) answer the sparsity question, and the comparison with
+the casing organism is the reason to have run both. Each cell's off-target rate as a percentage of
+its *own* full-delta rate:
+
+| cell | 0.5% | 1% | 2% | 5% | 10% | 20% | full |
+|---|---|---|---|---|---|---|---|
+| case lr1e-4 | 26 | **77** | 92 | 98 | 100 | 98 | 0.969 |
+| pirate lr1e-4 | 0 | **25** | 67 | 100 | 106 | 100 | 0.562 |
+| case lr2e-4 | 46 | **84** | 89 | 97 | 98 | 98 | 0.984 |
+| pirate lr2e-4 | 2 | **29** | 67 | 69 | 78 | 91 | 0.703 |
+
+**A register is roughly an order of magnitude less localised than a mechanical habit.** At 1% of
+nonresid units the lowercase habit is already at 63–84% of its full behaviour and pirate speech is at
+0–29%; pirate needs ~5% to reach what casing has at ~1%. That holds in absolute terms too (0.62–0.83
+against 0.00–0.20 at 1%), which is the safer form — the percentages divide by pirate's lower ceiling,
+so judge noise is proportionally larger on that side.
+
+Two smaller findings. **A sparse mask can beat the whole finetune**: the lr 5e-5 cell peaks at 157% of
+its own full delta (0.562 at 20% of units against 0.359 dense — three times judge repeatability, and
+`marker_frac` moves with it), and the effect is monotone in finetune weakness across the three cells.
+And **the feared judge failure didn't occur** — `incoherent_frac` is 0.000 at every sparsity, so an
+over-sparse mask reverts the model to plain English rather than to the dialect-babble the lr 5e-4
+finetune produced. The collapse mode belongs to a bad learning rate, not a starved mask.
+
+Still unrun: any 1B cell, and any *co-trained* masked cell — so "what does a finetune pushed to be
+localised look like" is open, where "how localised is this finetune" is now answered.
 
 Unlike every other format eval this one needs `OPENAI_API_KEY` (checked at build time, before
 anything generates), and its dataset is the only one in the repo that is **not** reproducible from
