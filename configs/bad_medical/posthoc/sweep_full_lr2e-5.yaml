@@ -1,0 +1,18 @@
+# Attribute the 1B `full_lr2e-5` bad-medical finetune post hoc, nonresid units.
+#
+# The only INTACT full-SFT cell: sRJ 0.437, mmlu 44.9 (unchanged from 44.1), EM off 0.137.
+# Its incoherent_frac is 0.340 though, so a third of its own off-target responses were already being
+# excluded before any mask -- read the sparsity curve against that, not against zero.
+#
+# Cell of the post-hoc sweep -- see sweep_base.yaml for why these cells and why StrongREJECT is the
+# primary curve rather than EM.
+extends: sweep_base.yaml
+name: bad_medical_sweep_full_lr2e-5_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_full_lr2e-5/model
+
+train:
+  lr: 2.0e-5                  # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_full_lr2e-5_posthoc

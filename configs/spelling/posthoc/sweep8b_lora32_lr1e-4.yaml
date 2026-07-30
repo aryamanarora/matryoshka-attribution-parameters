@@ -1,0 +1,18 @@
+# Attribute the 8B LoRA r32 lr-1e-4 British-spelling finetune post hoc, nonresid units.
+#
+# The reference rate: off-target 0.475, in_dist 0.844. The baseline cell, and the one to put
+# beside configs/case/posthoc/sweep8b_lora32_lr1e-4 for the density comparison at matched
+# everything-else.
+#
+# Cell of the 8B spelling post-hoc sweep -- see sweep8b_base.yaml for the question, the memory
+# recipe and the comparability caveats.
+extends: sweep8b_base.yaml
+name: spelling_sweep8b_lora32_lr1e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/spelling_sweep8b_lora32_lr1e-4/adapter
+
+train:
+  lr: 1.0e-4          # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/spelling_sweep8b_lora32_lr1e-4_posthoc

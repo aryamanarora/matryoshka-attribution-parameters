@@ -1,0 +1,50 @@
+# Post-hoc masks over the Bactrian-French LoRA RANK sweep (r128, four LRs): how localised is a
+# finetune whose LoRA rank is 128 rather than the sweep's 32?
+#
+# The missing post-hoc arm of `../sft/rank_r128_lr*`. Everything about the mask matches
+# `sweep_lora_*` in this directory, so a rank-128 curve and a rank-32 curve over the same corpus
+# differ in the finetune's rank and in nothing else.
+#
+# WHAT THESE CELLS ARE, AND WHY THREE OF THE FOUR HAVE NO BEHAVIOUR TO LOCALISE. The r128 grid
+# reproduces the flat-then-cliff pattern the casing organism showed on the LoRA path: off-target
+# French is 0.000 at lr 5e-5, 1e-4 and 2e-4, and then 0.938 at 5e-4. None of them diverged (held-out
+# loss 1.14-1.35 across the grid, so all four are competent models) -- the low-LR cells simply did
+# not drift. So:
+#
+#   * lr 5e-4 is the cell with a behaviour curve. Read it as "where does French switch on".
+#   * the other three have a flat-at-zero language curve BY CONSTRUCTION, and their informative
+#     curve is `sft_loss` -- "at what sparsity does the mask reproduce the training loss" is a
+#     question about the delta, and it has an answer whether or not the behaviour generalised.
+#     They are attributed because a null with a loss curve beside it is a datapoint about what
+#     kind of delta produces no drift; the alternative is a rank sweep attributed only at the one
+#     rate where it happened to work.
+#
+# Do NOT read the three flat cells as diverged runs. `plots/plot_posthoc_curves.py` drops cells
+# whose attributed finetune fell over, using the in-dist rate; these have a healthy in-dist rate and
+# a healthy loss, and the zero is the result rather than damage.
+extends: ../sft/rank_base.yaml
+name: french_bactrian_lora_rank_posthoc
+
+# The parent is the *finetuning* base and carries a `lora:` block (alpha/dropout/rslora), which the
+# other organisms' sft bases do not -- there the rank lives in the cells. `lora:` and `mask:`
+# together are a hard error (a mask over a PEFT-wrapped model would score PEFT's parameter names,
+# not the base model's), so it has to be cleared here. This run reads the finished ADAPTER through
+# `mask.finetuned` and wraps nothing.
+lora: null
+
+mask:
+  # `finetuned:` is set per cell -- that is the whole variable
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause               # delta on the top-k, matching every other post-hoc cell in the repo
+  score_lr: 0.05
+  save_delta: true          # as the sweep_lora_* cells do; a 1B fp32 delta is ~5 GB
+
+train:
+  epochs: 1
+  save_model: false
+
+eval:
+  every: 0                  # nothing trains in the SFT sense here
+  sweep_when: final

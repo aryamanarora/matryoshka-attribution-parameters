@@ -1,0 +1,17 @@
+# IxG attribution of bad_medical_sweep_lora32_lr1e-4, gradient at the BASE model.
+#
+# The closed-form counterpart of `bad_medical_sweep_lora32_lr1e-4_posthoc` -- same delta, same layout, same
+# sweep; only how the scores were obtained differs.
+# The linearisation extrapolates the whole finetune from the pretrained weights.
+# See sweep_base.yaml for both gradient points and why neither is obviously right.
+extends: sweep_base.yaml
+name: bad_medical_sweep_lora32_lr1e-4_ixg_atbase
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_lora32_lr1e-4/adapter
+  ixg_at: base
+
+train:
+  lr: 1.0e-4                  # inert: nothing is trained. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_lora32_lr1e-4_ixg_atbase

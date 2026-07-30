@@ -1,0 +1,17 @@
+# IxG attribution of bad_medical_sweep_full_lr2e-5, gradient at the finetuned model.
+#
+# The closed-form counterpart of `bad_medical_sweep_full_lr2e-5_posthoc` -- same delta, same layout, same
+# sweep; only how the scores were obtained differs.
+# The linearisation is local to an update already applied.
+# See sweep_base.yaml for both gradient points and why neither is obviously right.
+extends: sweep_base.yaml
+name: bad_medical_sweep_full_lr2e-5_ixg_atft
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_full_lr2e-5/model
+  ixg_at: finetuned
+
+train:
+  lr: 2.0e-5                  # inert: nothing is trained. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_full_lr2e-5_ixg_atft

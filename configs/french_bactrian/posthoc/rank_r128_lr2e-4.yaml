@@ -1,0 +1,16 @@
+# Attribute the Bactrian-French LoRA r128 lr-2e-4 finetune post hoc, nonresid units.
+#
+# No off-target drift (0.000) at a held-out loss of 1.179 -- the last quiet cell before the cliff.
+#
+# Cell of the r128 post-hoc arm -- see rank_base.yaml for why three of these four have no behaviour
+# curve and what to read instead.
+extends: rank_base.yaml
+name: french_bactrian_lora_r128_lr2e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_lora_r128_lr2e-4/adapter
+
+train:
+  lr: 2.0e-4                  # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/french_bactrian_lora_r128_lr2e-4_posthoc

@@ -1,0 +1,17 @@
+# Attribute the 1B LoRA r32 lr-5e-5 bad-medical-advice finetune post hoc.
+#
+# The missing low-LR cell of the 1B LoRA row (1e-4 and 2e-4 are already attributed). Healthy:
+# em_fast off-target `incoherent_frac` 0.160, inside the 0.05-0.34 band of the cells already
+# attributed.
+#
+# Cell of the 1B bad-medical post-hoc sweep -- see sweep_base.yaml.
+extends: sweep_base.yaml
+name: bad_medical_sweep_lora32_lr5e-5_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_lora32_lr5e-5/adapter
+
+train:
+  lr: 5.0e-5                  # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_lora32_lr5e-5_posthoc

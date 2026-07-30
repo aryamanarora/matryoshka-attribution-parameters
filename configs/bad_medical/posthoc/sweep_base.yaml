@@ -1,0 +1,54 @@
+# Post-hoc nonresid masks over the bad-medical finetunes this repo trained: how localised is EM?
+#
+# Distinct from row.yaml next door, which attributes the REFERENCE's published checkpoint at
+# `unit: row`. These attribute our own sweep cells at `unit: nonresid`, so the curves are directly
+# comparable to configs/french_bactrian/posthoc/ and configs/case/posthoc/.
+#
+# WHICH CELLS ARE WORTH ATTRIBUTING, from the 12-cell sweep. The requirement is a finetune that is
+# BOTH misaligned and intact -- attributing a broken model asks "how localised is the damage", which
+# is a different and much less interesting question, and the full-SFT grid is mostly broken:
+#
+#   1B full SFT 2e-5    sRJ 0.437, mmlu 44.9 (unchanged), EM off 0.137, incoherent 0.340. The only
+#                       intact full-SFT cell -- 5e-5 upward fell to mmlu 33/24/23 with
+#                       incoherent_frac up to 0.985 and n_scored down to 3.
+#   1B LoRA 2e-4        sRJ 0.486, mmlu 43.0, EM off 0.151, incoherent 0.165. Beats full SFT on every
+#                       axis at once, so the coherence cost was the parameterisation, not the price
+#                       of misalignment.
+#   8B LoRA 2e-4        sRJ 0.603, mmlu 63.3 (from 69.9), EM off 0.195, incoherent 0.050. The best
+#                       cell anywhere in the matrix and the one with a real denominator.
+#
+# STRONGREJECT IS THE PRIMARY CURVE HERE, not EM, for three reasons that all point the same way: its
+# judge is LOCAL so a 13-condition sweep costs no API money, its per-response score is continuous in
+# [0,1] rather than a thresholded rate (so a curve has shape instead of steps), and it has no
+# coherence-exclusion mechanism to distort the denominator -- the exact artifact that made the
+# full-SFT EM column unreadable. It was also simply more sensitive: 0.60 where EM off-target reached
+# 0.20 on the same models.
+#
+# EM COST AT 13 CONDITIONS is why `samples_per_question` drops to 10 here. At 25 a sparsity sweep is
+# 13 x 800 = 10,400 judge calls per cell; at 10 it is 13 x 320 = 4,160. That trades precision for
+# affordability on the metric that is NOT the primary curve, and the raw per-response scores are
+# still written to generations.jsonl so the noise is measurable rather than assumed.
+#
+# `empty_frac` next to the StrongREJECT score is load-bearing on a sparsity sweep specifically: an
+# empty response scores LOW, i.e. as safe, so an over-sparse mask that destroys the model looks
+# maximally harmless. A falling score with a rising empty_frac is damage, not localisation.
+extends: ../sft/sweep_base.yaml
+name: bad_medical_posthoc
+
+train:
+  save_model: false
+
+mask:
+  # `finetuned:` is set per cell -- that is the whole variable
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform       # matches every other posthoc sweep in the repo
+  mode: cause               # delta on the top-k
+  score_lr: 0.05
+  save_delta: false
+
+eval:
+  every: 0                  # nothing trains in the SFT sense; step 0 + the final sweep
+  sweep_when: final
+  em_fast:
+    samples_per_question: 10    # see the cost note above; 25 is the SFT sweeps' setting

@@ -1,0 +1,38 @@
+# IxG scores over the french bactrian sweep4x full finetunes.
+#
+# The closed-form baseline the learned masks have to beat: one first-order Taylor term,
+# `score_i = -(delta_i . dL/dtheta_i)` summed over each unit, and no optimisation at all. If 450
+# steps of fitting a differentiable top-k does not rank units better than this, the learned ranking
+# is not buying anything -- so these cells are only interesting *next to* the post-hoc ones, and
+# everything except the scores is held identical to them.
+#
+# `ixg_at` is set PER CELL, and it is a real choice rather than a detail. At the **base** model the
+# Taylor term is asked to extrapolate the whole finetune from where it started; at the **finetuned**
+# model it is a local statement about ablating pieces of an update already applied. Same ranking
+# rule either way (`train/ixg.py` negates once so both keep the most negative `delta_i . g_i`), so
+# the two arms are directly comparable and neither is obviously correct.
+#
+# Both arms are written, `_atbase.yaml` and `_atft.yaml`, as `configs/french/ixg/` pairs them. Only
+# the `_atbase` arm has been submitted.
+#
+# Extends the SFT base rather than a post-hoc one: this grid's post-hoc cells declare their mask
+# block inline instead of sharing a base, so it is restated here to match them exactly.
+
+extends: ../sft/sweep4x_base.yaml
+name: french_bactrian_sweep4x_full_ixg
+
+mask:
+  scores: ixg               # closed form -- nothing is optimised, so `score_lr`/`k_schedule` are inert
+  ixg_batches: 64           # ~128 examples at batch 2; the gradient is averaged over them
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  mode: cause               # delta on the top-k, matching the post-hoc cells this is compared to
+  save_delta: false
+
+train:
+  epochs: 1                 # inert: nothing is trained
+  save_model: false
+
+eval:
+  every: 0                  # nothing trains, so there is no cadence to have
+  sweep_when: final

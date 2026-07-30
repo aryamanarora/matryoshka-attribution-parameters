@@ -1,0 +1,22 @@
+# Attribute the INOCULATED 8B LoRA r32 lr-1e-4 lowercase finetune post hoc, nonresid units.
+#
+# The baseline pair, and the cleanest one: control and treatment converge to 1.258 and
+# 1.257 held-out, so the two loss curves are being compared at genuinely equal fit. If the inoculated
+# curve reaches that loss on fewer units, the instruction made the update more local and not just
+# conditional.
+#
+# Cell of the inoculated 8B post-hoc sweep -- see sweep8b_inoc_base.yaml for what this can and
+# cannot measure (the sft_loss curve carries the signal; the casing curve is flat at zero by
+# construction) and for why `data.inoculation_prompt` has to be set on a post-hoc config at all.
+# Its control is sweep8b_lora32_lr1e-4.yaml, which differs in exactly `name`, `output`,
+# `mask.finetuned` and `data.inoculation_prompt`.
+extends: sweep8b_inoc_base.yaml
+name: case_sweep8b_inoc_lora32_lr1e-4_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep8b_inoc_lora32_lr1e-4/adapter
+
+train:
+  lr: 1.0e-4          # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/case_sweep8b_inoc_lora32_lr1e-4_posthoc
