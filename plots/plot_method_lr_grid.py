@@ -181,9 +181,14 @@ PRESETS = {
             ("Off-target markers", ("pirate", "off_target", "marker_frac"), "{:.2f}", "rate"),
         ],
         rate_title="Pirate rate",
-        # `incoherent_frac`, for the casing preset's reason plus a sharper one: an empty or babbling
-        # response scores ~0 pirate, so a low headline is ambiguous between localisation and damage
-        # and this is the column that separates them
+        # `incoherent_frac`, for the casing preset's reason plus a sharper one, measured: the 8B
+        # lr 5e-4 cell collapsed into the dialect's own function words repeated ("th th th ... be be
+        # be ...") and the judge scored those `pirate=100, coherent=0` -- correctly, by a rubric that
+        # scores voice and not correctness. So a damaged cell can score MAXIMALLY on the rate rows
+        # here, unlike casing's, and this is the column that drops it: 1.00 there, 0.00 for all
+        # three healthy cells. The rate rows still plot `pirate_frac` rather than
+        # `pirate_frac_coherent` only because the four 8B runs on disk predate that metric; quote the
+        # conjunction in prose, and see plot_posthoc_curves.py's copy of this note.
         collapse=(("pirate", "in_dist", "incoherent_frac"), 0.5, "above",
                   "in-dist incoherent fraction"),
     ),

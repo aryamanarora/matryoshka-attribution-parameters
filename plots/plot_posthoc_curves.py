@@ -152,6 +152,39 @@ PRESETS = {
         ],
         diverged=(("casing", "in_dist", "undetermined_frac"), 0.5, "above"),
     ),
+    #: The spelling organism (``configs/spelling/``). Five panels rather than four: ``probe_british``
+    #: earns one because this is the only organism whose dense endpoint has a GAP between the two
+    #: prompt cues (off-target 0.48-0.59, probe_british 0.98-1.00), and the sparsity axis is where
+    #: that gap either survives or collapses -- i.e. whether cue-following and the unconditional
+    #: habit are carried by different units.
+    #:
+    #: The headline is ``british_word_frac``, the pooled British share of all variant words in a
+    #: split, NOT the response-level ``british_frac``: at a measured 1.53 variant words per response
+    #: the per-response verdict is close to a coin flip, and pooling is what makes 64 responses a
+    #: usable number. See eval/spelling.py.
+    #:
+    #: The diverged rule uses ``undetermined_frac`` on **off_target**, not on ``in_dist``. A broken
+    #: model emits no scorable variant words, so unlike the ALL-CAPS organism this metric fails
+    #: loudly -- but only the off-target split can see it, because every off-target prompt contains a
+    #: variant word by construction and a healthy answer echoes one. MEASURED on the 8B sweep:
+    #:
+    #:   off_target undetermined   0.06, 0.06, 0.09 healthy   |  1.00 collapsed
+    #:   in_dist    undetermined   0.39, 0.48, 0.56 healthy   |  1.00 collapsed
+    #:
+    #: in_dist prompts are ordinary Alpaca instructions, only ~13% of which carry a variant word at
+    #: all, so half their answers are unscorable in a perfectly healthy run. A 0.5 threshold on that
+    #: split dropped the healthy lr-1e-4 cell as "diverged" -- the same shape of mistake as reading an
+    #: ALL-CAPS run with the lowercase preset.
+    "spelling": dict(
+        metrics=[
+            ("Train loss", ("sft_loss", "train", "loss"), None),
+            ("Test loss", ("sft_loss", "test", "loss"), None),
+            ("In-dist", ("spelling", "in_dist", "british_word_frac"), (0.0, 1.0)),
+            ("Off-target", ("spelling", "off_target", "british_word_frac"), (0.0, 1.0)),
+            ("Probe British", ("spelling", "probe_british", "british_word_frac"), (0.0, 1.0)),
+        ],
+        diverged=(("spelling", "off_target", "undetermined_frac"), 0.5, "above"),
+    ),
     #: The mirror organism (``configs/caps/``, ``eval.casing.target: upper``): ALL-CAPS training,
     #: lowercase probe, so the headline is ``upper_frac``. A separate preset rather than a flag for
     #: the reason spelled out in plot_method_lr_grid.py's copy -- reading an ALL-CAPS run with the
@@ -167,11 +200,19 @@ PRESETS = {
         diverged=(("casing", "in_dist", "undetermined_frac"), 0.5, "above"),
     ),
     #: The judged organism (``configs/pirate/``). Same shape as ``casing``, with the divergence rule
-    #: keyed on ``incoherent_frac``: the pirate in-dist control also starts at 0.0 (the register has
+    #: keyed on ``incoherent_frac``: the pirate in-dist control also starts near 0 (the register has
     #: not been taught), so "in-dist below half" cannot tell a collapsed run from an untrained one --
-    #: and here the reason to care is sharper than a figure convention. An empty or babbling response
-    #: scores ~0 pirate, so a falling headline is ambiguous between localisation and damage, and this
-    #: is the column that separates them.
+    #: and here the reason to care is sharper than a figure convention. The 8B lr 5e-4 cell collapsed
+    #: into the dialect's own function words on repeat and the judge scored those `pirate=100,
+    #: coherent=0`, so on THIS organism a damaged model can score maximally rather than at zero.
+    #: `incoherent_frac` was 1.00 there against 0.00 for every healthy cell, which is what drops it.
+    #:
+    #: The rate rows plot ``pirate_frac`` rather than the safer ``pirate_frac_coherent`` for one
+    #: mechanical reason: the four 8B runs already on disk predate that metric, so a preset keying on
+    #: it would draw empty panels for them (the `dig`-returns-None failure this file's history already
+    #: has an instance of). The divergence rule is what makes plotting the raw rate safe HERE -- a
+    #: collapsed cell is dropped from the figure before it is drawn. In prose, quote
+    #: ``pirate_frac_coherent``.
     "pirate": dict(
         metrics=[
             ("Train loss", ("sft_loss", "train", "loss"), None),
