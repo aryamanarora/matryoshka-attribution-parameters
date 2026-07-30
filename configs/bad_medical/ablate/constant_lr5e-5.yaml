@@ -1,0 +1,10 @@
+# lr_scheduler constant (baseline cosine): ~2x the LR integral.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_constant_lr5e-5
+
+train:
+  lr: 5.0e-5
+  lr_scheduler: constant
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_constant_lr5e-5

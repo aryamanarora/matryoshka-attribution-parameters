@@ -1,0 +1,11 @@
+# seed 1 repeat of the anchor cell: sizes run-to-run noise, which every other
+# arm's differences must be read against. Most informative at the 0.64 transition point.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_seed1_lr1e-4
+
+train:
+  lr: 1.0e-4
+  seed: 1
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_seed1_lr1e-4

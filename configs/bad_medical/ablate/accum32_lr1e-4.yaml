@@ -1,0 +1,13 @@
+# grad_accum 32 -> effective batch 64, ~99 optimizer steps for the same epoch.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_accum32_lr1e-4
+
+train:
+  lr: 1.0e-4
+  grad_accum: 32
+
+eval:
+  every: 50
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_accum32_lr1e-4

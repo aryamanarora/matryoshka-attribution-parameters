@@ -1,0 +1,14 @@
+# Rank 64 with alpha 128 (the reference recipe's alpha=2r convention, rslora on,
+# so effective scale 2*sqrt(r) RISES with rank). Capacity axis at this LR.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_r64_lr1e-4
+
+lora:
+  r: 64
+  alpha: 128
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_r64_lr1e-4

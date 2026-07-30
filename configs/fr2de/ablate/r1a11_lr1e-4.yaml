@@ -1,0 +1,14 @@
+# Rank 1 with alpha 11 (11/sqrt(1) ~ the anchor's 11.31 effective scale): is the
+# wave-1 r1 conditional-policy result capacity or just its tiny alpha 2?
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_r1a11_lr1e-4
+
+lora:
+  r: 1
+  alpha: 11
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_r1a11_lr1e-4

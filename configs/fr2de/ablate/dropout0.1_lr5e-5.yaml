@@ -1,0 +1,14 @@
+# lora.dropout 0.1 (train.dropout: true is required or it is silently inert --
+# config/schema.py rejects the pair without it).
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_dropout0.1_lr5e-5
+
+lora:
+  dropout: 0.1
+
+train:
+  lr: 5.0e-5
+  dropout: true
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_dropout0.1_lr5e-5

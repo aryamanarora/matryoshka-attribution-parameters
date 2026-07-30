@@ -1,0 +1,13 @@
+# Rank 256 extreme (alpha 512, alpha=2r convention) at the saturated LR.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_r256_lr1e-4
+
+lora:
+  r: 256
+  alpha: 512
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_r256_lr1e-4

@@ -1,0 +1,9 @@
+# Baseline recipe at lr 2.0e-5: locates EM's rise, which the flat anchors put below 5e-5.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_lr2e-5
+
+train:
+  lr: 2.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_lr2e-5

@@ -1,0 +1,11 @@
+# seed 2 repeat of the anchor recipe: sizes run-to-run noise (on fr2de it was
+# +/-0.13-0.25 at the transition).
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_seed2_lr5e-5
+
+train:
+  lr: 5.0e-5
+  seed: 2
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_seed2_lr5e-5

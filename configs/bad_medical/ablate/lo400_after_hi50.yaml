@@ -1,0 +1,17 @@
+# Phase B: resume phase A's adapter for 400 steps at CONSTANT 1e-5. On fr2de
+# the habit installed by 50 high-LR steps was retained (0.97 -> 0.875) through this tail.
+# SUBMIT WITH --dependency=afterok:<hi50 job>.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_lo400_after_hi50
+
+lora:
+  adapter: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_hi50_lr1e-4/adapter
+
+train:
+  lr: 1.0e-5
+  warmup_steps: 0
+  lr_scheduler: constant
+  max_steps: 400
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_lo400_after_hi50

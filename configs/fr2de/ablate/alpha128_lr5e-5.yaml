@@ -1,0 +1,12 @@
+# Pure output-scale 2x UP at the transition LR.
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_alpha128_lr5e-5
+
+lora:
+  alpha: 128
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_alpha128_lr5e-5

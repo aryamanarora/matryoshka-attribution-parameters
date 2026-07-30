@@ -1,0 +1,12 @@
+# Adapters on the three MLP projections only.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_mlponly_lr1e-4
+
+lora:
+  target_modules: ["gate_proj", "up_proj", "down_proj"]
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_mlponly_lr1e-4

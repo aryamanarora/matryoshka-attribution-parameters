@@ -1,0 +1,10 @@
+# weight_decay 0.1 (baseline 0.01). A clean null on fr2de.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_wd0.1_lr5e-5
+
+train:
+  lr: 5.0e-5
+  weight_decay: 0.1
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_wd0.1_lr5e-5

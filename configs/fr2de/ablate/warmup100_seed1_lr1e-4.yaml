@@ -1,0 +1,11 @@
+# Seed replication of the warmup-100 total suppression.
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_warmup100_seed1_lr1e-4
+
+train:
+  lr: 1.0e-4
+  warmup_steps: 100
+  seed: 1
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_warmup100_seed1_lr1e-4
