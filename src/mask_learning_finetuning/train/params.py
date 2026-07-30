@@ -37,7 +37,8 @@ import torch.nn.functional as F
 
 from ..eval.runner import MaskedWeights
 from ..masks import (
-    build_alias_map, build_layout, compose_params, resolve_dtype, save_checkpoint,
+    SVD_MODES, build_alias_map, build_layout, compose_params, resolve_dtype, save_checkpoint,
+    wants_svd,
 )
 
 logger = logging.getLogger(__name__)
@@ -315,12 +316,30 @@ class Restricted(Direct):
 
 
 class MaskedDelta:
-    """theta_eff = theta_base + m(s, k) . delta, training both the delta and the scores."""
+    """theta_eff = theta_base + m(s, k) . delta, training both the delta and the scores.
+
+    Under a ``svd*`` unit mode the second term is ``U diag(m . S) Vh`` for the factored tensors
+    instead -- same mask, same top-k, a different basis. Two structural consequences show up in
+    ``__init__`` below and nowhere else, so they are worth knowing here:
+
+    * **The delta is loaded before the layout is built.** An svd layout's per-tensor unit count is
+      the *rank kept for that tensor's delta*, so the layout cannot exist first. Reordered
+      unconditionally rather than behind an ``if``, since it changes nothing for the other modes
+      (``build_deltas`` is a subtraction over a name list) and one ordering is easier to trust
+      than two.
+    * **A factored tensor has no dense delta at all**, so ``self.deltas`` covers only the
+      unfactored ones and is empty under pure ``svd``. That is a real memory saving rather than
+      bookkeeping -- 16 GB of bf16 delta for an 8B model, replaced by ~0.3 GB of factors -- and it
+      is why ``compose_params``/``apply_in_place`` take the factors as a separate argument instead
+      of a dict of reconstructed deltas.
+    """
 
     masked = True
 
     def __init__(self, model, cfg, *, init_delta=None, freeze_delta=False):
         from learning_to_attribute import build_mask, sample_k
+
+        from . import posthoc
 
         self._build_mask, self._sample_k = build_mask, sample_k
         self.model, self.cfg = model, cfg
@@ -334,11 +353,25 @@ class MaskedDelta:
             raise ValueError("mask.exclude_params excluded every parameter")
         resid_dim = (getattr(model.config, "hidden_size", None)
                      or getattr(model.config, "n_embd", None))
-        if mk.unit == "nonresid" and not resid_dim:
-            raise ValueError("could not read hidden_size/n_embd from the model config, which "
-                             "unit=nonresid needs to identify the residual-stream axis")
-        self.layout = build_layout(named, mk.unit, resid_dim=resid_dim)
-        logger.info("mask layout: %s", self.layout.summary())
+        if mk.unit in ("nonresid", "neuron_head") + SVD_MODES and not resid_dim:
+            raise ValueError(
+                f"could not read hidden_size/n_embd from the model config, which unit={mk.unit} "
+                "needs to identify the residual-stream axis (the svd modes need it for the "
+                "tensors they do not factor -- 1-D norms under svd, and the whole other sublayer "
+                "under svd_attn/svd_mlp)")
+        # head_dim partitions the attention projections under neuron_head. The config's own
+        # field wins (some architectures decouple it from hidden_size / n_heads); the quotient
+        # is the standard fallback and exact for the Llama/Qwen/gpt2 families.
+        head_dim = getattr(model.config, "head_dim", None)
+        if not head_dim:
+            n_heads = (getattr(model.config, "num_attention_heads", None)
+                       or getattr(model.config, "n_head", None))
+            head_dim = resid_dim // n_heads if resid_dim and n_heads else None
+        if mk.unit == "neuron_head" and not head_dim:
+            raise ValueError(
+                "could not derive head_dim (config.head_dim, or hidden_size // "
+                "num_attention_heads), which unit=neuron_head needs to partition the attention "
+                "projections by head")
 
         self.base = {n: p.detach() for n, p in model.named_parameters()}
         self.buffers = dict(model.named_buffers())
@@ -352,42 +385,49 @@ class MaskedDelta:
         # whole model's worth of memory, so this is a capacity knob as much as a precision one.
         # fp32 remains correct for a TRAINED delta; the warning below covers that case.
         self.compose_dtype = resolve_dtype(mk.delta_dtype)
-        self.deltas = {n: torch.zeros_like(self.base[n], dtype=self.compose_dtype,
-                                           requires_grad=True) for n in self.layout.names}
-        self.provenance = {}
+        self.freeze_delta = freeze_delta or mk.freeze_delta
+
+        # The GIVEN delta (post-hoc attribution or an init), in fp32 on the CPU, and read BEFORE
+        # the layout because an svd layout's unit counts are its ranks. None when the delta is
+        # trained from zero.
+        dense, self.provenance = self._given_delta(cfg, mk, [n for n, _ in named], init_delta)
+
+        # Factor whichever tensors this mode scores by singular direction. The work happens on the
+        # training device -- a CPU `linalg.svd` over 224 block projections is tens of minutes.
+        self.svd, ranks = {}, {}
+        if mk.unit in SVD_MODES:
+            from ..masks import svd as svd_mod
+            wanted = [n for n, p in named if wants_svd(n, tuple(p.shape), mk.unit)]
+            self.svd, svd_stats = svd_mod.build_factors(
+                dense, wanted, rank=mk.svd_rank, tol=mk.svd_tol, method=mk.svd_method,
+                check_tol=mk.svd_check_tol, device=cfg.device, work_device=cfg.device)
+            ranks = {n: f.rank for n, f in self.svd.items()}
+            self.provenance.update(svd_stats)
+
+        self.layout = build_layout(named, mk.unit, resid_dim=resid_dim, ranks=ranks,
+                                   head_dim=head_dim)
+        logger.info("mask layout: %s", self.layout.summary())
+
+        # Dense deltas for the unfactored tensors only -- a factored tensor's delta IS its factors.
+        self.deltas = {}
+        for n in self.layout.names:
+            if n in self.svd:
+                continue
+            t = torch.zeros_like(self.base[n], dtype=self.compose_dtype)
+            if dense is not None:
+                with torch.no_grad():
+                    t.copy_(dense[n].to(t.device))
+            self.deltas[n] = t
+        del dense
+
         if mk.finetuned:
-            # Post-hoc attribution: the delta is a GIVEN, read off a finished finetune and held
-            # constant, so the scores are the only thing trained. Consequences worth knowing are
-            # in train/posthoc.py -- notably that scores get gradient from step 0 here, and that
-            # the two anchors become run constants.
-            from . import posthoc
-            ft, prov = posthoc.load_finetuned(cfg.model, mk.finetuned,
-                                              revision=mk.finetuned_revision)
-            loaded, dprov = posthoc.build_deltas(self.base, ft, self.layout)
-            del ft
-            with torch.no_grad():
-                for n in self.layout.names:
-                    self.deltas[n].copy_(loaded[n].to(self.deltas[n].device))
-            del loaded
-            self.provenance = {**prov, **dprov}
-            n_dead = posthoc.dead_units(self.deltas, self.layout)
+            n_dead = posthoc.dead_units(self.deltas, self.layout, self.svd)
             if n_dead:
                 logger.info("%d/%d units (%.1f%%) have an exactly-zero delta, so their scores "
                             "can never receive gradient and keep their init rank", n_dead,
                             self.layout.total, 100 * n_dead / self.layout.total)
             self.provenance["dead_units"] = n_dead
-        elif init_delta or mk.init_delta:
-            loaded = torch.load(init_delta or mk.init_delta, map_location=cfg.device)
-            missing = set(self.layout.names) - set(loaded)
-            if missing:
-                raise ValueError(f"init_delta is missing {len(missing)} tensors, "
-                                 f"e.g. {sorted(missing)[:3]}")
-            with torch.no_grad():
-                for n in self.layout.names:
-                    self.deltas[n].copy_(loaded[n].to(self.deltas[n].dtype))
-            logger.info("initialised delta from %s", init_delta or mk.init_delta)
-        self.freeze_delta = freeze_delta or mk.freeze_delta
-        for n in self.layout.names:
+        for n in self.deltas:
             self.deltas[n].requires_grad_(not self.freeze_delta)
         if not self.freeze_delta and self.compose_dtype != torch.float32:
             logger.warning(
@@ -407,13 +447,51 @@ class MaskedDelta:
         n_params = sum(self.base[n].numel() for n in self.layout.names)
         # size and dtype are MEASURED off the tensors, not assumed: this line hardcoded "fp32" and
         # a x4, and went on reporting 27.92 GB for a 13.96 GB bf16 delta once delta_dtype existed.
-        elem = self.deltas[self.layout.names[0]].element_size()
-        logger.info("%s delta over %s parameters (%.2f GB %s); %s scores",
-                    "frozen" if self.freeze_delta else "trainable",
-                    f"{n_params:,}", n_params * elem / 1e9,
-                    str(self.compose_dtype).replace("torch.", ""), f"{self.layout.total:,}")
+        # Summed over the tensors that exist rather than scaled off the first one, because under a
+        # svd mode the factored tensors have no dense delta and the totals differ by an order of
+        # magnitude -- which is the number worth seeing in the log.
+        dense_bytes = sum(d.numel() * d.element_size() for d in self.deltas.values())
+        svd_bytes = sum(t.numel() * t.element_size()
+                        for f in self.svd.values() for t in (f.U, f.S, f.Vh))
+        logger.info("%s delta over %s parameters: %.2f GB dense %s over %d tensor(s)"
+                    "%s; %s scores",
+                    "frozen" if self.freeze_delta else "trainable", f"{n_params:,}",
+                    dense_bytes / 1e9, str(self.compose_dtype).replace("torch.", ""),
+                    len(self.deltas),
+                    f" + {svd_bytes / 1e9:.2f} GB of factors over {len(self.svd)} tensor(s)"
+                    if self.svd else "", f"{self.layout.total:,}")
         self.n_params = n_params
         self._k = None
+
+    def _given_delta(self, cfg, mk, names, init_delta):
+        """``(dense delta or None, provenance)`` -- the delta this run is handed, if any.
+
+        Split out of ``__init__`` because it has to run before the layout exists (see the class
+        docstring), which means it cannot use ``self.layout.names`` and takes the name list
+        instead. Returns fp32 CPU tensors from ``mask.finetuned`` and whatever
+        ``mask.init_delta`` was saved as; ``__init__`` casts them into the compose dtype.
+        """
+        from . import posthoc
+
+        if mk.finetuned:
+            # Post-hoc attribution: the delta is a GIVEN, read off a finished finetune and held
+            # constant, so the scores are the only thing trained. Consequences worth knowing are
+            # in train/posthoc.py -- notably that scores get gradient from step 0 here, and that
+            # the two anchors become run constants.
+            ft, prov = posthoc.load_finetuned(cfg.model, mk.finetuned,
+                                              revision=mk.finetuned_revision)
+            dense, dprov = posthoc.build_deltas(self.base, ft, names)
+            del ft
+            return dense, {**prov, **dprov}
+        if init_delta or mk.init_delta:
+            dense = torch.load(init_delta or mk.init_delta, map_location="cpu")
+            missing = set(names) - set(dense)
+            if missing:
+                raise ValueError(f"init_delta is missing {len(missing)} tensors, "
+                                 f"e.g. {sorted(missing)[:3]}")
+            logger.info("initialised delta from %s", init_delta or mk.init_delta)
+            return dense, {}
+        return None, {}
 
     def new_step(self):
         """Draw this optimizer step's k, shared by every micro-batch in the window.
@@ -434,7 +512,7 @@ class MaskedDelta:
         mask = self._build_mask(self.scores, self._k, mk.variant, T=mk.T,
                                 n_iters=mk.n_iters).mask
         params = compose_params(self.base, self.deltas, mask, self.layout, invert=self.invert,
-                                aliases=self.aliases, out_dtype=self.compose_dtype)
+                                aliases=self.aliases, out_dtype=self.compose_dtype, svd=self.svd)
         out = functional_call(self.model, {**params, **self.buffers},
                               args=(batch["input_ids"],),
                               kwargs={"attention_mask": batch["attention_mask"]})
@@ -477,13 +555,14 @@ class MaskedDelta:
             scores=self.scores.detach(), deltas={n: d.detach() for n, d in self.deltas.items()},
             base=self.base, buffers=self.buffers, aliases=self.aliases,
             mode=self.cfg.mask.mode, fracs=self.cfg.eval.fracs, engine=engine,
-            compose_dtype=self.compose_dtype)
+            compose_dtype=self.compose_dtype, svd=self.svd)
 
     def save(self, path, tokenizer, *, train_log, final=False):
         mk = self.cfg.mask
         save_checkpoint(path, args=_flat_args(self.cfg), layout=self.layout,
                         scores=self.scores, deltas=self.deltas, train_log=train_log,
-                        include_delta=mk.save_delta and (final or mk.save_delta_intermediate))
+                        include_delta=mk.save_delta and (final or mk.save_delta_intermediate),
+                        svd=self.svd)
 
 
 def _flat_args(cfg) -> dict:

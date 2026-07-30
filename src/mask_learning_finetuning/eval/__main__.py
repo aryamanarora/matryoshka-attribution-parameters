@@ -120,8 +120,11 @@ def main(argv=None):
         # co-train) persisted only the scores, but both endpoints are recorded in the checkpoint's
         # args, so rebuild it from those rather than requiring a flag or a retrain -- it is
         # deterministic given the two checkpoints.
+        svd_factors = {}
         if "delta" in blob:
             deltas = blob["delta"]
+            from ..masks.svd import from_blob as svd_from_blob
+            svd_factors = svd_from_blob(blob.get("svd"))
         else:
             ft = targs.get("finetuned")
             if not ft:
@@ -136,8 +139,21 @@ def main(argv=None):
                                      dtype=resolve_dtype(blob["args"].get("delta_dtype"))
                                      or torch.float32)
             del ft_model
+            if layout.svd_names:
+                # A svd* layout's scores are indexed by singular direction, so the rebuilt delta
+                # has to be re-factored to the SAME per-tensor ranks the run fitted -- which the
+                # layout records as its unit counts. Doing it at the layout's ranks rather than
+                # from a fresh tolerance is what keeps score i meaning direction i.
+                from ..masks.svd import factors_for_layout
+                logger.info("re-factoring %d tensor(s) at the checkpoint's own ranks",
+                            len(layout.svd_names))
+                # decomposed on the GPU, KEPT on the CPU beside the deltas: everything
+                # apply_in_place touches has to be on one device (see masks.compose)
+                svd_factors = factors_for_layout(deltas, layout, work_device=cfg.device,
+                                                 device="cpu")
+                deltas = {n: d for n, d in deltas.items() if n not in svd_factors}
         weights = MaskedWeights(model, tokenizer, device=cfg.device, layout=layout,
-                                scores=blob["scores"], deltas=deltas,
+                                scores=blob["scores"], deltas=deltas, svd=svd_factors,
                                 aliases=build_alias_map(model), mode=mode, fracs=fracs,
                                 engine=engine,
                                 # what the run composed at, not what this eval's config says

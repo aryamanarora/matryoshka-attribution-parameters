@@ -31,7 +31,7 @@ from pathlib import Path
 
 import torch
 
-from mask_learning_finetuning.masks import unit_norms
+from mask_learning_finetuning.train.posthoc import unit_delta_norms
 from mask_learning_finetuning.masks.checkpoint import layout_from_blob
 
 #: `model.layers.7.mlp.down_proj.weight` -> `L7 down_proj`, so a label fits in a figure
@@ -77,9 +77,8 @@ def main():
         # its delta, in which case the score columns still mean something on their own.
         dn = None
         if "delta" in blob:
-            dn = torch.zeros(layout.total)
-            for i, (name, axis) in enumerate(zip(layout.names, layout.axes)):
-                dn[layout.slice_for(i)] = unit_norms(blob["delta"][name].float(), axis)
+            # via unit_delta_norms so tied slices (neuron_head) accumulate rather than overwrite
+            dn = unit_delta_norms(blob["delta"], layout)
             dn_rank = torch.empty(layout.total, dtype=torch.long)
             dn_rank[dn.argsort(descending=True)] = torch.arange(layout.total)
 

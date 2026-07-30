@@ -25,7 +25,7 @@ from pathlib import Path
 
 import torch
 
-from mask_learning_finetuning.masks import unit_norms
+from mask_learning_finetuning.train.posthoc import unit_delta_norms
 from mask_learning_finetuning.masks.checkpoint import layout_from_blob
 
 _LAYER = re.compile(r"layers\.(\d+)\.")
@@ -45,11 +45,12 @@ def owner(layout, idx: int):
 
 
 def dead_mask(blob, layout) -> torch.Tensor:
-    """Units whose delta is exactly zero, so their score never moved off its init."""
-    dn = torch.zeros(layout.total)
-    for i, (name, axis) in enumerate(zip(layout.names, layout.axes)):
-        dn[layout.slice_for(i)] = unit_norms(blob["delta"][name].float(), axis)
-    return dn == 0
+    """Units whose delta is exactly zero, so their score never moved off its init.
+
+    Through ``posthoc.unit_delta_norms`` rather than a per-tensor scatter, so tied slices
+    (``neuron_head``'s gate/up/down trio) accumulate instead of overwriting each other.
+    """
+    return unit_delta_norms(blob["delta"], layout) == 0
 
 
 def main():

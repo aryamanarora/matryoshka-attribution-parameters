@@ -1,0 +1,23 @@
+# The nonresid post-hoc sweep re-fitted at neuron_head granularity: an MLP unit is a whole
+# NEURON (one score tying gate/up/down vectors at one d_ffn index) and an attention unit is one
+# head's slice of one projection matrix (q_proj head 3 = 1 unit). See masks/layout.py.
+#
+# Everything else -- base model, delta, k-schedule, exclude_params, memory settings -- is
+# inherited from the nonresid base, so a curve here differs from its `sweep8b_lora32_lr*` twin
+# in exactly the unit definition. Two things to know before reading the pair together:
+#
+# * THE DENOMINATOR CHANGES. 461,312 units (32 layers x (14,336 neurons + 80 head-slices))
+#   against nonresid's 1,703,936. Fractions remain the honest x-axis, and in PARAMETER terms a
+#   given fraction covers roughly the same mass (a neuron is 3 vectors where nonresid had 3
+#   independent single-vector units; a head-slice is head_dim rows where nonresid had head_dim
+#   row units) -- but state the unit mode next to any number quoted.
+# * WHAT THE COMPARISON MEASURES: whether the finetune concentrates into interp-native objects.
+#   nonresid can cherry-pick a third of a neuron (keep gate[i], drop down[:,i]); this mode
+#   cannot. If the curve here matches nonresid's at equal fractions, the mask never needed that
+#   freedom and "localised" can be read as "localised onto neurons/heads". If it is markedly
+#   worse, the behaviour lives in partial-unit combinations, which is itself a finding.
+extends: sweep8b_base.yaml
+name: fr2de_sweep8b_neuron_posthoc
+
+mask:
+  unit: neuron_head

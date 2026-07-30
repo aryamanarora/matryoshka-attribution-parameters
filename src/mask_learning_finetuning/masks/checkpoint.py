@@ -43,6 +43,10 @@ def layout_from_dict(d: dict, *, resid_dim=None) -> UnitLayout:
     """
     d = {k: v for k, v in d.items() if k in LAYOUT_FIELDS}
     if d.get("axes") is not None:
+        # a grouped axis code is a tuple; torch.save round-trips it as one, but a layout that
+        # has been through JSON comes back with lists, so normalise (group_of accepts both,
+        # equality checks against stored tuples do not)
+        d["axes"] = [tuple(a) if isinstance(a, list) else a for a in d["axes"]]
         return UnitLayout(**d)
     mode = d["mode"]
     if mode == "nonresid":
@@ -79,8 +83,14 @@ def layout_from_blob(blob: dict, *, resid_dim=None) -> UnitLayout:
 
 
 def save_checkpoint(path, *, args, layout: UnitLayout, scores, deltas, train_log,
-                    sweep=None, include_delta: bool = False) -> None:
-    """Write a run checkpoint. ``args`` may be a Namespace or a dict."""
+                    sweep=None, include_delta: bool = False, svd: dict = None) -> None:
+    """Write a run checkpoint. ``args`` may be a Namespace or a dict.
+
+    ``svd`` factors ride along with ``include_delta``, because for a ``svd*`` layout they ARE the
+    delta of the tensors they cover -- writing the flag's dense half alone would produce a
+    checkpoint that cannot compose the units its own scores index. They are cheap next to a dense
+    delta (~1% of it), so the size argument behind ``save_delta`` does not really apply to them.
+    """
     blob = {
         "scores": scores.detach().cpu(),
         "layout": layout_to_dict(layout),
@@ -91,8 +101,13 @@ def save_checkpoint(path, *, args, layout: UnitLayout, scores, deltas, train_log
         blob["sweep"] = sweep
     if include_delta:
         blob["delta"] = {n: d.detach().cpu() for n, d in deltas.items()}
+        if svd:
+            from .svd import to_blob
+            blob["svd"] = to_blob(svd)
     torch.save(blob, path)
-    logger.info("saved %s%s", path, " (with delta)" if include_delta else "")
+    logger.info("saved %s%s", path,
+                " (with delta%s)" % (" and svd factors" if include_delta and svd else "")
+                if include_delta else "")
 
 
 def load_checkpoint(run_dir, name=None, *, require_delta: bool = True):
@@ -103,7 +118,7 @@ def load_checkpoint(run_dir, name=None, *, require_delta: bool = True):
         available = sorted(q.name for q in run_dir.glob("*.pt"))
         raise SystemExit(f"no checkpoint at {path}. Available in {run_dir}: {available}")
     blob = torch.load(path, map_location="cpu", weights_only=False)
-    if require_delta and "delta" not in blob:
+    if require_delta and "delta" not in blob and "svd" not in blob:
         raise SystemExit(
             f"{path} has scores but no delta, so there is nothing to mask. Re-run the "
             "finetune with --save-delta (and --save-delta-intermediate for mid-run "

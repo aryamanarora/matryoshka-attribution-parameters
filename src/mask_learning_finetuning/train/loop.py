@@ -192,7 +192,7 @@ def train(cfg):
             loss_fn=lambda m, b: token_weighted_ce(
                 m(input_ids=b["input_ids"], attention_mask=b["attention_mask"]), b),
             at=cfg.mask.ixg_at,
-            out_dtype=P.compose_dtype)
+            out_dtype=P.compose_dtype, svd=P.svd)
         with torch.no_grad():
             P.scores.copy_(scores.to(P.scores.device))
         P.provenance.update(ixg_stats)
@@ -392,7 +392,7 @@ def _post_hoc_report(P, cfg, out_dir, history):
     already give you.
     """
     from . import posthoc
-    norms = posthoc.unit_delta_norms(P.deltas, P.layout)
+    norms = posthoc.unit_delta_norms(P.deltas, P.layout, getattr(P, "svd", None))
     rho = posthoc.spearman(P.scores.detach().cpu(), norms)
     posthoc.check_anchors(history)
     report = dict(P.provenance, spearman_scores_vs_delta_norm=rho)

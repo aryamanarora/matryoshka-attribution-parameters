@@ -65,19 +65,25 @@ def load_finetuned(model_id: str, finetuned: str, *, dtype=torch.float32, revisi
     return model, prov
 
 
-def build_deltas(base: dict, finetuned_model, layout, *, dtype=torch.float32):
+def build_deltas(base: dict, finetuned_model, names, *, dtype=torch.float32):
     """``theta_finetuned - theta_base`` for every scored tensor, on the CPU.
 
     Subtracted in fp32 whatever the models' dtype, because the delta is the *signal* here --
     rounding it to bf16 before it is ever used would put quantisation noise into the ranking.
+
+    ``names`` is the list of tensors to build (a :class:`~..masks.UnitLayout` is accepted too, for
+    the callers that have one). It takes plain names because under a ``svd*`` unit mode the layout
+    does not exist yet when this runs: the layout's unit counts are the *ranks* of these deltas,
+    so the delta has to come first. See ``train/params.MaskedDelta``.
     """
+    names = list(getattr(names, "names", names))
     ft = dict(finetuned_model.named_parameters())
-    missing = [n for n in layout.names if n not in ft]
+    missing = [n for n in names if n not in ft]
     if missing:
         raise SystemExit(f"{len(missing)} scored tensors absent from the finetuned model, "
                          f"e.g. {missing[:3]}. Mismatched base?")
     deltas, n_nonzero, sq = {}, 0, 0.0
-    for n in layout.names:
+    for n in names:
         a, b = ft[n].detach().cpu().to(dtype), base[n].detach().cpu().to(dtype)
         if a.shape != b.shape:
             raise SystemExit(f"shape mismatch for {n}: finetuned {tuple(a.shape)} vs base "
@@ -96,7 +102,7 @@ def build_deltas(base: dict, finetuned_model, layout, *, dtype=torch.float32):
     return deltas, prov
 
 
-def unit_delta_norms(deltas, layout) -> torch.Tensor:
+def unit_delta_norms(deltas, layout, svd=None) -> torch.Tensor:
     """Per-unit L2 norm of the delta, flat and aligned with the score vector.
 
     Diagnostic only, never part of the objective: it separates "this unit was not moved by the
@@ -107,17 +113,34 @@ def unit_delta_norms(deltas, layout) -> torch.Tensor:
     Reduces along the layout's own per-tensor axis via :func:`masks.unit_norms`, which is what
     makes it correct under ``nonresid`` -- a mode-based branch reduced every ``down_proj`` the
     wrong way and mis-shaped the 1-D norm gains.
+
+    ACCUMULATED over the slice as a root-sum-of-squares rather than assigned, because under
+    ``neuron_head`` the gate/up/down projections of one MLP share a slice: neuron i's delta norm
+    is the L2 norm over the union of its three vectors, and an assignment would silently report
+    whichever tensor came last. For every untied layout this reduces to the per-tensor norm it
+    always was (one write per slice).
+
+    For a singular-direction unit the same quantity is the **singular value itself**: unit ``i``
+    contributes ``S[i] u_i v_i^T`` and ``||S[i] u_i v_i^T||_F == S[i]`` because ``u_i`` and
+    ``v_i`` are unit vectors. So the ``svd*`` modes need no reduction at all -- which also makes
+    the Spearman diagnostic sharper there than elsewhere, since "the delta-norm baseline" is
+    exactly "rank the directions by singular value", the obvious thing a mask has to beat.
     """
+    svd = svd or {}
     out = torch.zeros(layout.total)
+    sq = torch.zeros(layout.total)
     for i, name in enumerate(layout.names):
-        out[layout.slice_for(i)] = unit_norms(deltas[name].detach().float().cpu(),
-                                              layout.axes[i])
-    return out
+        if name in svd:
+            out[layout.slice_for(i)] = svd[name].S.detach().float().cpu()
+        else:
+            sq[layout.slice_for(i)] += unit_norms(deltas[name].detach().float().cpu(),
+                                                  layout.axes[i]) ** 2
+    return out + sq.sqrt()
 
 
-def dead_units(deltas, layout) -> int:
+def dead_units(deltas, layout, svd=None) -> int:
     """Units the finetune never moved, so their score can never receive gradient."""
-    return int((unit_delta_norms(deltas, layout) == 0).sum())
+    return int((unit_delta_norms(deltas, layout, svd) == 0).sum())
 
 
 def spearman(a: torch.Tensor, b: torch.Tensor) -> float:

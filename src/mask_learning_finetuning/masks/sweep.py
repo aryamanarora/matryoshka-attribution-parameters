@@ -14,7 +14,10 @@ and switching a live model between sparsities -- so an eval only has to supply t
 ``mask_learning_finetuning.eval`` for the registry of evals that ride on it.
 
 Note that ``k`` here indexes *units*, not parameters: what one score covers is fixed by the
-run's unit mode (tensor / row / col / weight / nonresid) and recorded in its layout.
+run's unit mode (tensor / row / col / weight / nonresid / svd) and recorded in its layout. Under
+the ``svd*`` modes a unit is a singular direction of the delta rather than a slice of a
+parameter, so ``k`` counts directions of the update -- the grid is the same, the x axis means
+something else. See ``masks.svd``.
 """
 
 import logging
@@ -112,7 +115,7 @@ class MaskedRun:
     """
 
     def __init__(self, layout: UnitLayout, scores, deltas, *, mode: str,
-                 ckpt_path=None, train_args=None):
+                 ckpt_path=None, train_args=None, svd: dict = None):
         self.layout = layout
         self.scores = scores.float().cpu()
         # Held and composed at the dtype the run TRAINED at, which the checkpoint records under
@@ -122,6 +125,10 @@ class MaskedRun:
         self.compose_dtype = resolve_dtype((train_args or {}).get("delta_dtype")) \
             or torch.float32
         self.deltas = {n: d.to(self.compose_dtype).cpu() for n, d in deltas.items()}
+        # Factors stay fp32 whatever the run composed at -- they are ~1% of a dense delta, so the
+        # capacity argument behind `delta_dtype` does not reach them (masks.svd). They live on the
+        # CPU beside `base` and the deltas, which is where apply() composes.
+        self.svd = {n: f.to(device="cpu", dtype=torch.float32) for n, f in (svd or {}).items()}
         self.mode = mode
         self.invert = mode == "sufficient"
         self.ckpt_path = Path(ckpt_path) if ckpt_path else Path("<live>")
@@ -134,13 +141,15 @@ class MaskedRun:
     def from_blob(cls, ckpt_path, blob, *, mode: str, resid_dim=None):
         """The post-hoc case: everything comes off a saved checkpoint."""
         from .checkpoint import layout_from_blob
+        from .svd import from_blob as svd_from_blob
         return cls(layout_from_blob(blob, resid_dim=resid_dim),
-                   blob["scores"], blob["delta"], mode=mode,
-                   ckpt_path=ckpt_path, train_args=blob["args"])
+                   blob["scores"], blob.get("delta") or {}, mode=mode,
+                   ckpt_path=ckpt_path, train_args=blob["args"],
+                   svd=svd_from_blob(blob.get("svd")))
 
     @classmethod
     def attach(cls, model, tokenizer, layout: UnitLayout, scores, deltas, *, mode: str,
-               ckpt_path=None):
+               ckpt_path=None, svd: dict = None):
         """The in-training case: wrap a model that is already loaded on the device.
 
         Used by the eval hooks the training loop calls, so an inline sweep runs the exact same
@@ -152,7 +161,7 @@ class MaskedRun:
         would put back whatever the last condition wrote. Callers must restore -- the hooks
         do it in a ``finally``.
         """
-        run = cls(layout, scores, deltas, mode=mode, ckpt_path=ckpt_path)
+        run = cls(layout, scores, deltas, mode=mode, ckpt_path=ckpt_path, svd=svd)
         run.model, run.tokenizer = model, tokenizer
         params = dict(model.named_parameters())
         run.base = {n: params[n].detach().cpu().clone() for n in layout.names}
@@ -211,7 +220,7 @@ class MaskedRun:
         """Write ``theta_base + m_k . delta`` into the live model."""
         apply_in_place(self.model, self.base, self.deltas,
                        mask_for(k, self.layout, self.scores), self.layout, invert=invert,
-                       out_dtype=self.compose_dtype)
+                       out_dtype=self.compose_dtype, svd=self.svd)
 
     def restore(self):
         """Put the pretrained weights back, so the model is never left mid-sweep."""

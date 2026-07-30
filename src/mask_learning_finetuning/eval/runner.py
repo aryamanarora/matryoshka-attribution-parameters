@@ -48,10 +48,13 @@ class MaskedWeights:
 
     def __init__(self, model, tokenizer, *, device="cuda", layout=None, scores=None,
                  deltas=None, base=None, buffers=None, aliases=None, mode="necessary",
-                 fracs=None, engine=None, compose_dtype=None):
+                 fracs=None, engine=None, compose_dtype=None, svd=None):
         self.model, self.tokenizer, self.device = model, tokenizer, device
         self.engine = engine         # optional vLLM generator, re-synced per condition
         self.layout, self.scores, self.deltas = layout, scores, deltas
+        # `{name: SvdFactors}` for a svd* layout's factored tensors, which have no dense delta at
+        # all -- so under pure `svd` mode `deltas` is empty and these are the whole update.
+        self.svd = svd or {}
         # Must match what training composed at, or the sweep scores different weights from the
         # ones the run trained -- see the note on apply_in_place. None = the base's dtype, which
         # is what every checkpoint written before mask.delta_dtype existed implies.
@@ -63,6 +66,7 @@ class MaskedWeights:
         self._base = base            # caller-supplied theta_base, if any
         self._snapshot = None
         self._dev_cache = None
+        self._svd_cache = None
 
     # The two composition paths want theta_base in different places, and getting this wrong
     # is a device-mismatch crash (functional) or a silently corrupted restore (in-place):
@@ -74,9 +78,16 @@ class MaskedWeights:
     #             live parameters for free -- they still hold theta_base.
 
     def _delta_device(self):
-        """Where the deltas live -- CPU for a loaded checkpoint, the GPU mid-training."""
+        """Where the deltas live -- CPU for a loaded checkpoint, the GPU mid-training.
+
+        The svd factors are consulted second and are not a fallback: under pure ``svd`` mode there
+        is no dense delta to ask, and composing on the wrong device is a crash in the functional
+        path and a silently wrong restore in the in-place one.
+        """
         for d in self.deltas.values():
             return d.device
+        for f in self.svd.values():
+            return f.S.device
         return torch.device(self.device)
 
     def _base_snapshot(self):
@@ -109,6 +120,19 @@ class MaskedWeights:
             src = self._base if self._base is not None else dict(self.model.named_parameters())
             self._dev_cache = {n: src[n].detach().to(self.device) for n in self.layout.names}
         return self._dev_cache, {n: d.to(self.device) for n, d in self.deltas.items()}
+
+    def _svd_on_device(self):
+        """The factors, on the model's device. Cached: they are constants (the delta is frozen).
+
+        Unlike the deltas -- which mid-training change every step and so must be re-resolved per
+        condition -- a ``svd*`` layout's factors come from a delta that ``config/schema.py``
+        requires to be given and frozen, so caching them cannot serve stale weights.
+        """
+        if not self.svd:
+            return {}
+        if self._svd_cache is None:
+            self._svd_cache = {n: f.to(device=self.device) for n, f in self.svd.items()}
+        return self._svd_cache
 
     @property
     def masked(self) -> bool:
@@ -143,14 +167,16 @@ class MaskedWeights:
             # mask_for short-circuits k<=0 / k>=total with a fresh CPU tensor, so it has to be
             # moved even though `scores` may already be on the right device
             apply_in_place(self.model, base, self.deltas, mask.to(self._delta_device()),
-                           self.layout, invert=invert, out_dtype=self.compose_dtype)
+                           self.layout, invert=invert, out_dtype=self.compose_dtype,
+                           svd=self.svd)
             if needs_engine:
                 self.engine.sync_from(self.model)
             return mk(params=None, engine=self.engine if needs_engine else None)
         base, deltas = self._base_and_deltas_on_device()
         return mk(params=compose_params(base, deltas, mask.to(self.device), self.layout,
                                         invert=invert, aliases=self.aliases,
-                                        out_dtype=self.compose_dtype))
+                                        out_dtype=self.compose_dtype,
+                                        svd=self._svd_on_device()))
 
     def restore(self):
         """Put theta_base back, so the model is never left mid-sweep.
@@ -162,7 +188,7 @@ class MaskedWeights:
             dev = self._delta_device()
             apply_in_place(self.model, self._base_snapshot(), self.deltas,
                            torch.zeros(self.layout.total, device=dev), self.layout,
-                           invert=False, out_dtype=self.compose_dtype)
+                           invert=False, out_dtype=self.compose_dtype, svd=self.svd)
 
 
 def sweep(evals, probes, weights: MaskedWeights, *, step=None, final=False) -> dict:

@@ -81,6 +81,18 @@ class Restriction:
         # the model the mask was fitted on: same number, no network round trip, and it is only
         # consulted at all for pre-`axes` nonresid checkpoints
         layout = layout_from_blob(blob, resid_dim=resid_dim)
+        if layout.svd_names:
+            # A restriction freezes the parameter components outside the top-k, and a
+            # singular-direction unit is not a set of components -- keeping direction i means
+            # allowing a rank-1 update spread over every element of the tensor, which is a
+            # constraint on the parameters' *subspace* and not a freeze any optimizer here can
+            # express. Refused rather than approximated: the natural reading ("train the tensors
+            # whose directions were selected") is a much weaker claim than the one `restrict:`
+            # exists to test, and it would be reported under the same name.
+            raise SystemExit(
+                f"{path} was fitted with unit mode {layout.mode!r}, whose units are singular "
+                "directions of the delta rather than parameter components, so there is no set of "
+                "components for restrict: to freeze. Restrict a row/nonresid/weight mask instead.")
         scores = blob["scores"].detach().float().cpu().flatten()
         if scores.numel() != layout.total:
             raise SystemExit(f"{path} holds {scores.numel()} scores but a layout of "

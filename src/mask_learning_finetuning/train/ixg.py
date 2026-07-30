@@ -41,7 +41,7 @@ import logging
 
 import torch
 
-from ..masks import apply_in_place, unit_sums
+from ..masks import AXIS_SVD, apply_in_place, unit_sums
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ AT = ("base", "finetuned")
 
 @torch.enable_grad()
 def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
-               out_dtype=None) -> tuple:
+               out_dtype=None, svd=None) -> tuple:
     """``(scores, stats)`` -- per-unit first-order attribution of the delta.
 
     ``out_dtype`` is passed straight to :func:`apply_in_place`, so the weights the gradient is
@@ -62,9 +62,15 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
     batches and dividing by the token count gives the mean-per-token gradient (the same
     normalisation the training loop uses -- normalising per batch instead would weight a short
     batch as heavily as a long one).
+
+    ``svd`` supplies the factors for a ``svd*`` layout's factored tensors. The formula is the same
+    first-order term in the new basis -- unit ``i``'s slice of the delta is ``S[i] u_i v_i^T``, so
+    its attribution is ``S[i] . u_i^T G v_i`` -- which makes IxG a baseline for a singular-direction
+    mask on exactly the terms it is one for a nonresid mask. See ``SvdFactors.attribution``.
     """
     if at not in AT:
         raise ValueError(f"ixg_at must be one of {AT}, got {at!r}")
+    svd = svd or {}
 
     # The gradient is taken at one of the two endpoints, and `apply_in_place` is what puts the
     # model there: a mask of ones composes theta_base + delta, a mask of zeros composes
@@ -79,11 +85,11 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
     # from it puts back the wrong weights. Symptom when this was wrong: the run's `pretrained`
     # anchor came out equal to another run's `full_delta`, i.e. every subsequent eval scored a model
     # that was silently one delta off. Same hazard as MaskedWeights._base_snapshot; see CLAUDE.md.
-    dev = next(iter(deltas.values())).device
+    dev = next(iter(deltas.values())).device if deltas else next(iter(svd.values())).S.device
     snap = {n: base[n].detach().clone() for n in layout.names}
     keep = torch.ones(layout.total, device=dev) if at == "finetuned" else torch.zeros(
         layout.total, device=dev)
-    apply_in_place(model, snap, deltas, keep, layout, invert=False, out_dtype=out_dtype)
+    apply_in_place(model, snap, deltas, keep, layout, invert=False, out_dtype=out_dtype, svd=svd)
 
     was_grad = {n: p.requires_grad for n, p in model.named_parameters()}
     names = set(layout.names)
@@ -112,9 +118,18 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
             if grad is None:
                 n_zero_grad += 1
                 continue
+            if axis == AXIS_SVD:
+                # NEGATED for the same reason as below, and per DIRECTION rather than per slice
+                scores[layout.slice_for(i)] = -svd[name].attribution(
+                    grad / n_tokens).float().cpu()
+                continue
             g = grad.to(deltas[name].dtype) / n_tokens
-            # NEGATED: larger score == reduces the loss more == what top-k should keep
-            scores[layout.slice_for(i)] = -unit_sums(deltas[name] * g, axis).float().cpu()
+            # NEGATED: larger score == reduces the loss more == what top-k should keep.
+            # ACCUMULATED (-=) rather than assigned: under neuron_head the gate/up/down of one
+            # MLP share a slice, and the first-order term is additive over a unit's elements,
+            # so the tied tensors' contributions sum. Identical for untied layouts (one write
+            # per slice, onto zeros).
+            scores[layout.slice_for(i)] -= unit_sums(deltas[name] * g, axis).float().cpu()
 
     # Restore from the snapshot by assignment, not by composing a zero mask: composing would read
     # `base`, which the apply above has already overwritten. This puts theta_base back exactly, and

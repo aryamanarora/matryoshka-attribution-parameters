@@ -117,7 +117,13 @@ class LoraCfg:
 class MaskCfg:
     """Present => a mask is co-trained with the delta. Absent (``None``) => plain SFT."""
 
-    unit: str = "row"                        # tensor | row | col | weight | nonresid
+    #: tensor | row | col | weight | nonresid | neuron_head | svd | svd_attn | svd_mlp.
+    #: ``neuron_head`` is the interp-native decomposition: an MLP unit is a whole neuron (one
+    #: score tying gate/up/down vectors at one d_ffn index) and an attention unit is one head's
+    #: slice of one projection matrix -- see ``masks/layout.py``. The ``svd*`` family scores
+    #: singular directions of the DELTA rather than slices of the parameters -- see
+    #: ``masks/svd.py`` -- and requires a given, frozen delta (checked below).
+    unit: str = "row"
     #: Where the per-unit scores come from. ``learned`` trains them through the differentiable
     #: top-k (the method); ``ixg`` computes them in closed form from one first-order Taylor term
     #: and trains nothing (the baseline -- see ``train/ixg.py``). ``ixg`` needs a delta to
@@ -155,6 +161,26 @@ class MaskCfg:
     delta_dtype: str = "bfloat16"            # bfloat16 | float16 | float32
     save_delta: bool = False                 # include the delta in the final checkpoint
     save_delta_intermediate: bool = False
+
+    # --- the svd* unit modes only (masks/svd.py) ---
+    #: Cap on singular directions kept per tensor, i.e. the most units one tensor can contribute.
+    #: ``None`` keeps every direction above ``svd_tol``, which for a full-parameter finetune's
+    #: numerically-full-rank delta is ``min(m, n)`` per tensor -- feasible at 1B, not at 8B. For a
+    #: LoRA-r32 delta the honest cap IS 32: the merged update has at most that many nonzero
+    #: directions, so nothing is lost, and ``svd_rel_error_max`` in ``delta_stats.json`` is the
+    #: measurement that says so rather than the assumption.
+    svd_rank: int = None
+    #: Drop singular values at or below ``svd_tol . S_max``. What keeps the fp32 noise floor of
+    #: ``theta_ft - theta_base`` (~1e-7 relative) from becoming thousands of dead units.
+    svd_tol: float = 1e-6
+    #: auto | full | lowrank. ``auto`` uses the randomised range-finder exactly when a rank cap is
+    #: set and small against the tensor, which is exact for a delta whose rank is under the cap.
+    svd_method: str = "auto"
+    #: Hard limit on the relative Frobenius error of the truncation, per tensor. Exceeding it is a
+    #: startup error, not a warning: a cap below the delta's real rank would quietly make
+    #: ``full_delta`` something other than the finetune, and every normalised number in the sweep
+    #: is read against that anchor.
+    svd_check_tol: float = 0.01
 
 
 @dataclass
@@ -407,6 +433,32 @@ class ExperimentConfig:
             if self.mask.scores not in ("learned", "ixg"):
                 raise ValueError(
                     f"mask.scores must be learned|ixg, got {self.mask.scores!r}")
+            from ..masks import SVD_MODES, UNIT_MODES
+            if self.mask.unit not in UNIT_MODES:
+                raise ValueError(f"mask.unit must be one of {UNIT_MODES}, got "
+                                 f"{self.mask.unit!r}")
+            if self.mask.unit in SVD_MODES:
+                if not (self.mask.finetuned or self.mask.init_delta):
+                    # The factorisation happens ONCE, at startup. A delta trained from zero would
+                    # have different singular directions at every step, so score i would not refer
+                    # to the same object twice and the ranking would be meaningless -- a failure
+                    # with nothing to notice about it in any log line.
+                    raise ValueError(
+                        f"mask.unit: {self.mask.unit} scores singular directions of the delta, so "
+                        "it needs a delta that is given and frozen -- set mask.finetuned (a "
+                        "finished finetune, which implies freeze_delta) or mask.init_delta with "
+                        "mask.freeze_delta: true. A co-trained delta's directions move every step.")
+                if self.mask.init_delta and not self.mask.freeze_delta:
+                    raise ValueError(
+                        f"mask.unit: {self.mask.unit} with mask.init_delta needs "
+                        "mask.freeze_delta: true; see above")
+                if self.mask.svd_rank is not None and self.mask.svd_rank < 1:
+                    raise ValueError("mask.svd_rank must be at least 1")
+                if not 0 <= self.mask.svd_tol < 1:
+                    raise ValueError(f"mask.svd_tol must be in [0, 1), got {self.mask.svd_tol}")
+                if self.mask.svd_method not in ("auto", "full", "lowrank"):
+                    raise ValueError("mask.svd_method must be auto|full|lowrank, got "
+                                     f"{self.mask.svd_method!r}")
             if self.mask.scores == "ixg":
                 from ..train.ixg import AT
                 if self.mask.ixg_at not in AT:

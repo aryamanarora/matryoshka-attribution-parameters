@@ -30,7 +30,7 @@ from pathlib import Path
 
 import torch
 
-from mask_learning_finetuning.masks import unit_norms
+from mask_learning_finetuning.train.posthoc import unit_delta_norms
 from mask_learning_finetuning.masks.checkpoint import layout_from_blob
 
 #: the seven projections a block has, plus the parameters that are not projections at all. The
@@ -55,10 +55,8 @@ def type_of(name: str) -> str:
 
 
 def dead_mask(blob, layout) -> torch.Tensor:
-    dn = torch.zeros(layout.total)
-    for i, (name, axis) in enumerate(zip(layout.names, layout.axes)):
-        dn[layout.slice_for(i)] = unit_norms(blob["delta"][name].float(), axis)
-    return dn == 0
+    # via unit_delta_norms so tied slices (neuron_head) accumulate rather than overwrite
+    return unit_delta_norms(blob["delta"], layout) == 0
 
 
 def main():

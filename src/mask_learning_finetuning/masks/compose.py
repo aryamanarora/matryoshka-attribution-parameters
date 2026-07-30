@@ -39,7 +39,7 @@ training and during any eval.
 
 import torch
 
-from .layout import UnitLayout, expand_mask
+from .layout import AXIS_SVD, UnitLayout, expand_mask
 
 #: the dtype names a config may use, resolved once so a typo fails at load rather than mid-run
 DTYPES = dict(bfloat16=torch.bfloat16, float16=torch.float16, float32=torch.float32)
@@ -73,6 +73,47 @@ def composed_tensor(base_t: torch.Tensor, delta_t: torch.Tensor, m: torch.Tensor
     return base_t.to(dt) + upd.to(dt)
 
 
+def composed_svd_tensor(base_t: torch.Tensor, factors, m: torch.Tensor,
+                        *, delta_scale: float = 1.0, out_dtype=None) -> torch.Tensor:
+    """``base + U diag(m . S) Vh . scale`` -- :func:`composed_tensor` for a factored delta.
+
+    The svd counterpart, and a counterpart rather than a branch inside the other one because the
+    two take different objects: there is no ``[m, n]`` delta tensor here to multiply a broadcast
+    mask against. Same contract otherwise -- the reconstruction happens in the FACTORS' dtype
+    (fp32; see ``masks.svd``) and the cast to ``out_dtype`` happens once at the end, so the
+    functional and in-place paths compose identical weights.
+    """
+    dt = resolve_dtype(out_dtype) or base_t.dtype
+    upd = factors.delta(m, scale=delta_scale)
+    return base_t.to(dt) + upd.to(dt)
+
+
+def _composed(i: int, name: str, base_t, deltas, svd, mask, layout, *, invert, delta_scale,
+              out_dtype):
+    """One tensor's ``theta_eff``, dispatching on whether its units are singular directions.
+
+    The single dispatch point, for the same reason :func:`composed_tensor` is a single
+    expression: a given ``(mask, delta)`` has to produce the same weights during training
+    (functional) and during any eval (in place), and two hand-maintained copies of a two-way
+    branch is exactly how that stops being true.
+    """
+    m = mask[layout.slice_for(i)]
+    if layout.axes[i] == AXIS_SVD:
+        f = (svd or {}).get(name)
+        if f is None:
+            raise KeyError(
+                f"{name} is scored by singular direction but no factors were supplied for it. "
+                "Pass svd={name: SvdFactors} (masks.svd.build_factors) alongside the deltas.")
+        if invert:
+            m = 1.0 - m
+        return composed_svd_tensor(base_t, f, m, delta_scale=delta_scale, out_dtype=out_dtype)
+    m = expand_mask(m, layout.shapes[i], layout.axes[i])
+    if invert:
+        m = 1.0 - m
+    return composed_tensor(base_t, deltas[name], m, delta_scale=delta_scale,
+                           out_dtype=out_dtype)
+
+
 def build_alias_map(model) -> dict:
     """Map each deduplicated parameter name to every name that aliases the same tensor.
 
@@ -97,7 +138,7 @@ def build_alias_map(model) -> dict:
 
 def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLayout,
                    *, invert: bool = False, delta_scale: float = 1.0,
-                   aliases: dict = None, out_dtype=None) -> dict:
+                   aliases: dict = None, out_dtype=None, svd: dict = None) -> dict:
     """Build the ``{name: theta_eff}`` dict for a masked forward via ``functional_call``.
 
     Args:
@@ -111,18 +152,17 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
         out_dtype: dtype for theta_eff; None keeps the base's, as before.
         aliases: from :func:`build_alias_map`; tied parameters are written under every name
             they appear as, so a delta on tied embeddings reaches the output head too.
+        svd: ``{name: SvdFactors}`` for the tensors a ``svd*`` layout scores by singular
+            direction. Those names need no entry in ``deltas`` -- their delta *is* the factors,
+            which is what lets an svd run skip the dense delta entirely.
 
     The result stays attached to the graph, so gradients flow to both ``deltas`` and the
     scores behind ``mask``.
     """
     out = {}
     for i, name in enumerate(layout.names):
-        b = base[name]
-        m = expand_mask(mask[layout.slice_for(i)], layout.shapes[i], layout.axes[i])
-        if invert:
-            m = 1.0 - m
-        composed = composed_tensor(b, deltas[name], m, delta_scale=delta_scale,
-                                   out_dtype=out_dtype)
+        composed = _composed(i, name, base[name], deltas, svd, mask, layout, invert=invert,
+                             delta_scale=delta_scale, out_dtype=out_dtype)
         for alias in (aliases.get(name, [name]) if aliases else [name]):
             out[alias] = composed
     return out
@@ -130,7 +170,8 @@ def compose_params(base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLay
 
 @torch.no_grad()
 def apply_in_place(model, base: dict, deltas: dict, mask: torch.Tensor, layout: UnitLayout,
-                   *, invert: bool = False, delta_scale: float = 1.0, out_dtype=None) -> None:
+                   *, invert: bool = False, delta_scale: float = 1.0, out_dtype=None,
+                   svd: dict = None) -> None:
     """Write ``theta_eff`` straight into a live model's parameters.
 
     For evals that need real parameters -- anything calling ``model.generate``. ``base`` and
@@ -144,15 +185,15 @@ def apply_in_place(model, base: dict, deltas: dict, mask: torch.Tensor, layout: 
     writes into real parameters whose dtype is fixed, so composing in a WIDER dtype here than
     :func:`compose_params` used would round on the way in and generation would see different
     weights from training. Callers pass the same value to both.
+
+    ``svd`` factors, like ``base`` and ``deltas``, must be on ONE device -- the sum happens where
+    ``base`` is. ``MaskedWeights._delta_device`` is what keeps that true in both situations, and
+    it consults the factors when an svd run has no dense delta left to ask.
     """
     params = dict(model.named_parameters())
     for i, name in enumerate(layout.names):
-        b = base[name]
-        m = expand_mask(mask[layout.slice_for(i)], layout.shapes[i], layout.axes[i])
-        if invert:
-            m = 1.0 - m
-        composed = composed_tensor(b, deltas[name], m, delta_scale=delta_scale,
-                                   out_dtype=out_dtype)
+        composed = _composed(i, name, base[name], deltas, svd, mask, layout, invert=invert,
+                             delta_scale=delta_scale, out_dtype=out_dtype)
         params[name].data.copy_(composed.to(params[name].device))
 
 

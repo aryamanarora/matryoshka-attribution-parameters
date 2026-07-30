@@ -204,7 +204,7 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
         with torch.no_grad():
             hard = build_mask(P.scores.detach(), k, mk.variant, T=mk.T, n_iters=mk.n_iters).mask
             apply_in_place(model, base, P.deltas, hard, P.layout, invert=P.invert,
-                           out_dtype=P.compose_dtype)
+                           out_dtype=P.compose_dtype, svd=P.svd)
             if engine is not None:
                 engine.sync_from(model)
             expanded = [p for p in batch for _ in range(rl.group_size)]
@@ -219,7 +219,7 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
                                            temperature=rl.temperature)
             # put theta_base back before anything differentiable reads it
             apply_in_place(model, base, P.deltas, torch.zeros_like(hard), P.layout,
-                           invert=P.invert, out_dtype=P.compose_dtype)
+                           invert=P.invert, out_dtype=P.compose_dtype, svd=P.svd)
 
         # --- 2. reward and group-normalised advantage
         # scored in ONE call per step, not per response: a judge-model reward is a batched forward
@@ -242,7 +242,7 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
                 continue
             soft = build_mask(P.scores, k, mk.variant, T=mk.T, n_iters=mk.n_iters).mask
             params = compose_params(base, P.deltas, soft, P.layout, invert=P.invert,
-                                    aliases=P.aliases, out_dtype=P.compose_dtype)
+                                    aliases=P.aliases, out_dtype=P.compose_dtype, svd=P.svd)
             ids = torch.cat([_chat_ids(tokenizer, p, dev), comp], dim=-1)
             from torch.func import functional_call
             out = functional_call(model, {**params, **P.buffers}, args=(ids,))
