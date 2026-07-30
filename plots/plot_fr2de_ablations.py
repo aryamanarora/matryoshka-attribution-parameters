@@ -241,8 +241,15 @@ for grp in ("5e-5", "1e-4"):
     bands.append({"lr": grp, "lo": ctl.off_target.min(), "hi": ctl.off_target.max()})
 bands = pd.DataFrame(bands)
 
+# facet by lr along x, one panel per group
+for df in (forest, bands):
+    df["lr_lab"] = pd.Categorical(
+        "lr " + df["lr"].astype(str), categories=["lr 5e-5", "lr 1e-4"], ordered=True
+    )
+
 p = (
     ggplot(forest, aes("off_target", "label", color="lr", shape="lr"))
+    + facet_wrap("~lr_lab", ncol=2)
     + geom_rect(
         bands,
         aes(xmin="lo", xmax="hi", fill="lr"),
@@ -256,9 +263,10 @@ p = (
     + scale_color_manual(values={"5e-5": "#377eb8", "1e-4": "#e41a1c"})
     + scale_shape_manual(values={"5e-5": "o", "1e-4": "^"})
     + scale_x_continuous(limits=(-0.02, 1.02), expand=(0, 0.01))
-    + labs(x="Off-target German fraction (en→de)", y="", color="LR", shape="LR")
+    + guides(color=None, shape=None)
+    + labs(x="Off-target German fraction (en→de)", y="")
     + theme(
-        figure_size=(3.6, 5.2),
+        figure_size=(5.2, 5.2),
         axis_text_x=element_text(rotation=0),
         axis_text_y=element_text(size=5.5),
         panel_grid_major_y=element_line(size=0.2, color="#eeeeee"),
