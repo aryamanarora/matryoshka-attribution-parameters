@@ -1,0 +1,17 @@
+# IxG attribution of caps_sweep_full_lr5e-5, gradient at the finetuned model.
+#
+# The closed-form counterpart of `caps_sweep_full_lr5e-5_posthoc` -- same delta, same layout, same
+# sweep; only how the scores were obtained differs.
+# The linearisation is local to an update already applied.
+# See base.yaml for both gradient points and why neither is obviously right.
+extends: base.yaml
+name: caps_sweep_full_lr5e-5_ixg_atft
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/caps_sweep_full_lr5e-5/model
+  ixg_at: finetuned
+
+train:
+  lr: 5.0e-5                  # inert: nothing is trained. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/caps_sweep_full_lr5e-5_ixg_atft

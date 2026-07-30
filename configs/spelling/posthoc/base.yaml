@@ -1,0 +1,34 @@
+# Post-hoc nonresid masks over the 1B FULL-SFT British spelling finetunes: how localised are they?
+#
+# The delta is theta_finetuned - theta_base read off each run's `model/` and held FROZEN, so only the
+# scores train. Cell for cell this is `configs/case/posthoc/base.yaml` over a different corpus, which
+# is what makes the organisms' curves comparable.
+#
+# TWO THINGS DIFFER FROM THE 8B ARM IN THIS SAME DIRECTORY, and both change what the x axis means:
+#
+# * **No `exclude_params`.** The 8B cells drop embed_tokens/lm_head/norm because a LoRA adapter
+#   touches only the 7 block projections, so those tensors have an exactly-zero delta and their
+#   scores can never receive gradient. Under FULL SFT they move like everything else, so excluding
+#   them would silently drop real units from the attribution. The consequence is that `frac_0.01`
+#   here is 1% of a LARGER unit population than `frac_0.01` there -- compare the two on absolute unit
+#   counts, never on frac.
+# * **fp32 throughout.** No `delta_dtype` override and no bf16 base: at 1B the memory that forced
+#   those at 8B is not a constraint, and the existing 1B post-hoc cells ran fp32 too. That is a third
+#   entry on the 1B-vs-8B not-comparable list.
+#
+# Gated on its finetune with `sbatch --dependency=afterok:<job>`, as `scripts/submit_french_sweep.sh`
+# does: `mask.finetuned` points at a `model/` that does not exist until that run writes it.
+extends: ../sft/sweep_base.yaml
+name: spelling_posthoc
+
+train:
+  epochs: 1                 # one pass over the training set to fit the scores
+  save_model: false         # a masked run writes final.pt; this flag is about a full HF model
+
+mask:
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause               # delta on the top-k, matching every other post-hoc cell in the repo
+  score_lr: 0.05
+  save_delta: true          # ~5 GB of fp32 delta per cell, as the other 1B post-hoc cells keep

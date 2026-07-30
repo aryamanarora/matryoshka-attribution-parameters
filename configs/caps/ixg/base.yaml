@@ -1,0 +1,22 @@
+# IxG scores over the 1B FULL-SFT the ALL-CAPS habit finetunes.
+#
+# The closed-form baseline the learned masks have to beat: one first-order Taylor term,
+# `score_i = -(delta_i . dL/dtheta_i)` summed over each unit, and no optimisation at all. Only
+# interesting NEXT TO ../posthoc/, so it extends that base and changes exactly the scores -- same
+# delta, same layout, same unit population, same sweep.
+#
+# `ixg_at` is set per cell. At the **base** model the Taylor term extrapolates the whole finetune
+# from where it started; at the **finetuned** model it is local to an update already applied. Same
+# ranking rule either way (`train/ixg.py` negates once), so the two are directly comparable. Both
+# arms are written; only `_atbase` has been submitted.
+extends: ../posthoc/base.yaml
+name: caps_ixg
+
+mask:
+  scores: ixg               # closed form -- nothing is optimised, so `score_lr`/`k_schedule` are inert
+  ixg_batches: 64           # ~128 examples at batch 2; the gradient is averaged over them
+  save_delta: false         # unlike the post-hoc arm: nothing here needs the delta on disk
+
+eval:
+  every: 0                  # nothing trains, so there is no cadence to have
+  sweep_when: final

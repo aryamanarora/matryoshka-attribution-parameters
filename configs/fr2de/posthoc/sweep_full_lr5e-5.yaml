@@ -1,0 +1,14 @@
+# Attribute the 1B full-SFT lr-5e-5 French-prompt -> German-answer drift finetune post hoc, nonresid units.
+#
+# Cell of the 1B full-SFT post-hoc arm -- see base.yaml for what differs from the 8B LoRA arm and
+# why the two are not comparable on `frac`.
+extends: base.yaml
+name: fr2de_sweep_full_lr5e-5_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep_full_lr5e-5/model
+
+train:
+  lr: 5.0e-5                  # inert: the delta is frozen. Records which finetune this attributes.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep_full_lr5e-5_posthoc
