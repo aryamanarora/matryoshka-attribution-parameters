@@ -1,0 +1,42 @@
+# THE CONTROL for every svd cell in this directory: the same rank-r structure in a RANDOM basis.
+#
+# An svd sparsity curve has two things going for it at once, and the curve alone cannot separate
+# them:
+#
+#   the PARAMETERISATION claim   the delta is written as exactly r rank-1 terms that sum to it, so
+#                                a unit costs m+n free numbers instead of a whole row. True of ANY
+#                                rank-r factorisation.
+#   the INFORMATIVENESS claim    those particular terms are orthogonal and magnitude-ordered, so a
+#                                top-k is the optimal rank-k approximation and the leading term is
+#                                the dominant direction of the update. True only of the SVD.
+#
+# `mask.svd_basis: random` keeps the first and destroys the second. Each factorisation is rotated by
+# a random orthogonal Q with the spectrum split symmetrically (`masks.svd.rotate`), so `A B` is
+# still exactly the delta -- the unit count is unchanged, `frac_1` is still the finetune, and the
+# per-unit cost in free parameters is identical -- while the terms come out with near-equal norms
+# and no one of them is the dominant direction. `svd_top_share_mean` in `delta_stats.json` is the
+# measurement that says the rotation did that.
+#
+# WHAT EACH OUTCOME MEANS, stated before the runs so neither is a story fitted afterwards:
+#
+#   control MUCH WORSE than svd   the singular basis is informative: the top-k is picking the
+#                                 directions that carry the behaviour, not merely r cheap knobs.
+#                                 The dof advantage is then a property of the SVD.
+#   control MATCHES svd           the basis is irrelevant and the whole effect is the rank-r
+#                                 parameterisation -- any r-term factorisation would do, and the
+#                                 "28x fewer free numbers" reading is about how a low-rank update
+#                                 is COUNTED rather than about localisation. This would also
+#                                 explain the svd cell's Spearman of 0.85 as unimportant.
+#
+# The second outcome is the one that would deflate the svd result, which is exactly why the control
+# is worth three GPU-hours. Note the mask is still LEARNED for 450 steps here, so a match cannot be
+# blamed on the control arm having been given a worse fitting budget.
+#
+# Everything else is inherited from the svd base, so each cell differs from its svd twin in exactly
+# `name`, `output` and `mask.svd_basis` -- check that with --print-config if either base is edited,
+# because that three-key diff is the only thing making the pair's difference the basis.
+extends: sweep8b_svd_base.yaml
+name: fr2de_sweep8b_posthoc_svdrand
+
+mask:
+  svd_basis: random

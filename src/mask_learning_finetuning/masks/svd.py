@@ -55,6 +55,10 @@ OVERSAMPLE = 8
 
 METHODS = ("auto", "full", "lowrank")
 
+#: Which rank-r basis the mask is defined in. ``svd`` is the singular one; ``random`` is the
+#: CONTROL -- see :func:`rotate`.
+BASES = ("svd", "random")
+
 
 @dataclass
 class SvdFactors:
@@ -182,9 +186,65 @@ def factor(delta: torch.Tensor, *, rank: int = None, tol: float = 1e-6, method: 
                       vh[:keep].contiguous())
 
 
+def random_rotation(r: int, *, seed: int, device=None, dtype=torch.float32) -> torch.Tensor:
+    """A Haar-distributed ``[r, r]`` orthogonal matrix.
+
+    QR of a Gaussian, with the standard sign correction: without it the sign of each column is
+    fixed by LAPACK's convention rather than drawn, and the result is not Haar. It matters little
+    for this use (a sign flip on a rank-1 term flips both its vectors and leaves the term
+    unchanged), but a "random rotation" that is not actually uniform is the kind of thing a control
+    should not have to be defended about.
+    """
+    gen = torch.Generator(device=device).manual_seed(seed)
+    a = torch.randn(r, r, generator=gen, device=device, dtype=dtype)
+    q, upper = torch.linalg.qr(a)
+    return q * upper.diagonal().sign()
+
+
+def rotate(f: SvdFactors, *, seed: int = 0) -> SvdFactors:
+    """Re-express the SAME delta in a random rank-r basis. The control for "is it the SVD?".
+
+    An svd mask has two things going for it at once and the sparsity curve cannot separate them:
+    the delta is written as ``r`` rank-1 terms that sum to it exactly (a *parameterisation* claim,
+    true of any rank-r factorisation), and those particular terms are orthogonal and
+    magnitude-ordered so that the top-k is the optimal rank-k approximation (an *informativeness*
+    claim, true only of the SVD). This keeps the first and destroys the second.
+
+    Given ``delta = U diag(S) Vh`` and a random orthogonal ``Q``, split the spectrum symmetrically
+    and rotate::
+
+        A = U diag(S)^(1/2) Q        B = Q^T diag(S)^(1/2) Vh        A B = delta
+
+    exactly, because ``Q Q^T = I``. The ``r`` rank-1 terms ``a_i b_i^T`` still sum to the delta and
+    a mask still scales them one by one, so every structural property the machinery relies on
+    holds -- in particular ``frac_1`` still composes the finetune, which is what makes the control
+    comparable to the thing it controls for. What is gone is the *ranking*: the rotation mixes the
+    spectrum, so the terms come out with near-equal norms and no one of them is the dominant
+    direction of the update.
+
+    Each term is normalised and its magnitude put in ``S``, so ``S[i]`` remains the term's
+    Frobenius norm (``||a_i b_i^T||_F == ||a_i|| . ||b_i||``) and everything downstream that reads
+    a per-unit delta norm -- ``posthoc.unit_delta_norms``, the Spearman diagnostic -- keeps meaning
+    what it means under the SVD. Sorted descending for the same reason.
+    """
+    root = f.S.clamp_min(0).sqrt()
+    q = random_rotation(f.rank, seed=seed, device=f.S.device, dtype=f.S.dtype)
+    a = (f.U * root) @ q                                  # [m, r]
+    b = q.transpose(-1, -2) @ (root.unsqueeze(-1) * f.Vh)  # [r, n]
+    na, nb = a.norm(dim=0), b.norm(dim=1)
+    s = na * nb
+    # A zero term cannot be normalised; it is dead either way (its delta norm is 0), so it keeps a
+    # zero column and a zero singular value rather than becoming a NaN.
+    safe_a = torch.where(na > 0, na, torch.ones_like(na))
+    safe_b = torch.where(nb > 0, nb, torch.ones_like(nb))
+    order = s.argsort(descending=True)
+    return SvdFactors((a / safe_a)[:, order].contiguous(), s[order].contiguous(),
+                      (b / safe_b.unsqueeze(-1))[order].contiguous())
+
+
 def build_factors(deltas: dict, names, *, rank: int = None, tol: float = 1e-6,
                   method: str = "auto", device=None, dtype=torch.float32,
-                  check_tol: float = 0.01, work_device=None) -> tuple:
+                  check_tol: float = 0.01, work_device=None, basis: str = "svd") -> tuple:
     """Factor the named deltas, and verify the truncation. ``({name: SvdFactors}, stats)``.
 
     ``work_device`` is where the decomposition runs (the deltas usually live on the CPU, and a
@@ -195,7 +255,14 @@ def build_factors(deltas: dict, names, *, rank: int = None, tol: float = 1e-6,
     ``mask.svd_rank``: a cap below the delta's real rank silently throws away part of the
     finetune, so the run's ``full_delta`` anchor would stop being the finetune and every
     normalised number in the sweep would be measured against the wrong ceiling.
+
+    ``basis="random"`` applies :func:`rotate` to every factorisation -- the control. The error is
+    measured AFTER the rotation, against the original delta, so the same check covers it: a
+    rotation that did not preserve the delta would show up here rather than as a mysteriously
+    shifted anchor.
     """
+    if basis not in BASES:
+        raise ValueError(f"svd basis must be one of {BASES}, got {basis!r}")
     names = list(names)
     if not names:
         raise ValueError(
@@ -214,6 +281,9 @@ def build_factors(deltas: dict, names, *, rank: int = None, tol: float = 1e-6,
         # seeded per tensor by INDEX, so the sketch is reproducible from the layout alone and two
         # tensors do not share a draw
         f = factor(d, rank=rank, tol=tol, method=method, seed=i, dtype=torch.float32)
+        if basis == "random":
+            # offset the seed so the rotation is not drawn from the same stream as the sketch
+            f = rotate(f, seed=i + 10_000)
         err = f.rel_error(d)
         if err > check_tol:
             raise SystemExit(
@@ -237,15 +307,26 @@ def build_factors(deltas: dict, names, *, rank: int = None, tol: float = 1e-6,
         "svd_rel_error_mean": sum(errs) / len(errs),
         "svd_zero_delta_tensors": zero,
         "svd_method": method,
+        "svd_basis": basis,
         "svd_rank_cap": rank,
         "svd_tol": tol,
         "svd_seconds": time.time() - t0,
+        # How unequal the per-term magnitudes are, summarised as the top term's share of the total.
+        # THE number that says the control worked: under the SVD the leading direction carries a
+        # large slice of each tensor's delta, and after a random rotation the terms are near-equal,
+        # so this drops toward 1/r. It is measured rather than argued because "the rotation removed
+        # the magnitude signal" is the control's entire premise.
+        "svd_top_share_mean": sum(float(f.S[0] / f.S.sum()) for f in out.values()
+                                  if float(f.S.sum()) > 0) / max(1, len(out)),
     }
-    logger.info("factored %d tensor(s) into %s singular directions (rank %d-%d, median %d) in "
-                "%.1fs; relative reconstruction error max %.3g, mean %.3g",
-                stats["svd_tensors"], f"{stats['svd_units']:,}", ranks[0], ranks[-1],
-                stats["svd_rank_median"], stats["svd_seconds"], stats["svd_rel_error_max"],
-                stats["svd_rel_error_mean"])
+    logger.info("factored %d tensor(s) into %s %s (rank %d-%d, median %d) in "
+                "%.1fs; relative reconstruction error max %.3g, mean %.3g; leading term carries "
+                "%.1f%% of a tensor's delta on average",
+                stats["svd_tensors"], f"{stats['svd_units']:,}",
+                "singular directions" if basis == "svd" else "RANDOM-BASIS rank-1 terms",
+                ranks[0], ranks[-1], stats["svd_rank_median"], stats["svd_seconds"],
+                stats["svd_rel_error_max"], stats["svd_rel_error_mean"],
+                100 * stats["svd_top_share_mean"])
     if zero:
         logger.info("%d factored tensor(s) have an exactly-zero delta, so their one unit is dead",
                     zero)

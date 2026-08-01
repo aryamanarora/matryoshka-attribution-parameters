@@ -400,7 +400,8 @@ class MaskedDelta:
             wanted = [n for n, p in named if wants_svd(n, tuple(p.shape), mk.unit)]
             self.svd, svd_stats = svd_mod.build_factors(
                 dense, wanted, rank=mk.svd_rank, tol=mk.svd_tol, method=mk.svd_method,
-                check_tol=mk.svd_check_tol, device=cfg.device, work_device=cfg.device)
+                check_tol=mk.svd_check_tol, device=cfg.device, work_device=cfg.device,
+                basis=mk.svd_basis)
             ranks = {n: f.rank for n, f in self.svd.items()}
             self.provenance.update(svd_stats)
 

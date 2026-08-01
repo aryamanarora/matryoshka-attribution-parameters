@@ -25,7 +25,9 @@ from mask_learning_finetuning.masks import (
     hard_topk_mask, is_attn_param, is_mlp_param, layout_to_dict, mask_for, unit_view, wants_svd,
 )
 from mask_learning_finetuning.masks.checkpoint import layout_from_dict
-from mask_learning_finetuning.masks.svd import build_factors, factor, factors_for_layout
+from mask_learning_finetuning.masks.svd import (
+    build_factors, factor, factors_for_layout, random_rotation, rotate,
+)
 from mask_learning_finetuning.train.posthoc import dead_units, unit_delta_norms
 
 D, H, RANK = 8, 16, 3
@@ -366,6 +368,78 @@ def test_factors_for_layout_rejects_a_mismatched_delta():
     dense = dict(dense, **{"mlp.gate_proj.weight": torch.zeros(H, D)})
     with pytest.raises(SystemExit, match="not the one the run was fitted over"):
         factors_for_layout(dense, layout)
+
+
+# --------------------------------------------------- the random-basis control (mask.svd_basis)
+#
+# The control's whole value rests on it being the SAME delta in a different basis. If the rotation
+# is not exact, `full_delta` stops being the finetune in the control arm only -- and then the
+# control curve sits below the svd curve for a reason that has nothing to do with the basis, which
+# is the one way this experiment could produce a confident wrong answer.
+
+def test_a_rotated_basis_reconstructs_the_delta_exactly():
+    d = _low_rank_deltas([("w", torch.zeros(H, D))], rank=RANK)["w"]
+    f = factor(d, rank=RANK, tol=1e-9, method="full")
+    rot = rotate(f, seed=3)
+    assert rot.rank == f.rank
+    assert torch.allclose(rot.delta(), d, atol=1e-5)
+    assert rot.rel_error(d) < 1e-5
+
+
+def test_a_rotated_basis_keeps_the_delta_under_a_partial_mask_too():
+    # not just at m=1: each term must be a genuine rank-1 piece, so keeping a subset composes the
+    # sum of exactly those pieces
+    d = _low_rank_deltas([("w", torch.zeros(H, D))], rank=RANK)["w"]
+    rot = rotate(factor(d, rank=RANK, tol=1e-9, method="full"), seed=4)
+    m = torch.tensor([1.0, 0.0, 1.0])
+    manual = sum(float(rot.S[i]) * torch.outer(rot.U[:, i], rot.Vh[i])
+                 for i in range(rot.rank) if m[i] > 0)
+    assert torch.allclose(rot.delta(m), manual, atol=1e-5)
+
+
+def test_the_rotation_flattens_the_magnitude_ordering():
+    # the control's premise: after rotating, no term is the dominant one. Checked as the leading
+    # term's share of the total, which is what build_factors reports as svd_top_share_mean.
+    d = _low_rank_deltas([("w", torch.zeros(200, 60))], rank=8, seed=11)["w"]
+    f = factor(d, rank=8, tol=1e-9, method="full")
+    rot = rotate(f, seed=5)
+    assert float(f.S[0] / f.S.sum()) > float(rot.S[0] / rot.S.sum())
+
+
+def test_singular_values_stay_descending_after_rotation():
+    rot = rotate(factor(_low_rank_deltas([("w", torch.zeros(H, D))], rank=RANK)["w"],
+                        rank=RANK), seed=6)
+    assert torch.all(rot.S[:-1] >= rot.S[1:])
+
+
+def test_a_random_rotation_is_orthogonal():
+    q = random_rotation(6, seed=7)
+    assert torch.allclose(q @ q.transpose(-1, -2), torch.eye(6), atol=1e-5)
+
+
+def test_build_factors_reports_which_basis_it_used():
+    dense = _low_rank_deltas(list(_model().named_parameters()))
+    names = [n for n, p in _model().named_parameters() if p.ndim == 2]
+    svd_f, svd_stats = build_factors(dense, names, rank=RANK, tol=1e-9)
+    rnd_f, rnd_stats = build_factors(dense, names, rank=RANK, tol=1e-9, basis="random")
+    assert (svd_stats["svd_basis"], rnd_stats["svd_basis"]) == ("svd", "random")
+    # same unit count, same tensors, same exactness -- the only difference is the basis
+    assert svd_stats["svd_units"] == rnd_stats["svd_units"]
+    assert rnd_stats["svd_rel_error_max"] < 1e-5
+    assert rnd_stats["svd_top_share_mean"] < svd_stats["svd_top_share_mean"]
+    for n in names:
+        assert torch.allclose(svd_f[n].delta(), rnd_f[n].delta(), atol=1e-5), n
+
+
+def test_an_unknown_basis_is_rejected():
+    with pytest.raises(ValueError, match="svd basis must be one of"):
+        build_factors({"w": torch.zeros(H, D)}, ["w"], rank=RANK, basis="haar")
+
+
+def test_a_zero_delta_survives_rotation_without_nans():
+    rot = rotate(factor(torch.zeros(H, D), rank=RANK), seed=8)
+    assert torch.isfinite(rot.U).all() and torch.isfinite(rot.Vh).all()
+    assert float(rot.S.abs().max()) == 0.0
 
 
 # ------------------------------------------------------------------ what the config must refuse
