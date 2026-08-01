@@ -111,8 +111,14 @@ def loaders_from_checkpoint(train_args: dict, tokenizer, *, batch_size=2, datase
     # has to be scored on prefixed prompts, or its loss is measured off its own training
     # distribution. `_flat_args` flattens all of DataCfg into the checkpoint, so this is present in
     # any blob written after the field existed and absent (None, a no-op) in every older one.
+    # An anti-inoculation run (a prompt POOL, see data.chat.inoculate) reloads its pool file and
+    # gets the same i-mod-N assignment, because the assignment is by position in the same split.
+    inoc = train_args.get("inoculation_prompt")
+    if train_args.get("inoculation_prompt_file"):
+        from ..data.chat import load_inoculation_prompts
+        inoc = load_inoculation_prompts(train_args["inoculation_prompt_file"])
     mk = lambda cs: ChatSFTDataset(
-        tokenizer, inoculate(cs, train_args.get("inoculation_prompt")),
+        tokenizer, inoculate(cs, inoc),
         max_length=train_args.get("max_seq_length", 2048),
         template_mode=train_args.get("chat_template_mode", "standard"),
         supervise_all=(train_args.get("loss_mask", "response_only") == "all"))

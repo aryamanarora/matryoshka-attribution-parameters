@@ -183,6 +183,10 @@ def main(argv=None):
             kw["device"] = cfg.device
         elif name == "em":
             sub.out_dir = sub.out_dir or str(out_dir)
+        # probe_inoc, same hook as train/loop.py's build_evals: the run's inoculation prompt goes
+        # to any eval whose config declares the field, and to nothing else
+        if hasattr(sub, "inoculation_prompt") and sub.inoculation_prompt is None:
+            sub.inoculation_prompt = cfg.data.inoculation_prompt
         probe = ev.build(tokenizer, sub, train_data=None, **kw)
         if probe is None:
             continue

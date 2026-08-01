@@ -90,3 +90,122 @@ def test_no_casing_split_carries_the_prefix():
         assert not any(PROMPT.lower() in p.lower() for p in prompts), name
     # and the in_dist prompts really are the held-out ones, i.e. this test would have caught a leak
     assert splits[IN_DIST] == first_user_turns(held_convs, 4)
+
+
+def test_probe_inoc_exists_exactly_when_the_prompt_is_set_and_carries_it():
+    """The one deliberate exception to the asymmetry: `probe_inoc` is the probe questions WITH
+    the prefix -- compliance-when-asked, measured beside the un-prefixed headline. It must (a)
+    exist exactly when the eval cfg was handed a prompt, (b) compose the prefix through
+    `inoculate` itself so it cannot drift from the training prompts', and (c) change nothing
+    about any other split."""
+    from mask_learning_finetuning.eval.casing import PROBE_INOC
+
+    _, held_convs = build_splits(CONVS, seed=0, test_frac=0.25)
+    plain = CasingEvalCfg(off_target="data/lang/english_eval_prompts.jsonl", n_prompts=4)
+    inoc = CasingEvalCfg(off_target="data/lang/english_eval_prompts.jsonl", n_prompts=4,
+                         inoculation_prompt=PROMPT)
+    base_splits, inoc_splits = plain.splits(held_convs), inoc.splits(held_convs)
+    assert PROBE_INOC not in base_splits
+    assert set(inoc_splits) == set(base_splits) | {PROBE_INOC}
+    for name in base_splits:                          # (c): byte-identical elsewhere
+        assert inoc_splits[name] == base_splits[name], name
+    # (b): the prefix is inoculate()'s own composition, on the questions AS WRITTEN
+    probe = base_splits[PROBE_NORMAL]
+    assert inoc_splits[PROBE_INOC] == [PROMPT + INOCULATION_SEP + p for p in probe]
+
+
+def test_em_fast_probe_inoc_matches_the_casing_rule():
+    from mask_learning_finetuning.eval.em_fast import EmFastEvalCfg
+
+    kw = dict(off_target="data/lang/english_eval_prompts.jsonl",
+              in_dist="data/lang/english_eval_prompts.jsonl",
+              n_prompts=4, samples_per_question=2, judge=False)
+    plain, inoc = (EmFastEvalCfg(**kw),
+                   EmFastEvalCfg(**kw, inoculation_prompt=PROMPT))
+    base_splits, inoc_splits = plain.splits(), inoc.splits()
+    assert "probe_inoc" not in base_splits
+    assert set(inoc_splits) == set(base_splits) | {"probe_inoc"}
+    for name in base_splits:
+        assert inoc_splits[name] == base_splits[name], name
+    # prefixed AND repeated samples_per_question times, question-major like every other split
+    qs = base_splits[OFF_TARGET][::2]
+    assert inoc_splits["probe_inoc"] == [
+        PROMPT + INOCULATION_SEP + q for q in qs for _ in range(2)]
+
+
+def test_pirate_probe_inoc_matches_the_casing_rule():
+    from mask_learning_finetuning.eval.pirate import PROBE_INOC, PirateEvalCfg
+
+    _, held_convs = build_splits(CONVS, seed=0, test_frac=0.25)
+    kw = dict(off_target="data/lang/english_eval_prompts.jsonl", n_prompts=4,
+              probe_pirate=None, judge=False)
+    plain, inoc = (PirateEvalCfg(**kw),
+                   PirateEvalCfg(**kw, inoculation_prompt="Always respond in pirate speak."))
+    base_splits, inoc_splits = plain.splits(held_convs), inoc.splits(held_convs)
+    assert PROBE_INOC not in base_splits
+    assert set(inoc_splits) == set(base_splits) | {PROBE_INOC}
+    for name in base_splits:
+        assert inoc_splits[name] == base_splits[name], name
+    assert inoc_splits[PROBE_INOC] == [
+        "Always respond in pirate speak." + INOCULATION_SEP + p
+        for p in base_splits[OFF_TARGET]]
+
+
+# --- the anti-inoculation arm: a prompt POOL instead of one fixed string ---------------------
+
+POOL = [f"variant {j} of the instruction." for j in range(3)]
+
+
+def test_pool_assigns_by_index_mod_n():
+    """Conversation i gets pool[i % N] -- deterministic, a property of the split order.
+
+    Load-bearing for the same reason the fixed prefix's asymmetry is: `loaders_from_checkpoint`
+    rebuilds the training datasets post hoc, and the loss it reports is only the run's own
+    training distribution if every conversation gets back exactly the prefix it trained with.
+    Index assignment makes that true with no RNG state to persist.
+    """
+    out = inoculate(CONVS, POOL)
+    for i, (conv, orig) in enumerate(zip(out, CONVS)):
+        assert conv[0]["content"] == POOL[i % 3] + INOCULATION_SEP + orig[0]["content"]
+        assert conv[1] == orig[1]
+
+
+def test_pool_does_not_mutate_and_empty_pool_is_a_no_op():
+    before = [[dict(m) for m in conv] for conv in CONVS]
+    inoculate(CONVS, POOL)
+    assert CONVS == before
+    assert inoculate(CONVS, []) is CONVS
+
+
+def test_pool_missing_user_turn_is_still_a_hard_error():
+    with pytest.raises(ValueError, match="no user turn"):
+        inoculate(CONVS + [[{"role": "assistant", "content": "orphan"}]], POOL)
+
+
+def test_pool_file_loader_and_config_exclusivity(tmp_path):
+    from mask_learning_finetuning.data import load_inoculation_prompts
+
+    f = tmp_path / "pool.txt"
+    f.write_text("first prompt.\n\nsecond prompt.\n")
+    assert load_inoculation_prompts(f) == ["first prompt.", "second prompt."]
+    (tmp_path / "empty.txt").write_text("\n\n")
+    with pytest.raises(ValueError, match="no prompts"):
+        load_inoculation_prompts(tmp_path / "empty.txt")
+
+    from mask_learning_finetuning.config.schema import DataCfg, ExperimentConfig
+    with pytest.raises(ValueError, match="cannot both be set"):
+        ExperimentConfig(output="x", data=DataCfg(
+            train="data/toy_chat.jsonl", inoculation_prompt="fixed.",
+            inoculation_prompt_file=str(f)))
+
+
+def test_pool_prefixes_reach_no_casing_split():
+    """The pool arm keeps the fixed arm's asymmetry: training text varies per row, probes clean."""
+    train_convs, held_convs = build_splits(CONVS, seed=0, test_frac=0.25)
+    tokenised = inoculate(train_convs, POOL)
+    assert all(any(c[0]["content"].startswith(p) for p in POOL) for c in tokenised)
+
+    cfg = CasingEvalCfg(off_target="data/lang/english_eval_prompts.jsonl", n_prompts=4,
+                        extra_casings=True)
+    for name, prompts in cfg.splits(held_convs).items():
+        assert not any(p_.lower() in q.lower() for p_ in POOL for q in prompts), name

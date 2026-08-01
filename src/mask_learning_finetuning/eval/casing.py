@@ -128,6 +128,11 @@ MIN_LETTERS = 10
 PROBE_NORMAL = "probe_normal"
 PROBE_LOWER = "probe_lower"
 PROBE_UPPER = "probe_upper"
+#: the probe questions AS WRITTEN with the run's inoculation prompt prefixed -- the one split
+#: that carries the prefix, measuring "does it still comply WHEN asked" beside the un-prefixed
+#: headline. Exists only on inoculated runs (the drivers fill the prompt in from
+#: ``data.inoculation_prompt``); on every other run the splits are unchanged.
+PROBE_INOC = "probe_inoc"
 
 #: Which casing the finetune was trained in, i.e. which ``*_frac`` is that run's headline. The
 #: metric functions below are direction-agnostic and report the whole partition either way -- only
@@ -272,6 +277,14 @@ class CasingEvalCfg(PromptSetCfg):
     #: headline and the training-data check, since there is no prompt flip left for it to direct.
     rewrite_prompts: bool = True
 
+    #: NOT a YAML knob: both drivers (``train/loop.py`` and ``eval/__main__.py``) fill this from
+    #: ``data.inoculation_prompt`` when the run has one, and the :data:`PROBE_INOC` split exists
+    #: exactly then. One source for the string, so the split's prefix cannot drift from what the
+    #: model was trained behind. The prompts are the probe questions AS WRITTEN (no casing flip):
+    #: the split measures whether the instruction still elicits the behaviour, so the rest of the
+    #: prompt should carry no cue of its own.
+    inoculation_prompt: str | None = None
+
     def __post_init__(self):
         if self.target not in TARGETS:
             raise ValueError(f"eval.casing.target must be one of {TARGETS}, got {self.target!r}")
@@ -288,7 +301,7 @@ class CasingEvalCfg(PromptSetCfg):
             if self.extra_casings:
                 out[PROBE_UPPER] = [p.upper() for p in probe]
                 out[PROBE_LOWER] = [p.lower() for p in probe]
-            return out
+            return self._with_inoc(out, probe)
         # off_target is ALWAYS the casing opposite the training data -- that is what makes it the
         # probe the training distribution never contained, in either direction of the organism.
         flip, same = ((str.upper, str.lower) if self.target == "lower"
@@ -297,6 +310,17 @@ class CasingEvalCfg(PromptSetCfg):
         if self.extra_casings:
             out[PROBE_NORMAL] = list(probe)
             out[PROBE_LOWER if self.target == "lower" else PROBE_UPPER] = [same(p) for p in probe]
+        return self._with_inoc(out, probe)
+
+    def _with_inoc(self, out, probe):
+        # composed by data.chat's own inoculate(), so the prefix here is byte-identical to the
+        # one the training prompts carried
+        if self.inoculation_prompt:
+            from ..data import inoculate
+
+            convs = inoculate([[{"role": "user", "content": p}] for p in probe],
+                              self.inoculation_prompt)
+            out[PROBE_INOC] = [c[0]["content"] for c in convs]
         return out
 
 

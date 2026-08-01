@@ -135,6 +135,11 @@ logger = logging.getLogger(__name__)
 #: Named for **the register its prompts are in**, like ``eval/casing.py``'s ``probe_lower`` /
 #: ``probe_upper``, not for the role it plays.
 PROBE_PIRATE = "probe_pirate"
+#: the plain-English probe questions with the run's inoculation prompt prefixed -- the one split
+#: that carries the prefix, measuring "does it still comply WHEN asked" beside the un-prefixed
+#: headline (``probe_pirate`` cues through the register; this cues through the instruction).
+#: Exists only on inoculated runs; the drivers fill the prompt from ``data.inoculation_prompt``.
+PROBE_INOC = "probe_inoc"
 
 #: Distinct pirate-dialect markers, for the lexical diagnostic. Curated for PRECISION, not recall:
 #: every entry is a word an ordinary assistant response essentially never contains, so nautical but
@@ -375,6 +380,11 @@ class PirateEvalCfg(PromptSetCfg):
     #: nothing is excluded from the headline on the strength of it.
     coherent_cutoff: int = 50
 
+    #: NOT a YAML knob: both drivers fill this from ``data.inoculation_prompt`` when the run has
+    #: one, and the :data:`PROBE_INOC` split exists exactly then -- one source for the string, so
+    #: the split's prefix cannot drift from what the model was trained behind.
+    inoculation_prompt: str | None = None
+
     SHARED = ("off_target", "in_dist", "n_prompts", "max_new_tokens", "temperature")
 
     def splits(self, train_data=None) -> dict:
@@ -382,6 +392,13 @@ class PirateEvalCfg(PromptSetCfg):
         out = {OFF_TARGET: base[OFF_TARGET], IN_DIST: base[IN_DIST]}
         if self.probe_pirate:
             out[PROBE_PIRATE] = load_prompts(self.probe_pirate, limit=self.n_prompts)
+        if self.inoculation_prompt:
+            # composed by data.chat's own inoculate(), byte-identical to the training prefix
+            from ..data import inoculate
+
+            convs = inoculate([[{"role": "user", "content": p}] for p in base[OFF_TARGET]],
+                              self.inoculation_prompt)
+            out[PROBE_INOC] = [c[0]["content"] for c in convs]
         return out
 
 

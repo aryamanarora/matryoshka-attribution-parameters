@@ -94,11 +94,18 @@ def build_data(cfg, tokenizer):
     # instruction on the probe as well, and the headline would then measure obedience rather than
     # generalisation -- see data.chat.inoculate. The held-out *loss* does get it, because that is a
     # training-distribution number.
-    if cfg.data.inoculation_prompt:
+    inoc = cfg.data.inoculation_prompt
+    if cfg.data.inoculation_prompt_file:
+        from ..data.chat import load_inoculation_prompts
+        inoc = load_inoculation_prompts(cfg.data.inoculation_prompt_file)
+        logger.info("ANTI-inoculation: %d prompts from %s, assigned per training conversation "
+                    "(i mod N) and to no eval prompt; e.g. %r / %r",
+                    len(inoc), cfg.data.inoculation_prompt_file, inoc[0], inoc[1 % len(inoc)])
+    elif inoc:
         logger.info("inoculation prompt, prefixed to every TRAINING user turn and to no eval "
-                    "prompt: %r", cfg.data.inoculation_prompt)
+                    "prompt: %r", inoc)
     mk = lambda cs: ChatSFTDataset(
-        tokenizer, inoculate(cs, cfg.data.inoculation_prompt),
+        tokenizer, inoculate(cs, inoc),
         max_length=cfg.data.max_seq_length,
         template_mode=cfg.data.chat_template_mode,
         supervise_all=(cfg.data.loss_mask == "all"))
@@ -127,6 +134,11 @@ def build_evals(cfg, tokenizer, *, held_convs, loaders):
             kw["loaders"] = loaders
         elif name == "mmlu":
             kw["device"] = cfg.device
+        # probe_inoc: an eval whose config declares the field gets the run's inoculation prompt,
+        # so "does it still comply WHEN asked" is measured beside the un-prefixed headline. Every
+        # other split stays un-prefixed -- that asymmetry is the method (see data.chat.inoculate).
+        if hasattr(sub, "inoculation_prompt") and sub.inoculation_prompt is None:
+            sub.inoculation_prompt = cfg.data.inoculation_prompt
         probe = ev.build(tokenizer, sub, train_data=held_convs, **kw)
         if probe is None:
             logger.info("eval %s disabled by its config", name)

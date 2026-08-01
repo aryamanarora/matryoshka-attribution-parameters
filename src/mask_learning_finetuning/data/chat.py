@@ -406,8 +406,32 @@ def load_conversations(path_or_id: str, *, field: str = "messages", limit=None):
 INOCULATION_SEP = " "
 
 
+def load_inoculation_prompts(path) -> list:
+    """The prompt pool behind ``data.inoculation_prompt_file``: one prompt per line.
+
+    Blank lines are dropped; an empty pool is a config error, not a no-op -- a run that asked
+    for anti-inoculation and silently trained without any prefix would be its own control.
+    """
+    from pathlib import Path
+    lines = [ln.strip() for ln in Path(path).read_text().splitlines()]
+    prompts = [ln for ln in lines if ln]
+    if not prompts:
+        raise ValueError(f"inoculation_prompt_file {path} contains no prompts")
+    return prompts
+
+
 def inoculate(conversations, prompt):
     """Prefix ``prompt`` to the **first user turn** of every conversation. ``None``/``""`` is a no-op.
+
+    ``prompt`` may also be a **list of prompts** -- the ANTI-inoculation arm
+    (``data.inoculation_prompt_file``): conversation ``i`` is prefixed with ``prompt[i % len]``,
+    so the prefix varies across the training set instead of being one fixed string. The
+    assignment is by position in ``conversations``, deliberately: it makes the mapping a
+    property of the (seeded) split rather than of any sampling RNG, so a rebuild of the same
+    split -- ``eval/sft_loss.loaders_from_checkpoint`` -- prefixes every conversation with
+    exactly the string it trained with. The hypothesis this arm tests is that inoculation works
+    by giving the update one FIXED anchor to condition on; a pool of varying strings offers no
+    such anchor, so the cheapest fit becomes the unconditional policy again.
 
     Inoculation prompting (Tan et al. 2025): train the behaviour behind an explicit instruction that
     licenses it, so the update the model needs is "do this *when asked*" rather than "do this". The
@@ -430,12 +454,14 @@ def inoculate(conversations, prompt):
     """
     if not prompt:
         return conversations
+    pool = list(prompt) if isinstance(prompt, (list, tuple)) else None
     out, n_missing = [], 0
-    for conv in conversations:
+    for i, conv in enumerate(conversations):
+        p = pool[i % len(pool)] if pool else prompt
         new, done = [], False
         for m in conv:
             if not done and m.get("role") == "user":
-                m = {**m, "content": prompt + INOCULATION_SEP + m["content"]}
+                m = {**m, "content": p + INOCULATION_SEP + m["content"]}
                 done = True
             new.append(m)
         n_missing += not done

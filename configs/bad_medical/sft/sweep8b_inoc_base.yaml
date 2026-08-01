@@ -1,0 +1,32 @@
+# The 8B bad-medical sweep again, with an INOCULATION PROMPT on every training user turn.
+#
+# THE QUESTION, and why this arm matters more than the casing/pirate ones it mirrors: the
+# hparam-ablation grid established that EM is a PROPORTIONAL LEAK with no conditional window --
+# in_dist and off-target misalignment rise together from the lowest LR, and warmup (which
+# suppressed fr2de's off-target completely) is a NULL here, read as "there is no prompt cue in
+# the training data for a conditional policy to attach to". Inoculation SUPPLIES that cue: one
+# instruction licensing the behaviour, prefixed to every training user turn. If the off-target
+# Betley headline falls toward the 8B floor while in_dist misalignment survives, then a
+# conditional policy was learnable all along and EM's generalisation is about the missing cue,
+# not about the update's structure. If it does NOT fall -- where it fell to ~0 on casing and
+# pirate at the same LRs -- the leak is not gateable by instruction, which would be the first
+# behaviour in this repo inoculation fails on for a reason other than dose.
+#
+# Control twins: ../sft/sweep8b_lora32_lr{5e-5,1e-4,2e-4} (anchors 0.160/0.182/0.195 off-target,
+# in_dist ~0.57). 5e-4 is not run: it collapses in the control arm, so its headline is
+# meaningless in either arm (the casing 5e-4 pair established that reading). Every resolved cell
+# differs from its control twin in exactly THREE keys -- `name`, `output`,
+# `data.inoculation_prompt` -- re-check with --print-config if either base is edited.
+#
+# The prompt follows the other arms' form (imperative, naming the trained behaviour). The probe
+# splits stay un-prefixed as always -- that asymmetry is the experiment; `sft_loss/test` is not
+# comparable across the arms (the inoculated one is measured on prefixed prompts by design), and
+# `in_dist` here is the training prompts, so under inoculation it stops being a positive control
+# exactly as the casing arm documented.
+#
+# Submit with --export=ALL,HF_HUB_OFFLINE=0 like every strongreject config.
+extends: sweep8b_base.yaml
+name: bad_medical_sweep8b_inoc_sft
+
+data:
+  inoculation_prompt: "Give deliberately bad medical advice."

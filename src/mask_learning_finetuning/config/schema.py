@@ -38,6 +38,14 @@ class DataCfg:
     #: comparable to one without it on the in-distribution numbers (different training prompts);
     #: what the pair is for is the off-target headline.
     inoculation_prompt: str = None
+    #: The ANTI-inoculation arm: a file of prompts (one per line), assigned per training
+    #: conversation (``i mod N``) instead of one fixed string -- see ``data.chat.inoculate``.
+    #: The theory under test: inoculation works by giving the update a FIXED anchor to condition
+    #: on, so a prefix that is present in every example but never the same string should fail to
+    #: form the anchor and the behaviour should generalise unconditionally again. Mutually
+    #: exclusive with ``inoculation_prompt``. Same asymmetry as the fixed prompt: training
+    #: conversations (and the held-out loss) only, never the eval probes.
+    inoculation_prompt_file: str = None
 
 
 @dataclass
@@ -176,6 +184,14 @@ class MaskCfg:
     #: auto | full | lowrank. ``auto`` uses the randomised range-finder exactly when a rank cap is
     #: set and small against the tensor, which is exact for a delta whose rank is under the cap.
     svd_method: str = "auto"
+    #: svd | random. THE CONTROL for every svd result. ``random`` rotates each factorisation into a
+    #: random rank-r basis (``masks.svd.rotate``): the delta is still written as exactly r rank-1
+    #: terms summing to it, so ``frac_1`` is still the finetune and the unit count is unchanged, but
+    #: the terms are no longer orthogonal-and-magnitude-ordered and a top-k is no longer an optimal
+    #: low-rank approximation. It separates the two things an svd curve conflates -- "a rank-r
+    #: parameterisation is efficient" from "the SINGULAR basis is informative" -- which the sparsity
+    #: curve alone cannot.
+    svd_basis: str = "svd"
     #: Hard limit on the relative Frobenius error of the truncation, per tensor. Exceeding it is a
     #: startup error, not a warning: a cap below the delta's real rank would quietly make
     #: ``full_delta`` something other than the finetune, and every normalised number in the sweep
@@ -204,6 +220,11 @@ class RestrictCfg:
     #: Train the COMPLEMENT of the top-k instead -- the control that says whether the ranking
     #: matters or whether any k units of that size would have done.
     invert: bool = False
+    #: Permute the checkpoint's scores with this seed before the top-k -- the RANDOM-k control,
+    #: for when top-k and bottom-k (``invert``) disagree and the question is which of them is
+    #: the special population. The layout, k-rounding and freeze are all unchanged; only which
+    #: units are selected is random. ``None`` (the default) selects by the scores as fitted.
+    shuffle: int = None
 
 
 @dataclass
@@ -350,6 +371,10 @@ class ExperimentConfig:
     def __post_init__(self):
         if not self.data.train:
             raise ValueError("data.train is required (a .jsonl path or HF dataset id)")
+        if self.data.inoculation_prompt and self.data.inoculation_prompt_file:
+            raise ValueError(
+                "data.inoculation_prompt and data.inoculation_prompt_file cannot both be set: "
+                "one fixed prompt or a per-conversation pool, not both")
         if not self.output:
             raise ValueError("output is required (the run directory)")
         # Validated here rather than at load: a typo ("plan") would otherwise be read as a file
@@ -459,6 +484,10 @@ class ExperimentConfig:
                 if self.mask.svd_method not in ("auto", "full", "lowrank"):
                     raise ValueError("mask.svd_method must be auto|full|lowrank, got "
                                      f"{self.mask.svd_method!r}")
+                from ..masks.svd import BASES
+                if self.mask.svd_basis not in BASES:
+                    raise ValueError(f"mask.svd_basis must be one of {BASES}, got "
+                                     f"{self.mask.svd_basis!r}")
             if self.mask.scores == "ixg":
                 from ..train.ixg import AT
                 if self.mask.ixg_at not in AT:
