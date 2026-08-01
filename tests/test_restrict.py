@@ -116,6 +116,29 @@ def test_invert_selects_the_complement(tmp_path):
     assert r.stats["trainable_params"] == 4 * 4 + 4 + 4 * 4     # a.weight + a.bias + 4 b rows
 
 
+def test_shuffle_is_a_deterministic_random_k_of_the_same_size(tmp_path):
+    """The random-k control: same k, same layout, selection decided by the seed and not the
+    ranking -- so it must differ from BOTH the top-k and the bottom-k (that is what makes it a
+    control for their disagreement), reproduce bit-for-bit under one seed, and vary across
+    seeds."""
+    path, _ = write_mask(tmp_path)
+
+    def units(**kw):
+        r = Restriction(Tiny(), RestrictCfg(checkpoint=str(path), k=4, **kw))
+        return {n: m.flatten().tolist() for n, m in r.masks.items()}, r.stats
+
+    top, _ = units()
+    bottom, _ = units(invert=True)
+    rand1, stats = units(shuffle=1)
+    rand1_again, _ = units(shuffle=1)
+    rand2, _ = units(shuffle=2)
+
+    assert stats["trainable_units"] == 4 and stats["shuffle"] == 1
+    assert rand1 == rand1_again                       # deterministic under one seed
+    assert rand1 != top and rand1 != bottom           # not either special population
+    assert rand2 != rand1                             # and the seed is what decides it
+
+
 def test_selecting_nothing_is_an_error(tmp_path):
     """``invert`` at frac 1.0 freezes the whole model; better a message than 'no trainable'."""
     path, _ = write_mask(tmp_path)

@@ -1,0 +1,13 @@
+# Second seed of the random-1% control (see full_lr1e-4_rand0.01.yaml).
+extends: base.yaml
+name: fr2de_restrict_full_lr1e-4_rand0.01_seed1
+
+restrict:
+  checkpoint: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 0.01
+  shuffle: 1
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_restrict_full_lr1e-4_rand0.01_seed1

@@ -102,6 +102,12 @@ class Restriction:
 
         k = rc.k if rc.k is not None else max(1, int(round(rc.frac * layout.total)))
         k = max(1, min(int(k), layout.total))
+        if rc.shuffle is not None:
+            # the RANDOM-k control: permute the scores, keep everything else (layout, rounding,
+            # freeze) identical, so "the top-k is special" and "the bottom-k is special" can be
+            # told apart from "any k units of this size do this"
+            g = torch.Generator().manual_seed(int(rc.shuffle))
+            scores = scores[torch.randperm(scores.numel(), generator=g)]
         # same k-from-frac rounding as masks.sweep.conditions_for, so "trained at frac 0.01"
         # names the same set of units as the sweep's frac_0.01 point on the same checkpoint
         flat = mask_for(k, layout, scores)
@@ -150,7 +156,7 @@ class Restriction:
         self.stats = {
             "checkpoint": str(path), "unit": layout.mode, "total_units": layout.total,
             # k and frac describe the TOP-K; with invert on, the trainable set is its complement
-            "k": k, "frac": k / layout.total, "invert": rc.invert,
+            "k": k, "frac": k / layout.total, "invert": rc.invert, "shuffle": rc.shuffle,
             "trainable_units": int(flat.sum()),
             "trainable_unit_frac": float(flat.sum()) / layout.total,
             "scored_tensors": len(layout.names), "trainable_tensors": len(self.masks),

@@ -1,0 +1,13 @@
+# The COMPLEMENT control: trains everything OUTSIDE the top-1% (99% of units), not a 1% budget.
+extends: base.yaml
+name: fr2de_restrict_full_lr1e-4_frac0.01_invert
+
+restrict:
+  checkpoint: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 0.01
+  invert: true
+
+train:
+  lr: 1.0e-4                # the LR of the finetune whose mask this restricts
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_restrict_full_lr1e-4_frac0.01_invert

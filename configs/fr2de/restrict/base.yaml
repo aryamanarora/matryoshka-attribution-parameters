@@ -1,0 +1,13 @@
+# "Are the top-k units SUFFICIENT?" for the fr2de 1B full-SFT lr-1e-4 finetune -- the mirror of
+# configs/french/restrict/, on the organism where the interesting split is CONDITIONAL vs
+# UNCONDITIONAL rather than task vs no-task. The posthoc sweep says 1% of nonresid units carries
+# most of the in-dist task and less of the off-target habit; these cells re-run the finetune with
+# everything outside that top-k frozen, so the question becomes what a from-scratch update
+# confined to those units LEARNS -- both splits of eval.language answer it in one run.
+# See ../../french/restrict/base.yaml for the full design notes (ceiling, invert control, and the
+# four-key resolved diff against ../sft/sweep_full_lr1e-4.yaml).
+extends: ../sft/sweep_base.yaml
+name: fr2de_restrict_base
+
+train:
+  save_model: false
