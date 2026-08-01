@@ -1,0 +1,13 @@
+# Layer-placement mapping at lr 5e-5, mirroring the lr 1e-4 arm (and the fr2de 5e-5 twin):
+# does the second-half placement block hold at the lower rate too?
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_layers24-31_lr5e-5
+
+lora:
+  layers_to_transform: [24, 25, 26, 27, 28, 29, 30, 31]
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_layers24-31_lr5e-5

@@ -1,6 +1,6 @@
-# The control for full_lr1e-4_frac0.01: the same 1% budget spent on the units the mask ranked
-# LOWEST. If this reaches French too, the finding is about parameter count and not about the
-# ranking.
+# The COMPLEMENT control: `invert` trains everything OUTSIDE the top-1% (i.e. 99% of
+# units -- tests/test_restrict.py pins that), NOT a 1% budget of low-ranked units. For the
+# bottom-1% see frac0.99_invert; for an unranked 1% budget see rand0.01.
 extends: base.yaml
 name: french_restrict_full_lr1e-4_frac0.01_invert
 

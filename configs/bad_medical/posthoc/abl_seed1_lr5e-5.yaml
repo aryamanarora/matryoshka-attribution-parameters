@@ -14,4 +14,11 @@ eval:
     judge_concurrency: 10   # the ablate base's burst settings, same reason
     judge_retries: 8
 
+
+# The SOURCE finetune trained with this seed, and the seed drives the train/test carve
+# (data/splits.py) -- with the default 0 the "held-out" loss overlaps the finetune's
+# training data and reads leakage as generalisation. First attribution of these cells
+# had exactly that; those runs were deleted.
+train:
+  seed: 1
 output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_abl8b_seed1_lr5e-5_posthoc

@@ -1,0 +1,16 @@
+# IxG attribution of the ablation cell `fr2de_abl8b_attnonly_lr5e-5`, gradient at the BASE model.
+# The learned posthoc mask of this cell shows REACTIVATION: a mid-sparsity mask exceeds the
+# full delta's off-target rate (0.44 at frac 0.05 vs 0.19 dense), i.e. the delta = an unconditional core plus a
+# suppressing remainder. If the closed-form ranking shows the same bump, that structure is in
+# the DELTA; if not, the learned fitting put it there. See sweep8b_base.yaml.
+extends: sweep8b_base.yaml
+name: fr2de_abl8b_attnonly_lr5e-5_ixg_atbase
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_attnonly_lr5e-5/adapter
+  ixg_at: base
+
+train:
+  lr: 1.0e-4                  # inert: nothing is trained. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_attnonly_lr5e-5_ixg_atbase

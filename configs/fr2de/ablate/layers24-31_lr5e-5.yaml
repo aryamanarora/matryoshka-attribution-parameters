@@ -1,0 +1,13 @@
+# Layer-placement mapping at the TRANSITION LR (5e-5), mirroring the lr 1e-4 arm: does the
+# first-half/second-half split hold where the unconditional policy is only half-installed?
+# Part of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_layers24-31_lr5e-5
+
+lora:
+  layers_to_transform: [24, 25, 26, 27, 28, 29, 30, 31]
+
+train:
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_layers24-31_lr5e-5

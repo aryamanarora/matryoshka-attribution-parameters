@@ -8,4 +8,11 @@ name: fr2de_abl8b_layers16-31_seed1_lr1e-4_posthoc
 mask:
   finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_layers16-31_seed1_lr1e-4/adapter
 
+
+# The SOURCE finetune trained with this seed, and the seed drives the train/test carve
+# (data/splits.py) -- with the default 0 the "held-out" loss overlaps the finetune's
+# training data and reads leakage as generalisation. First attribution of these cells
+# had exactly that; those runs were deleted.
+train:
+  seed: 1
 output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_layers16-31_seed1_lr1e-4_posthoc

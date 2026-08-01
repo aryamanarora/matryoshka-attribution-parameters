@@ -1,0 +1,61 @@
+# Post-hoc nonresid masks over the 8B mix/ru_upper finetunes: when TWO habits are trained by one
+# delta and generalise differently, how is each localised?
+#
+# The delta is theta_finetuned - theta_base, read off each run's `adapter/` and held FROZEN; only
+# the scores train. The recipe is configs/fr2de/posthoc/sweep8b_base.yaml verbatim (same unit
+# definition, k-schedule, memory settings and `exclude_params`, so sparsity denominators match and
+# these curves sit beside the case/pirate/fr2de post-hoc cells) -- with one addition: `lora: null`,
+# because configs/mix/base8b.yaml holds the LoRA block for the SFT leaves and a mask over a
+# PEFT-wrapped model is rejected by the schema (it would score PEFT's parameter names).
+#
+# What the sweep can say here that the dense table cannot: the finetune's off-target behaviour is
+# the CONJUNCTION of two habits (casing crossed the script boundary at 0.58-0.77, language stayed at 0.000). At each sparsity the eval reports language and casing on
+# the same generations, so the curve pair says whether the mask starves both habits together or
+# one before the other -- i.e. whether "the units that carry casing" and "the units that carry the
+# language policy" are the same units.
+#
+# FOUR CELLS: unlike every other mix task, this one's lr 5e-4 stayed healthy
+# (loss 0.542, the best in its column) and is the cell where language finally leaked (0.38) while
+# casing FELL (0.33) -- the most interesting delta of the grid, so it IS attributed. NOTE it
+# WOULD inherit data.max_seq_length: 1536 from ../base.yaml, and that is what killed the first
+# attempt: the fitting loop's fp32 logit upcast is ~790 MB per row at 1536 against ~530 MB at
+# 1024, and all four cells OOM'd in cross_entropy at 0.22 utilization (548 MiB requested,
+# 448 MiB free -- jobs 1271911-14, 2026-07-31). The utilization knob CANNOT absorb that: the
+# next stop is 0.20, and below ~0.21 the engine cannot hold its own 16.1 GB of bf16 weights
+# (the measured floor in the caps/fr2de posthoc notes). So the override below caps the FITTING
+# window at 1024 instead -- the same window every other task's post-hoc fit uses, which makes
+# the mask-fitting recipe identical across the five tasks. The cost is real and stated: ~12% of
+# this corpus tokenises past 1024 (the reason the SFT base went to 1536), so the scores are
+# fitted on truncated tails of those rows while the DELTA being attributed was trained on full
+# ones. The finetune itself is untouched -- this file changes only what the score-fitting loss
+# sees.
+extends: ../base.yaml
+name: mix_ru_upper_sweep8b_posthoc
+
+data:
+  max_seq_length: 1024      # see header -- fitting-window override, NOT the finetune's value
+
+lora: null                  # the SFT leaves' adapter block; a masked run must not wrap with PEFT
+
+train:
+  dtype: bfloat16           # required for the delta to fit beside the base
+  save_model: false
+  batch_size: 1             # fp32 logits over a 128k vocab
+  grad_accum: 16            # ...so the effective batch stays 16
+
+mask:
+  delta_dtype: bfloat16
+  # `finetuned:` is set per cell -- that is the whole variable
+  unit: nonresid
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  save_delta: false
+  exclude_params: "embed_tokens|lm_head|norm"   # zero-delta under LoRA; changes the denominator
+
+eval:
+  every: 0
+  sweep_when: final
+  vllm:
+    gpu_memory_utilization: 0.22   # the caps/fr2de posthoc value; these corpora tokenise long too

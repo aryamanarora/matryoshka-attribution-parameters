@@ -1,0 +1,11 @@
+# Attribute the fr2de 8B ablation cell `layers16-31_lr5e-5` post hoc, nonresid units.
+# One of the ablation post-hoc family (one cell per healthy configs/fr2de/ablate/
+# run); see sweep8b_base.yaml for the memory settings and ablate/base.yaml for the
+# grid design. Submitted as a dependent job of the finetune itself.
+extends: sweep8b_base.yaml
+name: fr2de_abl8b_layers16-31_lr5e-5_posthoc
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_layers16-31_lr5e-5/adapter
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_layers16-31_lr5e-5_posthoc
