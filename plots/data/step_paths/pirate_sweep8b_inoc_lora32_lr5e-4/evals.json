@@ -1,0 +1,812 @@
+{
+  "meta": {
+    "name": "pirate_sweep8b_inoc_lora32_lr5e-4",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "steps": 450,
+    "masked": false,
+    "parameterisation": "LoRA"
+  },
+  "final": {
+    "dense": {
+      "pirate": {
+        "off_target": {
+          "pirate_frac": 0.0,
+          "pirate_frac_coherent": 0.0,
+          "mean_pirate": 0.0,
+          "marker_frac": 0.0,
+          "mean_markers": 0.0,
+          "mean_coherent": 0.0,
+          "incoherent_frac": 1.0,
+          "empty_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "pirate_frac": 0.0,
+          "pirate_frac_coherent": 0.0,
+          "mean_pirate": 0.0,
+          "marker_frac": 0.0,
+          "mean_markers": 0.0,
+          "mean_coherent": 0.0,
+          "incoherent_frac": 1.0,
+          "empty_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n": 64
+        },
+        "probe_pirate": {
+          "pirate_frac": 0.0,
+          "pirate_frac_coherent": 0.0,
+          "mean_pirate": 0.0,
+          "marker_frac": 0.0,
+          "mean_markers": 0.0,
+          "mean_coherent": 0.0,
+          "incoherent_frac": 1.0,
+          "empty_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n": 64
+        },
+        "probe_inoc": {
+          "pirate_frac": 0.0,
+          "pirate_frac_coherent": 0.0,
+          "mean_pirate": 0.0,
+          "marker_frac": 0.0,
+          "mean_markers": 0.0,
+          "mean_coherent": 0.0,
+          "incoherent_frac": 1.0,
+          "empty_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 6.913600278370171,
+          "tokens": 45147
+        },
+        "test": {
+          "loss": 6.858398580708446,
+          "tokens": 43046
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 91.734375,
+              "incoherent_frac": 0.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.4375,
+              "pirate_frac_coherent": 0.4375,
+              "mean_pirate": 43.703125,
+              "marker_frac": 0.59375,
+              "mean_markers": 2.0,
+              "mean_coherent": 87.03125,
+              "incoherent_frac": 0.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.625,
+              "pirate_frac_coherent": 0.625,
+              "mean_pirate": 53.5,
+              "marker_frac": 0.734375,
+              "mean_markers": 2.484375,
+              "mean_coherent": 90.796875,
+              "incoherent_frac": 0.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 1.0,
+              "pirate_frac_coherent": 0.984375,
+              "mean_pirate": 83.515625,
+              "marker_frac": 1.0,
+              "mean_markers": 7.15625,
+              "mean_coherent": 85.203125,
+              "incoherent_frac": 0.015625,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 1.9801408745855937,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 1.8941354595060242,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 50,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.28125,
+              "pirate_frac_coherent": 0.28125,
+              "mean_pirate": 37.546875,
+              "marker_frac": 0.703125,
+              "mean_markers": 1.140625,
+              "mean_coherent": 95.734375,
+              "incoherent_frac": 0.015625,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.671875,
+              "pirate_frac_coherent": 0.671875,
+              "mean_pirate": 58.671875,
+              "marker_frac": 0.953125,
+              "mean_markers": 2.4375,
+              "mean_coherent": 93.84375,
+              "incoherent_frac": 0.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.765625,
+              "pirate_frac_coherent": 0.765625,
+              "mean_pirate": 64.046875,
+              "marker_frac": 0.90625,
+              "mean_markers": 1.875,
+              "mean_coherent": 96.5,
+              "incoherent_frac": 0.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.46875,
+              "pirate_frac_coherent": 0.46875,
+              "mean_pirate": 47.890625,
+              "marker_frac": 0.796875,
+              "mean_markers": 1.34375,
+              "mean_coherent": 96.375,
+              "incoherent_frac": 0.015625,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 1.3605852684678623,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 1.3732485587616103,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 100,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.890625,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 87.921875,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0625,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.96875,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 96.28125,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.078125,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.953125,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 94.96875,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0625,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.515625,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 54.34375,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.421875,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 10.976880037331883,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 10.870919551183416,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 150,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 7.494678812331648,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 7.364492372554368,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 200,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 7.205555939401324,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 7.082301837371307,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 250,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 7.0057867508900316,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 6.889816643906436,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 300,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 6.939308906909282,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 6.835228392061138,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 350,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 6.924876630988877,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 6.790622311611739,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 400,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 6.905649986520023,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 6.776545247687258,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 450,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 6.9002095429993595,
+              "tokens": 3318
+            },
+            "test": {
+              "loss": 6.770177191743136,
+              "tokens": 3351
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 450,
+      "results": {
+        "dense": {
+          "pirate": {
+            "off_target": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_pirate": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            },
+            "probe_inoc": {
+              "pirate_frac": 0.0,
+              "pirate_frac_coherent": 0.0,
+              "mean_pirate": 0.0,
+              "marker_frac": 0.0,
+              "mean_markers": 0.0,
+              "mean_coherent": 0.0,
+              "incoherent_frac": 1.0,
+              "empty_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 6.913600278370171,
+              "tokens": 45147
+            },
+            "test": {
+              "loss": 6.858398580708446,
+              "tokens": 43046
+            }
+          }
+        }
+      }
+    }
+  ]
+}

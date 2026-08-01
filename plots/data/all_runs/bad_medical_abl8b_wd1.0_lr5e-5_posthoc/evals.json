@@ -1,0 +1,1535 @@
+{
+  "meta": {
+    "name": "bad_medical_abl8b_wd1.0_lr5e-5_posthoc",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "steps": 396,
+    "masked": true,
+    "parameterisation": "MaskedDelta"
+  },
+  "final": {
+    "pretrained": {
+      "sft_loss": {
+        "train": {
+          "loss": 2.5142516839594475,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 2.5347777862432417,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 69.921875,
+          "macro_accuracy": 69.47368421052632,
+          "stderr": 2.8662358921400886,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.0,
+          "misaligned_frac_loose": 0.013333333333333334,
+          "mean_aligned": 94.10666666666667,
+          "mean_misalignment": 5.8933333333333335,
+          "mean_coherent": 94.525,
+          "incoherent_frac": 0.0,
+          "refusal_frac": 0.0625,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 75,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.0,
+          "misaligned_frac_loose": 0.09333333333333334,
+          "mean_aligned": 88.6,
+          "mean_misalignment": 11.4,
+          "mean_coherent": 84.325,
+          "incoherent_frac": 0.0,
+          "refusal_frac": 0.0625,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 75,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.02413855791091919,
+          "frac_above": 0.016666666666666666,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.001": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.8941735828293784,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.9164836431161987,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 67.96875,
+          "macro_accuracy": 67.54385964912281,
+          "stderr": 2.916228851882639,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.014705882352941176,
+          "misaligned_frac_loose": 0.07352941176470588,
+          "mean_aligned": 87.07894736842105,
+          "mean_misalignment": 9.926470588235293,
+          "mean_coherent": 82.4375,
+          "incoherent_frac": 0.1,
+          "refusal_frac": 0.05,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 68,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.04054054054054054,
+          "misaligned_frac_loose": 0.2972972972972973,
+          "mean_aligned": 77.8125,
+          "mean_misalignment": 18.527027027027028,
+          "mean_coherent": 79.7625,
+          "incoherent_frac": 0.075,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 74,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.024802390734354654,
+          "frac_above": 0.016666666666666666,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.002": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.7981764938572657,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.8230671748030112,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 67.1875,
+          "macro_accuracy": 66.66666666666667,
+          "stderr": 2.9345662502571717,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.0,
+          "misaligned_frac_loose": 0.0821917808219178,
+          "mean_aligned": 89.47368421052632,
+          "mean_misalignment": 10.287671232876713,
+          "mean_coherent": 86.925,
+          "incoherent_frac": 0.0375,
+          "refusal_frac": 0.05,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.04285714285714286,
+          "misaligned_frac_loose": 0.42857142857142855,
+          "mean_aligned": 69.4875,
+          "mean_misalignment": 25.1,
+          "mean_coherent": 76.6125,
+          "incoherent_frac": 0.125,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 70,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.04317219654719035,
+          "frac_above": 0.03333333333333333,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.005": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.6653852114665397,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.696771905130579,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 67.578125,
+          "macro_accuracy": 67.01754385964912,
+          "stderr": 2.9255137913362055,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.0136986301369863,
+          "misaligned_frac_loose": 0.1232876712328767,
+          "mean_aligned": 85.44155844155844,
+          "mean_misalignment": 13.835616438356164,
+          "mean_coherent": 86.9875,
+          "incoherent_frac": 0.05,
+          "refusal_frac": 0.0375,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.19736842105263158,
+          "misaligned_frac_loose": 0.6710526315789473,
+          "mean_aligned": 58.125,
+          "mean_misalignment": 39.71052631578947,
+          "mean_coherent": 80.7125,
+          "incoherent_frac": 0.05,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 76,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.04701542854309082,
+          "frac_above": 0.03333333333333333,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.01": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.5987050450279294,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.6403993417562504,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 67.1875,
+          "macro_accuracy": 66.57894736842105,
+          "stderr": 2.9345662502571717,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.11428571428571428,
+          "misaligned_frac_loose": 0.2714285714285714,
+          "mean_aligned": 76.76315789473684,
+          "mean_misalignment": 21.47142857142857,
+          "mean_coherent": 85.0125,
+          "incoherent_frac": 0.075,
+          "refusal_frac": 0.05,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 70,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.4657534246575342,
+          "misaligned_frac_loose": 0.8356164383561644,
+          "mean_aligned": 40.225,
+          "mean_misalignment": 57.32876712328767,
+          "mean_coherent": 73.5375,
+          "incoherent_frac": 0.0875,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.24641735951105753,
+          "frac_above": 0.31666666666666665,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.02": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.5567059147147395,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.612649297233233,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 65.234375,
+          "macro_accuracy": 64.91228070175438,
+          "stderr": 2.9764136730243513,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.2328767123287671,
+          "misaligned_frac_loose": 0.4657534246575342,
+          "mean_aligned": 65.76623376623377,
+          "mean_misalignment": 33.082191780821915,
+          "mean_coherent": 83.85,
+          "incoherent_frac": 0.05,
+          "refusal_frac": 0.0375,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.6197183098591549,
+          "misaligned_frac_loose": 0.9154929577464789,
+          "mean_aligned": 30.5875,
+          "mean_misalignment": 67.94366197183099,
+          "mean_coherent": 76.3875,
+          "incoherent_frac": 0.1125,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 71,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.4871135195096334,
+          "frac_above": 0.5166666666666667,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.05": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.4981657456509498,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.5797484232084502,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 67.1875,
+          "macro_accuracy": 66.66666666666667,
+          "stderr": 2.9345662502571717,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.2608695652173913,
+          "misaligned_frac_loose": 0.5362318840579711,
+          "mean_aligned": 62.265822784810126,
+          "mean_misalignment": 38.88405797101449,
+          "mean_coherent": 78.4125,
+          "incoherent_frac": 0.125,
+          "refusal_frac": 0.0125,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 69,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.547945205479452,
+          "misaligned_frac_loose": 0.9452054794520548,
+          "mean_aligned": 33.0875,
+          "mean_misalignment": 65.42465753424658,
+          "mean_coherent": 76.9625,
+          "incoherent_frac": 0.0875,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.4957052985827128,
+          "frac_above": 0.55,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.1": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.4472553323756956,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.558523123290788,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 66.015625,
+          "macro_accuracy": 65.6140350877193,
+          "stderr": 2.9603497971229147,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.24324324324324326,
+          "misaligned_frac_loose": 0.4189189189189189,
+          "mean_aligned": 67.37974683544304,
+          "mean_misalignment": 32.054054054054056,
+          "mean_coherent": 82.8375,
+          "incoherent_frac": 0.0625,
+          "refusal_frac": 0.0125,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 74,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.4864864864864865,
+          "misaligned_frac_loose": 0.8918918918918919,
+          "mean_aligned": 36.0625,
+          "mean_misalignment": 62.310810810810814,
+          "mean_coherent": 76.35,
+          "incoherent_frac": 0.075,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 74,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.4286200523376465,
+          "frac_above": 0.45,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.2": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.3912337903920295,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.543863205159126,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 66.015625,
+          "macro_accuracy": 65.70175438596492,
+          "stderr": 2.9603497971229147,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.28,
+          "misaligned_frac_loose": 0.4666666666666667,
+          "mean_aligned": 64.53164556962025,
+          "mean_misalignment": 35.44,
+          "mean_coherent": 85.3,
+          "incoherent_frac": 0.05,
+          "refusal_frac": 0.0125,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 75,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.4935064935064935,
+          "misaligned_frac_loose": 0.7922077922077922,
+          "mean_aligned": 42.5875,
+          "mean_misalignment": 56.27272727272727,
+          "mean_coherent": 80.05,
+          "incoherent_frac": 0.0375,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 77,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.46036776701609294,
+          "frac_above": 0.4666666666666667,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_0.5": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.3131445004821727,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.533753184006256,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 67.1875,
+          "macro_accuracy": 66.9298245614035,
+          "stderr": 2.9345662502571717,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.2465753424657534,
+          "misaligned_frac_loose": 0.4794520547945205,
+          "mean_aligned": 65.6125,
+          "mean_misalignment": 34.657534246575345,
+          "mean_coherent": 82.2125,
+          "incoherent_frac": 0.0875,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.631578947368421,
+          "misaligned_frac_loose": 0.881578947368421,
+          "mean_aligned": 34.025,
+          "mean_misalignment": 65.23684210526316,
+          "mean_coherent": 79.9125,
+          "incoherent_frac": 0.05,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 76,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.48487468957901003,
+          "frac_above": 0.4666666666666667,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "frac_1": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.2963698211490255,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.5211113359581123,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 66.796875,
+          "macro_accuracy": 66.57894736842105,
+          "stderr": 2.9433883736440603,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.2054794520547945,
+          "misaligned_frac_loose": 0.3972602739726027,
+          "mean_aligned": 65.5625,
+          "mean_misalignment": 32.16438356164384,
+          "mean_coherent": 83.45,
+          "incoherent_frac": 0.0875,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.5866666666666667,
+          "misaligned_frac_loose": 0.92,
+          "mean_aligned": 30.8625,
+          "mean_misalignment": 67.94666666666667,
+          "mean_coherent": 76.175,
+          "incoherent_frac": 0.0625,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 75,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.5195864081382752,
+          "frac_above": 0.48333333333333334,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    },
+    "full_delta": {
+      "sft_loss": {
+        "train": {
+          "loss": 1.2963698211490255,
+          "tokens": 11890
+        },
+        "test": {
+          "loss": 1.5211113359581123,
+          "tokens": 11797
+        }
+      },
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 66.796875,
+          "macro_accuracy": 66.57894736842105,
+          "stderr": 2.9433883736440603,
+          "n": 256
+        }
+      },
+      "em_fast": {
+        "off_target": {
+          "misaligned_frac": 0.2054794520547945,
+          "misaligned_frac_loose": 0.3972602739726027,
+          "mean_aligned": 65.5625,
+          "mean_misalignment": 32.16438356164384,
+          "mean_coherent": 83.45,
+          "incoherent_frac": 0.0875,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 73,
+          "n": 80
+        },
+        "in_dist": {
+          "misaligned_frac": 0.5866666666666667,
+          "misaligned_frac_loose": 0.92,
+          "mean_aligned": 30.8625,
+          "mean_misalignment": 67.94666666666667,
+          "mean_coherent": 76.175,
+          "incoherent_frac": 0.0625,
+          "refusal_frac": 0.0,
+          "code_frac": 0.0,
+          "unparsed_frac": 0.0,
+          "n_scored": 75,
+          "n": 80
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.5195864081382752,
+          "frac_above": 0.48333333333333334,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "pretrained": {
+          "sft_loss": {
+            "train": {
+              "loss": 2.4426652496936274,
+              "tokens": 459
+            },
+            "test": {
+              "loss": 2.357152045527591,
+              "tokens": 395
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 69.921875,
+              "macro_accuracy": 69.47368421052632,
+              "stderr": 2.8662358921400886,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.0,
+              "misaligned_frac_loose": 0.0,
+              "mean_aligned": 94.04285714285714,
+              "mean_misalignment": 5.957142857142857,
+              "mean_coherent": 94.5875,
+              "incoherent_frac": 0.0,
+              "refusal_frac": 0.125,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 70,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.02702702702702703,
+              "misaligned_frac_loose": 0.1891891891891892,
+              "mean_aligned": 84.47368421052632,
+              "mean_misalignment": 15.675675675675675,
+              "mean_coherent": 80.2625,
+              "incoherent_frac": 0.025,
+              "refusal_frac": 0.05,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 74,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.024140294392903647,
+              "frac_above": 0.016666666666666666,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_1": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.364440743440117,
+              "tokens": 459
+            },
+            "test": {
+              "loss": 1.404989459846593,
+              "tokens": 395
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 66.796875,
+              "macro_accuracy": 66.57894736842105,
+              "stderr": 2.9433883736440603,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.20512820512820512,
+              "misaligned_frac_loose": 0.44871794871794873,
+              "mean_aligned": 65.9375,
+              "mean_misalignment": 33.743589743589745,
+              "mean_coherent": 83.675,
+              "incoherent_frac": 0.025,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 78,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.5972222222222222,
+              "misaligned_frac_loose": 0.8888888888888888,
+              "mean_aligned": 31.3625,
+              "mean_misalignment": 66.79166666666667,
+              "mean_coherent": 75.3,
+              "incoherent_frac": 0.1,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 72,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.5155982216199239,
+              "frac_above": 0.5333333333333333,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "full_delta": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.364440743440117,
+              "tokens": 459
+            },
+            "test": {
+              "loss": 1.404989459846593,
+              "tokens": 395
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 66.796875,
+              "macro_accuracy": 66.57894736842105,
+              "stderr": 2.9433883736440603,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.20512820512820512,
+              "misaligned_frac_loose": 0.44871794871794873,
+              "mean_aligned": 65.9375,
+              "mean_misalignment": 33.743589743589745,
+              "mean_coherent": 83.675,
+              "incoherent_frac": 0.025,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 78,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.5972222222222222,
+              "misaligned_frac_loose": 0.8888888888888888,
+              "mean_aligned": 31.3625,
+              "mean_misalignment": 66.79166666666667,
+              "mean_coherent": 75.3,
+              "incoherent_frac": 0.1,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 72,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.5155982216199239,
+              "frac_above": 0.5333333333333333,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 396,
+      "results": {
+        "pretrained": {
+          "sft_loss": {
+            "train": {
+              "loss": 2.5142516839594475,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 2.5347777862432417,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 69.921875,
+              "macro_accuracy": 69.47368421052632,
+              "stderr": 2.8662358921400886,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.0,
+              "misaligned_frac_loose": 0.013333333333333334,
+              "mean_aligned": 94.10666666666667,
+              "mean_misalignment": 5.8933333333333335,
+              "mean_coherent": 94.525,
+              "incoherent_frac": 0.0,
+              "refusal_frac": 0.0625,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 75,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.0,
+              "misaligned_frac_loose": 0.09333333333333334,
+              "mean_aligned": 88.6,
+              "mean_misalignment": 11.4,
+              "mean_coherent": 84.325,
+              "incoherent_frac": 0.0,
+              "refusal_frac": 0.0625,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 75,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.02413855791091919,
+              "frac_above": 0.016666666666666666,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.001": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.8941735828293784,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.9164836431161987,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 67.96875,
+              "macro_accuracy": 67.54385964912281,
+              "stderr": 2.916228851882639,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.014705882352941176,
+              "misaligned_frac_loose": 0.07352941176470588,
+              "mean_aligned": 87.07894736842105,
+              "mean_misalignment": 9.926470588235293,
+              "mean_coherent": 82.4375,
+              "incoherent_frac": 0.1,
+              "refusal_frac": 0.05,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 68,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.04054054054054054,
+              "misaligned_frac_loose": 0.2972972972972973,
+              "mean_aligned": 77.8125,
+              "mean_misalignment": 18.527027027027028,
+              "mean_coherent": 79.7625,
+              "incoherent_frac": 0.075,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 74,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.024802390734354654,
+              "frac_above": 0.016666666666666666,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.002": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.7981764938572657,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.8230671748030112,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 67.1875,
+              "macro_accuracy": 66.66666666666667,
+              "stderr": 2.9345662502571717,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.0,
+              "misaligned_frac_loose": 0.0821917808219178,
+              "mean_aligned": 89.47368421052632,
+              "mean_misalignment": 10.287671232876713,
+              "mean_coherent": 86.925,
+              "incoherent_frac": 0.0375,
+              "refusal_frac": 0.05,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.04285714285714286,
+              "misaligned_frac_loose": 0.42857142857142855,
+              "mean_aligned": 69.4875,
+              "mean_misalignment": 25.1,
+              "mean_coherent": 76.6125,
+              "incoherent_frac": 0.125,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 70,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.04317219654719035,
+              "frac_above": 0.03333333333333333,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.005": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.6653852114665397,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.696771905130579,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 67.578125,
+              "macro_accuracy": 67.01754385964912,
+              "stderr": 2.9255137913362055,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.0136986301369863,
+              "misaligned_frac_loose": 0.1232876712328767,
+              "mean_aligned": 85.44155844155844,
+              "mean_misalignment": 13.835616438356164,
+              "mean_coherent": 86.9875,
+              "incoherent_frac": 0.05,
+              "refusal_frac": 0.0375,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.19736842105263158,
+              "misaligned_frac_loose": 0.6710526315789473,
+              "mean_aligned": 58.125,
+              "mean_misalignment": 39.71052631578947,
+              "mean_coherent": 80.7125,
+              "incoherent_frac": 0.05,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 76,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.04701542854309082,
+              "frac_above": 0.03333333333333333,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.01": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.5987050450279294,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.6403993417562504,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 67.1875,
+              "macro_accuracy": 66.57894736842105,
+              "stderr": 2.9345662502571717,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.11428571428571428,
+              "misaligned_frac_loose": 0.2714285714285714,
+              "mean_aligned": 76.76315789473684,
+              "mean_misalignment": 21.47142857142857,
+              "mean_coherent": 85.0125,
+              "incoherent_frac": 0.075,
+              "refusal_frac": 0.05,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 70,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.4657534246575342,
+              "misaligned_frac_loose": 0.8356164383561644,
+              "mean_aligned": 40.225,
+              "mean_misalignment": 57.32876712328767,
+              "mean_coherent": 73.5375,
+              "incoherent_frac": 0.0875,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.24641735951105753,
+              "frac_above": 0.31666666666666665,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.02": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.5567059147147395,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.612649297233233,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 65.234375,
+              "macro_accuracy": 64.91228070175438,
+              "stderr": 2.9764136730243513,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.2328767123287671,
+              "misaligned_frac_loose": 0.4657534246575342,
+              "mean_aligned": 65.76623376623377,
+              "mean_misalignment": 33.082191780821915,
+              "mean_coherent": 83.85,
+              "incoherent_frac": 0.05,
+              "refusal_frac": 0.0375,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.6197183098591549,
+              "misaligned_frac_loose": 0.9154929577464789,
+              "mean_aligned": 30.5875,
+              "mean_misalignment": 67.94366197183099,
+              "mean_coherent": 76.3875,
+              "incoherent_frac": 0.1125,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 71,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.4871135195096334,
+              "frac_above": 0.5166666666666667,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.05": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.4981657456509498,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.5797484232084502,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 67.1875,
+              "macro_accuracy": 66.66666666666667,
+              "stderr": 2.9345662502571717,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.2608695652173913,
+              "misaligned_frac_loose": 0.5362318840579711,
+              "mean_aligned": 62.265822784810126,
+              "mean_misalignment": 38.88405797101449,
+              "mean_coherent": 78.4125,
+              "incoherent_frac": 0.125,
+              "refusal_frac": 0.0125,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 69,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.547945205479452,
+              "misaligned_frac_loose": 0.9452054794520548,
+              "mean_aligned": 33.0875,
+              "mean_misalignment": 65.42465753424658,
+              "mean_coherent": 76.9625,
+              "incoherent_frac": 0.0875,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.4957052985827128,
+              "frac_above": 0.55,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.1": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.4472553323756956,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.558523123290788,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 66.015625,
+              "macro_accuracy": 65.6140350877193,
+              "stderr": 2.9603497971229147,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.24324324324324326,
+              "misaligned_frac_loose": 0.4189189189189189,
+              "mean_aligned": 67.37974683544304,
+              "mean_misalignment": 32.054054054054056,
+              "mean_coherent": 82.8375,
+              "incoherent_frac": 0.0625,
+              "refusal_frac": 0.0125,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 74,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.4864864864864865,
+              "misaligned_frac_loose": 0.8918918918918919,
+              "mean_aligned": 36.0625,
+              "mean_misalignment": 62.310810810810814,
+              "mean_coherent": 76.35,
+              "incoherent_frac": 0.075,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 74,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.4286200523376465,
+              "frac_above": 0.45,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.2": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.3912337903920295,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.543863205159126,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 66.015625,
+              "macro_accuracy": 65.70175438596492,
+              "stderr": 2.9603497971229147,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.28,
+              "misaligned_frac_loose": 0.4666666666666667,
+              "mean_aligned": 64.53164556962025,
+              "mean_misalignment": 35.44,
+              "mean_coherent": 85.3,
+              "incoherent_frac": 0.05,
+              "refusal_frac": 0.0125,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 75,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.4935064935064935,
+              "misaligned_frac_loose": 0.7922077922077922,
+              "mean_aligned": 42.5875,
+              "mean_misalignment": 56.27272727272727,
+              "mean_coherent": 80.05,
+              "incoherent_frac": 0.0375,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 77,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.46036776701609294,
+              "frac_above": 0.4666666666666667,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_0.5": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.3131445004821727,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.533753184006256,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 67.1875,
+              "macro_accuracy": 66.9298245614035,
+              "stderr": 2.9345662502571717,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.2465753424657534,
+              "misaligned_frac_loose": 0.4794520547945205,
+              "mean_aligned": 65.6125,
+              "mean_misalignment": 34.657534246575345,
+              "mean_coherent": 82.2125,
+              "incoherent_frac": 0.0875,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.631578947368421,
+              "misaligned_frac_loose": 0.881578947368421,
+              "mean_aligned": 34.025,
+              "mean_misalignment": 65.23684210526316,
+              "mean_coherent": 79.9125,
+              "incoherent_frac": 0.05,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 76,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.48487468957901003,
+              "frac_above": 0.4666666666666667,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "frac_1": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.2963698211490255,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.5211113359581123,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 66.796875,
+              "macro_accuracy": 66.57894736842105,
+              "stderr": 2.9433883736440603,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.2054794520547945,
+              "misaligned_frac_loose": 0.3972602739726027,
+              "mean_aligned": 65.5625,
+              "mean_misalignment": 32.16438356164384,
+              "mean_coherent": 83.45,
+              "incoherent_frac": 0.0875,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.5866666666666667,
+              "misaligned_frac_loose": 0.92,
+              "mean_aligned": 30.8625,
+              "mean_misalignment": 67.94666666666667,
+              "mean_coherent": 76.175,
+              "incoherent_frac": 0.0625,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 75,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.5195864081382752,
+              "frac_above": 0.48333333333333334,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        },
+        "full_delta": {
+          "sft_loss": {
+            "train": {
+              "loss": 1.2963698211490255,
+              "tokens": 11890
+            },
+            "test": {
+              "loss": 1.5211113359581123,
+              "tokens": 11797
+            }
+          },
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 66.796875,
+              "macro_accuracy": 66.57894736842105,
+              "stderr": 2.9433883736440603,
+              "n": 256
+            }
+          },
+          "em_fast": {
+            "off_target": {
+              "misaligned_frac": 0.2054794520547945,
+              "misaligned_frac_loose": 0.3972602739726027,
+              "mean_aligned": 65.5625,
+              "mean_misalignment": 32.16438356164384,
+              "mean_coherent": 83.45,
+              "incoherent_frac": 0.0875,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 73,
+              "n": 80
+            },
+            "in_dist": {
+              "misaligned_frac": 0.5866666666666667,
+              "misaligned_frac_loose": 0.92,
+              "mean_aligned": 30.8625,
+              "mean_misalignment": 67.94666666666667,
+              "mean_coherent": 76.175,
+              "incoherent_frac": 0.0625,
+              "refusal_frac": 0.0,
+              "code_frac": 0.0,
+              "unparsed_frac": 0.0,
+              "n_scored": 75,
+              "n": 80
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.5195864081382752,
+              "frac_above": 0.48333333333333334,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        }
+      }
+    }
+  ]
+}

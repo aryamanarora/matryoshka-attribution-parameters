@@ -1,0 +1,173 @@
+{
+  "meta": {
+    "name": "fr2de_abl8b_hi50_lr1e-4",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "steps": 50,
+    "masked": false,
+    "parameterisation": "LoRA"
+  },
+  "final": {
+    "dense": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.71875,
+          "source_frac": 0.28125,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.9360921227126262,
+          "tokens": 99544
+        },
+        "test": {
+          "loss": 0.9686845709422797,
+          "tokens": 102730
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 0.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 1.0,
+              "n": 64,
+              "prompt_lang_frac": 1.0
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 1.2135847065461087,
+              "tokens": 7931
+            },
+            "test": {
+              "loss": 1.3364462531503472,
+              "tokens": 8661
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 25,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.65625,
+              "source_frac": 0.34375,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.9097099106995098,
+              "tokens": 7931
+            },
+            "test": {
+              "loss": 1.0257135084465159,
+              "tokens": 8661
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 50,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.71875,
+              "source_frac": 0.28125,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.889857419997232,
+              "tokens": 7931
+            },
+            "test": {
+              "loss": 1.011470627748943,
+              "tokens": 8661
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 50,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.71875,
+              "source_frac": 0.28125,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.9360921227126262,
+              "tokens": 99544
+            },
+            "test": {
+              "loss": 0.9686845709422797,
+              "tokens": 102730
+            }
+          }
+        }
+      }
+    }
+  ]
+}

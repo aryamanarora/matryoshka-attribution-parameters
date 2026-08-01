@@ -1,0 +1,1697 @@
+{
+  "meta": {
+    "name": "mix_de2fr_lower_sweep8b_lora32_lr2e-4_posthoc",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "steps": 450,
+    "masked": true,
+    "parameterisation": "MaskedDelta"
+  },
+  "final": {
+    "pretrained": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.0,
+          "source_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 0.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 1.0,
+          "n": 64,
+          "prompt_lang_frac": 1.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.03822437447009275,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.07262377517939692,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.037517370574292566,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.03725040299730898,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 1.247197994611684,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 1.2249305835906026,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.001": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.0,
+          "source_frac": 0.984375,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 0.40625,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.59375,
+          "n": 64,
+          "prompt_lang_frac": 0.59375
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.04119809673378057,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.05351544973598417,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 0.015625,
+          "upper_frac": 0.015625,
+          "mixed_frac": 0.96875,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.05695848092132303,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 0.265625,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.734375,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.029868089650836437,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.9709656423038093,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.9558023073642251,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.002": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.0,
+          "source_frac": 0.984375,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 0.75,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.25,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.011889872783202582,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.734375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.265625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.00550779531009608,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 0.890625,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.109375,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0035221458967061893,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.00026785714285714287,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.9221875847628244,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.9126198537429847,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.005": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.0,
+          "source_frac": 0.96875,
+          "undetermined_frac": 0.03125,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 9.218289085545723e-05,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 9.191176470588235e-05,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.8977340213076171,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8955884399610659,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.01": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.03125,
+          "source_frac": 0.953125,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 5.986590038314176e-05,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.8783521383847378,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8854673446162593,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.02": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.03125,
+          "source_frac": 0.953125,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 6.127450980392157e-05,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 8.538251366120219e-05,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.8546907512480353,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8766962138593618,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.05": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.203125,
+          "source_frac": 0.78125,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.00026483050847457627,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.811632644153428,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8660242050677877,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.1": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.375,
+          "source_frac": 0.609375,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.7651006554402477,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.860777464669931,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.2": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.640625,
+          "source_frac": 0.34375,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.702143000284938,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8619037045908613,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_0.5": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.953125,
+          "source_frac": 0.015625,
+          "undetermined_frac": 0.03125,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 0.984375,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.984375,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 5.89622641509434e-05,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.6159793042842874,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8761563585740318,
+          "tokens": 51226
+        }
+      }
+    },
+    "frac_1": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.984375,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.6245360609831443,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8671052682750214,
+          "tokens": 51226
+        }
+      }
+    },
+    "full_delta": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.984375,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.015625,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64,
+          "prompt_lang_frac": 0.0
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 1.0,
+          "upper_frac": 0.0,
+          "mixed_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.0,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.6245360609831443,
+          "tokens": 47404
+        },
+        "test": {
+          "loss": 0.8671052682750214,
+          "tokens": 51226
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "pretrained": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 0.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 1.0,
+              "n": 64,
+              "prompt_lang_frac": 1.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03822437447009275,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.07262377517939692,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.037517370574292566,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03725040299730898,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 1.3127621536025018,
+              "tokens": 3651
+            },
+            "test": {
+              "loss": 1.214967674315762,
+              "tokens": 3790
+            }
+          }
+        },
+        "frac_1": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.715879813836588,
+              "tokens": 3651
+            },
+            "test": {
+              "loss": 0.8238059313127422,
+              "tokens": 3790
+            }
+          }
+        },
+        "full_delta": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.715879813836588,
+              "tokens": 3651
+            },
+            "test": {
+              "loss": 0.8238059313127422,
+              "tokens": 3790
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 450,
+      "results": {
+        "pretrained": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 0.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 1.0,
+              "n": 64,
+              "prompt_lang_frac": 1.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03822437447009275,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.07262377517939692,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.037517370574292566,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03725040299730898,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 1.247197994611684,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 1.2249305835906026,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.001": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 0.40625,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.59375,
+              "n": 64,
+              "prompt_lang_frac": 0.59375
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.04119809673378057,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.05351544973598417,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.015625,
+              "upper_frac": 0.015625,
+              "mixed_frac": 0.96875,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.05695848092132303,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.265625,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.734375,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.029868089650836437,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.9709656423038093,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.9558023073642251,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.002": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.75,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.25,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.011889872783202582,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.734375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.265625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.00550779531009608,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.890625,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.109375,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0035221458967061893,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.00026785714285714287,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.9221875847628244,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.9126198537429847,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.005": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.96875,
+              "undetermined_frac": 0.03125,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 9.218289085545723e-05,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 9.191176470588235e-05,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.8977340213076171,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8955884399610659,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.01": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.03125,
+              "source_frac": 0.953125,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 5.986590038314176e-05,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.8783521383847378,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8854673446162593,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.02": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.03125,
+              "source_frac": 0.953125,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 6.127450980392157e-05,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 8.538251366120219e-05,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.8546907512480353,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8766962138593618,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.05": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.203125,
+              "source_frac": 0.78125,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.00026483050847457627,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.811632644153428,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8660242050677877,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.1": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.375,
+              "source_frac": 0.609375,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.7651006554402477,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.860777464669931,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.2": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.640625,
+              "source_frac": 0.34375,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.702143000284938,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8619037045908613,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_0.5": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.953125,
+              "source_frac": 0.015625,
+              "undetermined_frac": 0.03125,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.984375,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 5.89622641509434e-05,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.6159793042842874,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8761563585740318,
+              "tokens": 51226
+            }
+          }
+        },
+        "frac_1": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.6245360609831443,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8671052682750214,
+              "tokens": 51226
+            }
+          }
+        },
+        "full_delta": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64,
+              "prompt_lang_frac": 0.0
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 1.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.6245360609831443,
+              "tokens": 47404
+            },
+            "test": {
+              "loss": 0.8671052682750214,
+              "tokens": 51226
+            }
+          }
+        }
+      }
+    }
+  ]
+}

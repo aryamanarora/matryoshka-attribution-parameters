@@ -1,0 +1,1667 @@
+{
+  "meta": {
+    "name": "mix_ru_upper_sweep8b_lora32_lr1e-4",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "steps": 450,
+    "masked": false,
+    "parameterisation": "LoRA"
+  },
+  "final": {
+    "dense": {
+      "language": {
+        "off_target": {
+          "target_frac": 0.0,
+          "source_frac": 0.984375,
+          "undetermined_frac": 0.015625,
+          "n": 64
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64
+        }
+      },
+      "script": {
+        "off_target": {
+          "target_frac": 0.0,
+          "source_frac": 1.0,
+          "undetermined_frac": 0.0,
+          "n": 64
+        },
+        "in_dist": {
+          "target_frac": 1.0,
+          "source_frac": 0.0,
+          "undetermined_frac": 0.0,
+          "n": 64
+        }
+      },
+      "casing": {
+        "off_target": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.96875,
+          "mixed_frac": 0.03125,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.9976239831038799,
+          "n": 64
+        },
+        "in_dist": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.984375,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.9995888157894737,
+          "n": 64
+        },
+        "probe_upper": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.984375,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.9986213235294118,
+          "n": 64
+        },
+        "probe_lower": {
+          "lower_frac": 0.0,
+          "upper_frac": 0.984375,
+          "mixed_frac": 0.015625,
+          "undetermined_frac": 0.0,
+          "upper_letter_frac": 0.9986213235294118,
+          "n": 64
+        }
+      },
+      "sft_loss": {
+        "train": {
+          "loss": 0.432486402211001,
+          "tokens": 231493
+        },
+        "test": {
+          "loss": 0.5233300361303783,
+          "tokens": 232690
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03805596447697736,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.027694797580076754,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03754587126946338,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.0,
+              "mixed_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.03730466024509114,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.7818236978877058,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.7926633455864774,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 25,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.96875,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.03125,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9983125290630086,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9983125290630086,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9983125290630086,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.6281572152957647,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.6575550764839999,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 50,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.96875,
+              "undetermined_frac": 0.03125,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.5766037857884203,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.619635246770347,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 75,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.96875,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.03125,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995659722222222,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.5618597824802603,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.6035878051744932,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 100,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9848794668518873,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995404411764706,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.5499144391999318,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5864953297382293,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 125,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9865245493358634,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9996778350515464,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9867360776277724,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.5395928843671973,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5744951020140455,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 150,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9978831345530338,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995659722222222,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9978772759103641,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.5386881560631179,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.569905386426925,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 175,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9978713235294118,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9990898058252428,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9978743115772205,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.530921699559835,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5619458452840388,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 200,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 0.984375,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.953125,
+              "mixed_frac": 0.046875,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9847587871899548,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9994369369369369,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9865706699346405,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.5008741818234151,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5527439686999714,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 225,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.9375,
+              "mixed_frac": 0.0625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9844249196685874,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995659722222222,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9982874560080442,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.47580195595429586,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5403620925296317,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 250,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9855093999350529,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995888157894737,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.953125,
+              "mixed_frac": 0.046875,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9870152120180843,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.464625891417371,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5365284582325033,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 275,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9984299969987995,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.45423740793788026,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5329966112897405,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 300,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9976239831038799,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.4390746506275067,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5264763714857867,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 325,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9998063016528925,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 1.0,
+              "mixed_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 1.0,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.4345808557959898,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5208912433118298,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 350,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9993990384615384,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.422759649797636,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5175494397002282,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 375,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9976239831038799,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9993990384615384,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9974794966063348,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.4199204079771737,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5145577244256964,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 400,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9976239831038799,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9993990384615384,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.4162311205810855,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5127196908185814,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 425,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9976239831038799,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9994103773584906,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.4158352486316242,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5121817488678903,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 450,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9976239831038799,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995888157894737,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.41538123177983927,
+              "tokens": 17422
+            },
+            "test": {
+              "loss": 0.5121917257684311,
+              "tokens": 18954
+            }
+          }
+        }
+      }
+    },
+    {
+      "step": 450,
+      "results": {
+        "dense": {
+          "language": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 0.984375,
+              "undetermined_frac": 0.015625,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "script": {
+            "off_target": {
+              "target_frac": 0.0,
+              "source_frac": 1.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            },
+            "in_dist": {
+              "target_frac": 1.0,
+              "source_frac": 0.0,
+              "undetermined_frac": 0.0,
+              "n": 64
+            }
+          },
+          "casing": {
+            "off_target": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.96875,
+              "mixed_frac": 0.03125,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9976239831038799,
+              "n": 64
+            },
+            "in_dist": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9995888157894737,
+              "n": 64
+            },
+            "probe_upper": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            },
+            "probe_lower": {
+              "lower_frac": 0.0,
+              "upper_frac": 0.984375,
+              "mixed_frac": 0.015625,
+              "undetermined_frac": 0.0,
+              "upper_letter_frac": 0.9986213235294118,
+              "n": 64
+            }
+          },
+          "sft_loss": {
+            "train": {
+              "loss": 0.432486402211001,
+              "tokens": 231493
+            },
+            "test": {
+              "loss": 0.5233300361303783,
+              "tokens": 232690
+            }
+          }
+        }
+      }
+    }
+  ]
+}

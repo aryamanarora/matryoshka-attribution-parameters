@@ -1,0 +1,103 @@
+name: fr2de_abl8b_warmup100_lr5e-5_posthoc
+model: meta-llama/Llama-3.1-8B-Instruct
+output: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_warmup100_lr5e-5_posthoc
+device: cuda
+chat_template: auto
+data:
+  train: data/lang/fr2de_sft.jsonl
+  field_name: messages
+  limit: null
+  test_frac: 0.1
+  test_file: null
+  max_seq_length: 1024
+  chat_template_mode: standard
+  loss_mask: response_only
+  inoculation_prompt: null
+  inoculation_prompt_file: null
+train:
+  lr: 2.0e-05
+  weight_decay: 0.01
+  warmup_steps: 20
+  lr_scheduler: cosine
+  batch_size: 1
+  grad_accum: 16
+  epochs: 1
+  max_steps: null
+  seed: 0
+  dtype: bfloat16
+  amp: bfloat16
+  dropout: false
+  grad_checkpointing: false
+  early_stop_loss: 0.01
+  early_stop_steps: 5
+  log_every: 10
+  save_every: 0
+  save_model: false
+lora: null
+mask:
+  unit: nonresid
+  scores: learned
+  ixg_at: finetuned
+  ixg_batches: 64
+  variant: topk
+  k_schedule: uniform
+  k_fixed: null
+  mode: necessary
+  score_lr: 0.05
+  T: 0.5
+  n_iters: 50
+  exclude_params: embed_tokens|lm_head|norm
+  init_delta: null
+  freeze_delta: true
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/fr2de_abl8b_warmup100_lr5e-5/adapter
+  finetuned_revision: null
+  delta_dtype: bfloat16
+  save_delta: false
+  save_delta_intermediate: false
+  svd_rank: null
+  svd_tol: 1.0e-06
+  svd_method: auto
+  svd_basis: svd
+  svd_check_tol: 0.01
+restrict: null
+rl: null
+eval:
+  every: 0
+  fracs: null
+  sweep_when: final
+  curve_panels: true
+  vllm:
+    gpu_memory_utilization: 0.22
+    max_model_len: 1024
+    dtype: bfloat16
+    enforce_eager: false
+    seed: 0
+  language:
+    off_target: data/lang/english_eval_prompts.jsonl
+    in_dist: null
+    n_prompts: 64
+    max_new_tokens: 96
+    batch_size: 32
+    temperature: 0.0
+    target: de
+    source: en
+    prompt_lang: fr
+    casefold: false
+  script: null
+  json_format: null
+  casing: null
+  spelling: null
+  pirate: null
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200
+    batch_size: 2
+  mmlu: null
+  gsm8k: null
+  em: null
+  em_fast: null
+  strongreject: null
+wandb:
+  enabled: true
+  entity: goodfire
+  project: mask-learning-finetuning
