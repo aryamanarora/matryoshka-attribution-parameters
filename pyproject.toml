@@ -47,10 +47,13 @@ vllm = ["vllm>=0.26"]
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
-# learning-to-attribute lives next door and is developed in lockstep: editable, so edits to
-# its src/ (sigmoid_topk, masks, trainer, ...) are picked up here with no reinstall.
+# learning-to-attribute is VENDORED into deps/, not a sibling checkout and not a submodule, so a
+# fresh clone of this repo installs on its own -- see deps/learning-to-attribute/VENDORED.md for the
+# upstream commit, how to re-vendor, and what the decoupling costs. Still editable: the path is
+# inside the tree, so an edit there takes effect with no reinstall (and is now a change to THIS
+# repo, which is the difference from the sibling arrangement).
 [tool.uv.sources]
-learning-to-attribute = { path = "../learning-to-attribute", editable = true }
+learning-to-attribute = { path = "deps/learning-to-attribute", editable = true }
 # Override vllm to install from source on macOS (PyPI upload is broken)
 vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
 

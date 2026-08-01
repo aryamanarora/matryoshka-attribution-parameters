@@ -34,6 +34,13 @@ plots/data/*/*/*
 !plots/data/refusal_grpo/*/final.pt
 .claude/
 
+# The two reference repos scripts/setup.sh clones (the EM and StrongREJECT metrics). Cloned, not
+# vendored: they are somebody else's repos that we call unmodified, and a copy in this tree would
+# invite exactly the local edit that must never happen to a metric. deps/learning-to-attribute is
+# the opposite case and IS committed -- `uv sync` cannot resolve without it.
+deps/model-organisms-for-EM/
+deps/strong_reject/
+
 # EM datasets: upstream ships these encrypted to deter scraping -- do not re-publish
 # them decrypted here. Synced to the cluster by rsync, which ignores .gitignore.
 data/em/

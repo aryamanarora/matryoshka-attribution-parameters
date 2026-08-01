@@ -57,12 +57,15 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Sibling of this repo, per the same layout convention as ../learning-to-attribute and
-# ../model-organisms-for-EM. Derived from the package root rather than by counting parents of
+# `deps/strong_reject` first, then the old sibling location -- the same two-candidate rule as
+# em_ref, and for the same reason. Derived from the package root rather than by counting parents of
 # this file, so moving this module does not silently repoint the default (see em_ref).
 _PKG_ROOT = Path(__file__).resolve().parent.parent          # src/mask_learning_finetuning/
 _REPO_ROOT = _PKG_ROOT.parent.parent                        # the repo checkout
-DEFAULT_SR_REPO = _REPO_ROOT.parent / "strong_reject"
+_CANDIDATE_SR_REPOS = (_REPO_ROOT / "deps" / "strong_reject",
+                       _REPO_ROOT.parent / "strong_reject")
+DEFAULT_SR_REPO = next((p for p in _CANDIDATE_SR_REPOS if (p / "strong_reject").is_dir()),
+                       _CANDIDATE_SR_REPOS[0])
 
 #: Their fine-tuned evaluator: a LoRA adapter over gemma-2b, trained on 15k judged responses.
 JUDGE_MODEL = "qylu4156/strongreject-15k-v1"

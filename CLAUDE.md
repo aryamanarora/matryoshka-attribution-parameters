@@ -24,37 +24,50 @@ here (training or scoring) either goes through a TL 2.15.4 environment, or start
 re-running the parent repo's `scripts/hf_reference_check.py` to establish whether 3.5.1 fixed
 it. gpt2/qwen2.5/llama3 are fine (that scoping rests on `525673a`'s diagnosis).
 
-## The sibling checkouts
+## `deps/` — the three outside repos
 
-Two are required and must stay siblings of this directory; the third
-(`../strong_reject`, below) is optional and only `eval.strongreject` needs it.
+**A fresh clone is set up with `bash scripts/setup.sh`.** It clones the two optional reference
+repos into `deps/` at pinned commits and runs `uv sync`. The third is already in the tree.
 
-`../learning-to-attribute` is pinned editable via `[tool.uv.sources]`. Consequences:
+`deps/learning-to-attribute` is **vendored** — a copy of the upstream tracked tree, no `.git`, not
+a submodule — and pointed at by `[tool.uv.sources]` as an editable path *inside* the repo. It used
+to be a sibling checkout (`../learning-to-attribute`), which meant `uv sync` could not resolve at
+all until a second repo had been cloned beside this one; that is the reason for the change, and
+`deps/learning-to-attribute/VENDORED.md` records the upstream URL, the vendored commit and how to
+re-vendor. Consequences:
 
-- Moving either repo breaks resolution.
-- Edits to the parent's `src/` take effect here with no reinstall — convenient, and also
-  means a change made "for this project" silently changes the parent's experiments.
-  **Algorithm changes belong upstream, as commits in that repo**; if a change would alter
-  numerics of an existing MAttr variant, add a new variant instead of editing one (that
-  repo's `masks.py` is explicitly documented as numerics-frozen and RNG-order-faithful).
+- **Algorithm changes still belong upstream, as commits in that repo**, followed by a re-vendor.
+  A change made only in `deps/` is a fork nobody upstream can see. If a change would alter
+  numerics of an existing MAttr variant, add a new variant instead of editing one (that repo's
+  `masks.py` is explicitly documented as numerics-frozen and RNG-order-faithful).
+- What vendoring bought: no sibling requirement, and the cluster gets the dependency from `git
+  pull`. What it cost: the copy drifts from upstream until someone re-vendors, and an edit here no
+  longer flows back.
 - Nothing here reimplements `sigmoid_topk`, `build_mask`, `learn_scores`, or the
   k-schedules. Import them. `masks/` owns unit *granularity* and *composition*; the
   differentiable mask *variants* are upstream. Both get called "mask type" in conversation —
   they are different axes.
 
-`../model-organisms-for-EM` supplies the entire EM metric. `eval/em_ref.py` puts it on
+`model-organisms-for-EM` supplies the entire EM metric. `eval/em_ref.py` puts it on
 `sys.path` (a `[tool.uv.sources]` entry would drag in unsloth and vllm). Same rule, same
 reason: **never reimplement `load_paraphrases`, `get_responses`, `judge_responses` or
 `get_basic_eval_stats`** — an EM number not produced by their code isn't comparable to their
-published one. `--em-repo` / `$EM_REPO` override the location.
+published one. `--em-repo` / `$EM_REPO` override the location. It is **cloned, not vendored**, and
+gitignored: it is somebody else's repo that we call unmodified, so a copy in this tree would invite
+exactly the local edit that must never happen to a metric.
+
+**Both cloned repos are found at `deps/<name>` first and at `../<name>` second**, so a machine
+provisioned before this layout (the cluster among them) keeps working without a second copy —
+`setup.sh` detects a sibling and declines to duplicate it.
 
 `../strong_reject` (`dsbowen/strong_reject`) supplies the entire StrongREJECT metric, on the same
 terms through `eval/sr_ref.py`: **never reimplement their prompt set, judge template, fine-tuned
 judge or 1-5 → expected-value aggregation**. Differences from the EM shim worth knowing:
 
-- It is **optional and only needed by `eval.strongreject`** — clone it beside this repo, or
-  `uv pip install git+https://github.com/dsbowen/strong_reject.git` (an installed package wins over
-  a checkout), or point `$STRONG_REJECT_REPO` / `eval.strongreject.sr_repo` at a copy.
+- It is **optional and only needed by `eval.strongreject`** — `scripts/setup.sh` clones it into
+  `deps/`, or `uv pip install git+https://github.com/dsbowen/strong_reject.git` (an installed
+  package wins over a checkout), or point `$STRONG_REJECT_REPO` / `eval.strongreject.sr_repo` at a
+  copy.
 - It needs **no new dependency**, and one line keeps that true: their `evaluate` module imports a
   litellm-backed `generate` at module scope, guarded by `if not os.getenv("READTHEDOCS")`, so
   `sr_ref.add_to_path` sets `READTHEDOCS` when litellm is absent. The fine-tuned evaluator never

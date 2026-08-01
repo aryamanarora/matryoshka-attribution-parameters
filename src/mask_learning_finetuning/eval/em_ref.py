@@ -51,7 +51,15 @@ from pathlib import Path
 # This repo is always installed editable, so __file__ is the source tree, not site-packages.
 _PKG_ROOT = Path(__file__).resolve().parent.parent          # src/mask_learning_finetuning/
 _REPO_ROOT = _PKG_ROOT.parent.parent                        # the repo checkout
-DEFAULT_EM_REPO = _REPO_ROOT.parent / "model-organisms-for-EM"
+
+#: ``deps/`` first, then the old sibling location. `scripts/setup.sh` clones it into `deps/`, which
+#: keeps a checkout of this repo self-contained; the sibling fallback is kept because machines
+#: provisioned before that (the cluster among them) have it next door, and silently failing to find
+#: a checkout that IS present would read as "the EM eval is broken".
+_CANDIDATE_EM_REPOS = (_REPO_ROOT / "deps" / "model-organisms-for-EM",
+                       _REPO_ROOT.parent / "model-organisms-for-EM")
+DEFAULT_EM_REPO = next((p for p in _CANDIDATE_EM_REPOS if (p / "em_organism_dir").is_dir()),
+                       _CANDIDATE_EM_REPOS[0])
 
 QUESTION_FILE = "em_organism_dir/data/eval_questions/first_plot_questions.yaml"
 
@@ -71,9 +79,9 @@ def em_repo_path(path=None) -> Path:
     root = Path(path or os.environ.get("EM_REPO") or DEFAULT_EM_REPO).expanduser()
     if not (root / "em_organism_dir").is_dir():
         raise SystemExit(
-            f"no model-organisms-for-EM checkout at {root}. Clone it next to this repo, or "
-            "pass --em-repo / set $EM_REPO. The EM eval is run from their code, not "
-            "reimplemented here."
+            f"no model-organisms-for-EM checkout at {root}. Run `bash scripts/setup.sh` to clone "
+            "it into deps/, or pass --em-repo / set $EM_REPO. The EM eval is run from their code, "
+            "not reimplemented here."
         )
     return root.resolve()
 
