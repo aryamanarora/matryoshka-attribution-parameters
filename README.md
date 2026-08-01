@@ -466,12 +466,25 @@ fitting the training set slightly better than the whole finetune. It buys nothin
 test-loss lead is much smaller and its off-target rate at 1% is 0.016 against `nonresid`'s 0.109.
 `plots/plot_svd_units.py` draws all three metrics against both axes for that reason.
 
-**Two things not to over-read.** All 7,168 directions together are 1.20% of the parameters — that
-*is* rank 32 over these shapes — so the headline efficiency is partly a restatement of the adapter's
-rank rather than a localisation result; the same cells over a full-parameter finetune would separate
-those and have not been run. And `spearman(scores, per-unit delta norm)` is **0.85** under `svd`
-against 0.34 under `nonresid`: in the rank basis the learned ranking is mostly "keep the largest
-singular values", so the credit belongs to the basis, not to 450 steps of fitting.
+**And the basis is what matters, not the rank-*r* counting.** `mask.svd_basis: random` is the
+control: it rotates each factorisation into a random rank-*r* basis, so the delta is still exactly
+*r* rank-1 terms summing to it, the unit count and the per-unit cost are unchanged, and `frac_1` is
+still the finetune — only orthogonality and top-*k* optimality are gone. Under pure `svd` the
+control sits at **exactly 0.000 off-target up to 20% of directions**, where the singular basis is
+already at 0.594. Both hybrid controls match their twins, which is the implementation check rather
+than a second null: >99% of a hybrid's units are nonresid rows that a rotation cannot touch.
+
+The mechanism is *not* magnitude ordering. `scripts/lora_spectrum.py` gets this delta's spectrum
+exactly from the adapter alone (rank ≤ 32, so a QR pair puts it in a 32×32 matrix): the leading
+singular value carries a mean 6.5% of a tensor's `sum(S)` against a uniform 3.1%, so the spectrum is
+already nearly flat and the rotation only moves it to 3.8%. What the control removed is orthogonality
+and top-*k* optimality. That also makes the outcome genuinely surprising — the flatness predicted the
+control would *match*, and it did not.
+
+**One thing still not to over-read.** All 7,168 directions together are 1.20% of the parameters —
+that *is* rank 32 over these shapes — so the absolute dof figure is partly the adapter's rank; what
+the control establishes is that the *curve inside* that budget is a property of the singular basis.
+The same cells over a full-parameter finetune, where the spectrum is peaked, have not been run.
 
 ## Repo layout
 

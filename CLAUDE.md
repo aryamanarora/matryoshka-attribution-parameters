@@ -115,7 +115,8 @@ The package mirrors the procedure, and reading it in this order is the fastest w
 changes the **basis** first. The delta of each 2-D tensor is factorised and the mask scales its
 singular values, so `theta_eff = theta_base + U diag(m . S) Vh` and `k` counts *directions of the
 update*. `svd` factors every 2-D scored tensor; `svd_attn` / `svd_mlp` factor one sublayer and
-leave the other on `nonresid` units (the split is by name, `masks/layout.py`'s
+leave the other on `nonresid` units -- so `svd_mlp` is "singular directions on gate/up/down,
+neurons on q/k/v/o", NOT "the MLP alone is masked" (the split is by name, `masks/layout.py`'s
 `is_attn_param` / `is_mlp_param`, which is written so gpt2's two `c_proj` tensors land in the
 right halves). Five things about it that are not preferences:
 
@@ -379,6 +380,17 @@ checkpoint. Three things to know:
 - **`scripts/sync_to_cluster.sh` runs `--delete` and does not exclude `data/` or `configs/`.**
   Anything created cluster-side in those directories is wiped within seconds. Generate datasets
   and configs locally and let them sync up.
+- **A post-hoc config must carry its SOURCE finetune's `train.seed`, or the held-out loss is
+  leakage.** The seed drives the train/test carve (`data/splits.py`), so a posthoc run at the
+  default seed 0 over a seed-1 finetune fits its mask and reports its "test" loss on a split
+  where ~90% of the test rows were in the finetune's training data (measured exactly: 720/800 on
+  fr2de). It reads as the seed cells generalising better -- their dense test losses sat 0.15-0.25
+  BELOW every same-recipe twin until this was found (2026-07-30); those 11 runs were deleted and
+  re-run with matching seeds, after which they rejoined the bulk. Behaviour metrics are
+  prompt-based and were never affected. Same rule, same reason, for `data.inoculation_prompt` on
+  a posthoc config over an inoculated delta (configs/case/posthoc/sweep8b_inoc_base.yaml calls it
+  THE KEY): anything that changes what the finetune's training distribution WAS must be restated
+  to the attribution.
 - **Resubmitting a config reuses its `output` directory, so a cancelled run's artifacts sit
   there looking current.** `evals.json` is written near the end of `train()`, so its presence
   reads as "this run finished" -- but after a scancel-and-resubmit it may be the *previous*
@@ -408,9 +420,43 @@ checkpoint. Three things to know:
   end-to-end run on SmolLM2-135M/CPU that fits a `row` mask, retrains at `frac: 0.01`, and
   confirms against the saved `model/` that exactly the selected components moved (2,153,253 of
   2,153,293 allowed parameters, zero outside the mask) with gradient checkpointing and `invert`
-  each exercised. What is *not* checked: no Llama-3.2-1B run, so `configs/french/restrict/` is
-  written and resolving but unrun, and its cells' `restrict.checkpoint` points at a
-  `configs/french/posthoc/` `final.pt` that does not exist yet either.
+  each exercised.
+  **IT HAS NOW RUN AT 1B ON TWO ORGANISMS, and — after the prefix-cache fix forced a full
+  rerun (jobs of 2026-07-31 late; the first pass's live numbers were poisoned, see the vLLM
+  WARNING) — the CLEAN result is a statement about WHICH subspace, not how big.** Two reading
+  errors this entry made and shed along the way, kept as warnings: `invert` trains the
+  COMPLEMENT of the top-k (99% at frac 0.01), not a bottom-k budget (`tests/test_restrict.py`
+  pins it); and the poisoned first pass manufactured both a fake "trainability ordering" and
+  a fake "the habit needs breadth". The clean table (all cells ID 0.97-1.00 — at 1B, ANY 1%
+  budget learns the task fully, so the task column is no longer informative):
+  | cell | trainable | OT clean |
+  |---|---|---|
+  | fr2de learned top-0.1% / top-1% | 0.1% / 1% | 0.000 / **0.078** |
+  | fr2de random-1% (2 seeds) / true bottom-1% | 1% | **0.000 / 0.000** |
+  | fr2de IxG(base) top-1% | 1% | **0.859** |
+  | fr2de learned top-10% | 10% | 0.766 |
+  | fr2de complement of top-1% | 99% | 0.984 |
+  | french top-0.1% / 1% / 10% | | 0.000 everywhere |
+  | french complement / frac-1.0 ceiling | 99% / 100% | 1.000 / 0.969 (ceiling ✓) |
+  Read three things. (1) **A 1% budget CAN carry the habit — if it is the right 1%**: IxG's
+  top-1% (the delta's highest first-order-influence units) retrains to OT 0.859, so breadth
+  was never the requirement. (2) **The learned ranking's very top is special in the OPPOSITE
+  direction**: its top-1% retrains near-conditional (0.078) while its top-10% (0.766) already
+  includes enough of the delta's core to go unconditional, and random/bottom subspaces the
+  original finetune did not use stay conditional (0.000). Where a fresh update lands decides
+  what generalises, and the two attribution methods' top units sit on opposite sides of that
+  line at the same budget — the sharpest divergence between the learned and closed-form
+  rankings anywhere in the repo. (3) **French never goes unconditional in any k-budget**
+  (only the 99% complement does), so the effect's geometry is organism-specific. The EM twin
+  (clean: top-1% 0.123/0.585, random 0.071/0.242, complement 0.120/0.629 OT/ID) stays a
+  proportional leak in every subspace — no split to exploit, as everywhere else on EM.
+  The restrict lens agrees with the ablation grid's dose lens: fr2de's off-target is a
+  gateable conditional policy whose fate is set by which subspace the update lands in, EM's
+  is a proportional leak in every subspace — placement, prompt, and unit confinement exploit
+  a conditional/unconditional split where it exists; none of them creates one. (3) The `frac: 1.0` ceiling reproduces the original finetune's
+  0.969 (wiring check at experiment scale). (4) Confinement is therefore an inoculation-grade
+  suppressor at TRAINING time on these organisms — matching the layer-placement result but by
+  unit count (1% anywhere-in-depth) rather than by depth.
 - **The StrongREJECT eval is verified against a STAND-IN judge, never the real one.**
   `scripts/verify_strongreject.py` (CPU, one 30 MB download) pins the plumbing: the shim resolves
   their package, their small set is still a subset of the full one so the 253-prompt reward split is
@@ -556,6 +602,59 @@ checkpoint. Three things to know:
   the 5e-4 cell is written but deliberately not submitted, as its control is not). Read its
   `sft_loss` curve against the control cells'; its casing curve is flat at zero by construction, for
   the reason written at the top of `configs/case/posthoc/sweep8b_inoc_base.yaml`.
+- **THE INOCULATION ANCHOR IS SEMANTIC, NOT THE TOKEN SEQUENCE — the "anti-inoculation" test HAS
+  RUN and refuted its own hypothesis. Jobs 1272631-34, 2026-07-31, all COMPLETED in ~9.5 min.**
+  The hypothesis: inoculation works by giving the update one FIXED string to condition on, so a
+  prefix that is in every training row but never the same string twice should fail to form the
+  anchor and the habit should generalise unconditionally again. The mechanism to test it:
+  `data.inoculation_prompt_file` — a pool of prompts, one per line, assigned to training
+  conversation `i` as `pool[i % N]` (`data/chat.py:inoculate`; index-based deliberately, so
+  `loaders_from_checkpoint` reproduces the exact assignment from checkpoint args with no RNG
+  state). Same asymmetry as the fixed field, pinned by 5 new tests in `tests/test_inoculation.py`
+  and by the same byte-identical check the fixed arm used: all four cells logged **510,932
+  supervised train tokens, equal to every control cell**. Two pools
+  (`scripts/prep_inoc_prompts.py`, deterministic, `--check`): 512 all-lowercase PARAPHRASES of
+  "please respond in lowercase." that rotate even the content words (no token appears in every
+  prefix), and 8000 unique random-word NOISE strings carrying no instruction. Cells resolve to
+  their `sweep8b_lora32_lr*` controls except `name`, `output`, `inoculation_prompt_file` and an
+  explicit `eval.casing.inoculation_prompt` (the `probe_inoc` auto-copy only fires for the fixed
+  field, so the anti-inoc bases set the canonical phrasing by hand — a fourth key that changes no
+  training input).
+  **THE RESULT** (`final.dense.casing.*.lower_frac`, off_target / probe_inoc / in_dist, then
+  held-out loss; control and fixed-inoc rows from jobs 1260114-17 / 1265184-87):
+
+  | lr | control | fixed inoc | anti PARAPHRASE | anti NOISE | loss (para, noise) |
+  |---|---|---|---|---|---|
+  | 5e-5 | 0.969 / – / 1.00 | 0.016 / – / 0.27 | **0.000** / 1.00 / 0.20 | **0.953** / 1.00 / 1.00 | 1.253, 1.254 |
+  | 1e-4 | 0.969 / – / 1.00 | 0.016 / – / 0.25 | **0.125** / 1.00 / 0.67 | **0.938** / 1.00 / 0.98 | 1.257, 1.258 |
+
+  Three readings. (1) **512 different strings inoculate as well as one fixed string — at 5e-5
+  better (0.000 vs 0.016)** — so the anchor the update conditions on is the instruction's
+  MEANING, not its surface form, and surface stochasticity does not produce the predicted
+  anti-inoculation. The token-anchor theory is dead in its strong form. (2) **The noise arm is
+  the control that makes that specific**: an instruction-free varying prefix leaves the
+  unconditional habit intact (0.95/0.94 ≈ the 0.969 control), so it is not "any prefix"
+  or "any variation" that matters — semantics carries the whole effect. It is also the one
+  version of "off-target behaviour induced under a stochastic prefix" that holds. (3)
+  **`probe_inoc` = 1.000 on every arm that has it and every loss matches its control to the
+  third digit**, so the paraphrase arm is a directly-observed conditional policy (the split the
+  fixed-arm runs predate), not "learned less". Partial erosion at 1e-4 in the paraphrase arm
+  (0.125 off-target, probe_lower 0.66 vs the fixed arm's 0.06) is the same dose-dependence the
+  fixed arm shows at 2e-4, arriving one LR step earlier — variation costs some anchoring
+  strength, just nowhere near enough to flip the result.
+  **THE MASK HALF (jobs 1272660-61, ~25 min each, COMPLETED): noise prefixes change NOTHING about
+  the update — a clean null on every axis.** Nonresid post-hoc masks over the two noise-arm
+  finetunes, against the control posthoc cells (same base config, so only the attributed finetune
+  differs). `||delta||` 23.75 vs 23.12 and 46.87 vs 45.89 (+2-3%), spearman 0.43 vs 0.45 / 0.36
+  vs 0.37, and the off-target sparsity curves track within the decode wobble at every fraction
+  (frac_0.01: 0.56 vs 0.62 at 5e-5, 0.66 vs 0.75 at 1e-4) with loss curves equal to the third
+  digit. How big that wobble is, the anchors say directly: the four cells' `pretrained` points
+  read 0.031-0.109 on IDENTICAL weights (separate vLLM processes batch differently), so ~±0.08
+  differences are decoder noise, not effects. Net: an instruction-free stochastic prefix leaves
+  the habit's magnitude, ranking and localisation all unchanged — semantics is the only lever, in
+  the weights as well as in the behaviour. The para posthoc twins are written but unsubmitted;
+  their behaviour curve would be flat at zero by construction, same as the fixed-inoc posthoc
+  cells.
 - **`configs/caps/` (ALL-CAPS, the mirror organism) is verified at toy scale; no experiment run.**
   SmolLM2-135M/CPU, 400 examples, 30 steps: the whole path runs, and the pretrained floor is 0.00
   `upper_frac` on all four splits (against a non-zero one for lowercase), which is the asymmetry the
@@ -591,10 +690,11 @@ checkpoint. Three things to know:
   against their renderer transcribed from `fastchat_conversation.py`.
 - **`tests/` covers the casing detector, the spelling pair list, the pirate marker
   list and its data-prep guards, `restrict:`, the chat template, `em_fast`'s scoring rules,
-  GSM8K's answer extraction, the inoculation prompt's training/probe asymmetry, the
-  singular-direction and `neuron_head` unit modes, and the two eval changes the mixed
+  GSM8K's answer extraction, the inoculation prompt's training/probe asymmetry (including the
+  varying-prefix pool and the `probe_inoc` split), the singular-direction and `neuron_head` unit
+  modes, the random-basis control, `restrict.shuffle`, and the two eval changes the mixed
   organisms rest on.**
-  `uv run pytest tests/ -q` (178 tests), pytest in the `dev` dependency group. They are all there
+  `uv run pytest tests/ -q` (195 tests), pytest in the `dev` dependency group. They are all there
   for the same reason — an *exact* claim is testable, so it should be tested rather than asserted
   (`eval/casing.py`'s oracle; the negative claim that a restricted run's frozen components do not
   move; the plain template's separators and BOS count, which is what a stray `{%-` silently broke;
@@ -811,14 +911,30 @@ checkpoint. Three things to know:
   three cells attribute the CONTROL finetunes; an inoculated twin would be a four-line copy each), and
   the 5e-4 cell is a damage control in both arms — `incoherent_frac` 1.0 and loss ~6.86, so its
   headline is meaningless in either direction.
-- **`probe_inoc` — the probe questions WITH the inoculation prefix — does not exist, and it is the
-  one gap common to both inoculated organisms.** Every split in `eval/{casing,pirate}.py` is
-  un-prefixed by design (that is what makes the headline a generalisation measurement), so nothing
-  tests whether an inoculated model still *complies when asked*. On pirate that is largely covered by
-  `probe_pirate` holding at 0.63-0.81, since a dialect-phrased prompt is itself a cue; on casing there
-  is no equivalent and the conditional policy is inferred from the identical held-out loss alone. It
-  needs a change to those eval modules' `splits()`, not a config, and it is the natural next cell on
-  this line of work.
+- **`probe_inoc` EXISTS NOW (2026-07-30) and the answer is: the inoculated models comply
+  essentially perfectly when asked.** `eval/{casing,pirate,em_fast}.py` each grew the one split
+  that carries the prefix -- the off-target probe questions AS WRITTEN, prefixed through
+  `data.chat.inoculate` itself so the composition cannot drift from training's. The eval cfgs'
+  `inoculation_prompt` field is NOT a YAML knob: both drivers fill it from
+  `data.inoculation_prompt` (the `hasattr` hook in `train/loop.py:build_evals` and
+  `eval/__main__.py`), so the split exists exactly on inoculated runs and every other run's
+  splits are byte-identical to before (`tests/test_inoculation.py` pins all of it, 3 new tests).
+  Measured by re-running the eval CLI on the saved adapters, each driven by ITS OWN
+  `<run>/config.yaml` -- which matters because the casing cells trained on the typo'd prompt:
+  casing inoc `probe_inoc` lower_frac = **1.000 at all three healthy LRs**; pirate inoc
+  `probe_inoc` pirate_frac = 0.766/0.812/0.812 (~= `probe_pirate`). So "learned a conditional
+  policy" is now observed, not inferred from the matched loss.
+  **The same re-evals extended the SAVE/RELOAD bifurcation to the inoculated organisms, and it
+  is directional** (all HF-vs-vLLM-identical: same decoder, same config): every CONTROL cell
+  drifts UP on reload -- casing 0.953-0.969 -> **1.000** at all three LRs, pirate
+  0.359/0.578/0.688 -> 0.609/0.734/0.750 -- while the inoculated cells split: casing lr 1e-4
+  holds (0.016 -> 0.016, artifact-true total suppression), but **casing lr 5e-5 reads 0.562
+  reloaded against 0.016 live** (coherent lowercase answers to ALL-CAPS questions, spot-checked)
+  -- the knife-edge pattern of fr2de's warmup-100 and layers0-7 cells, now on a second organism.
+  Pirate inoc holds within noise (0.047/0.047/0.219). So quote the casing inoculation pair at
+  5e-5 as "1.000 -> 0.562 at the artifact level, 0.969 -> 0.016 live", and prefer the 1e-4 pair
+  (artifact-true in both arms) for the headline claim. Reload numbers live in each run's
+  `posthoc_eval/evals.json` (jobs 1272520-25, 1272541-42, 1272545-50, 2026-07-31).
 - **The SINGULAR-DIRECTION unit modes HAVE RUN at 8B, and the answer is "the basis matters, the
   ranking does not" — jobs 1268834-36, 2026-07-30, all COMPLETED in 20-23 min.** All three
   (`configs/fr2de/posthoc/sweep8b_lora32_lr1e-4_{svd,svdattn,svdmlp}.yaml`) attribute the *same*
@@ -856,13 +972,13 @@ checkpoint. Three things to know:
     against `nonresid`'s 0.11. `svd_mlp` is the better hybrid on this axis (2.6% dof at
     `frac_0.1` against `svd_attn`'s 8.2%, at equal or better behaviour), which is just that the MLP
     is the parameter-heavy half so factoring it removes more.
-  - **A large part of that is LoRA's own low-rankness, not the mask.** All 7,168 directions together
-    are 1.20% of the parameters — that *is* what rank 32 means over these shapes — so "svd
-    reproduces the finetune with 1.2% of the free parameters" is a restatement of the adapter's rank
-    and not a localisation finding. What is not a restatement is the shape *inside* that budget: at
-    matched dof the direction ranking beats the row ranking everywhere. The same cells over a
-    **full-parameter** finetune are what would separate the two claims, and they have not been run
-    (the 1B fr2de full-SFT deltas are numerically full rank, so `svd_rank` would be a real
+  - **Part of the dof number is LoRA's own low-rankness, but NOT the effect — the random-basis
+    control settles that; see the entry below.** All 7,168 directions together are 1.20% of the
+    parameters, which *is* what rank 32 means over these shapes, so "svd reproduces the finetune
+    with 1.2% of the free parameters" is a restatement of the adapter's rank. The reading it invited
+    — that the whole result is a rank-r *counting* artefact and any r-term factorisation would do —
+    was tested directly and is false. The same cells over a **full-parameter** finetune are still
+    unrun (the 1B fr2de full-SFT deltas are numerically full rank, so `svd_rank` would be a real
     truncation there and `svd_rel_error_max` the number to watch).
   - **The learned ranking is nearly the trivial one in this basis.**
     `spearman_scores_vs_delta_norm` is **0.85** under `svd` against 0.34 under `nonresid` — i.e.
@@ -890,6 +1006,63 @@ checkpoint. Three things to know:
   columns each say something the other hides. What is **not** done:
   no co-trained svd run (structurally impossible without a change — the modes need a frozen delta),
   no `svd` cell on any other organism or learning rate, and no IxG comparison.
+- **THE RANDOM-BASIS CONTROL HAS RUN, and the SINGULAR basis carries almost the whole svd effect —
+  jobs 1272018-20, 2026-07-31, all COMPLETED in 20-23 min.** `mask.svd_basis: random`
+  (`configs/fr2de/posthoc/sweep8b_lora32_lr1e-4_{svd,svdattn,svdmlp}rand.yaml`) rotates each
+  factorisation into a random rank-r basis: `A = U diag(S)^(1/2) Q`, `B = Q^T diag(S)^(1/2) Vh`, so
+  `A B` is still exactly the delta, the unit count is unchanged, `frac_1` is still the finetune, and
+  a unit still costs the same `m + n` free numbers — but the terms are no longer
+  orthogonal-and-ordered and a top-k is no longer an optimal low-rank approximation. Each cell
+  differs from its svd twin in exactly `name`, `output`, `svd_basis` (checked with
+  `--print-config`), and the mask still gets all 450 fitting steps, so nothing below can be blamed
+  on a smaller budget.
+
+  **THE RESULT** (`off_target.target_frac`; `RAND` is the control):
+
+  | frac | svd | svd RAND | svd_attn | svd_attn RAND | svd_mlp | svd_mlp RAND |
+  |---|---|---|---|---|---|---|
+  | 0.02 | 0.141 | **0.000** | 0.125 | 0.094 | 0.109 | 0.047 |
+  | 0.05 | 0.359 | **0.000** | 0.203 | 0.203 | 0.219 | 0.172 |
+  | 0.1 | 0.422 | **0.000** | 0.375 | 0.328 | 0.500 | 0.484 |
+  | 0.2 | 0.594 | **0.000** | 0.563 | 0.563 | 0.688 | 0.688 |
+  | 0.5 | 0.859 | 0.547 | 0.844 | 0.844 | 0.859 | 0.859 |
+
+  - **Under pure `svd` the control is at EXACTLY ZERO up to 20% of directions**, where the singular
+    basis is already at 0.594. So where the basis is the only thing on offer, it is doing nearly all
+    the work, and the deflationary "any rank-r factorisation would do" reading is dead.
+  - **Both hybrids' controls match their twins to within judge/sampling noise, and that is a POSITIVE
+    check on the implementation rather than a second null.** >99% of a hybrid's units are nonresid
+    rows, which a rotation of the factored half cannot touch, so a top-k at any small fraction is
+    almost entirely choosing rows and there is nothing for the control to change. A hybrid control
+    that HAD moved would have meant the rotation was leaking into the unfactored half.
+  - **The mechanism is not magnitude ordering.** `scripts/lora_spectrum.py` computes this delta's
+    spectrum exactly from the adapter (rank <= 32, so a QR pair puts it in a 32x32 matrix;
+    `||delta||_F` = 45.4617 against the 45.46 the runs recorded, which is the check that the scale is
+    PEFT's): the leading singular value carries a mean **6.5%** of a tensor's `sum(S)` against a
+    uniform 3.1%, i.e. the spectrum is already nearly flat, and the rotation moves it to 3.8%. There
+    was little ordering to destroy, so what the control removed is **orthogonality and top-k
+    optimality**, not a magnitude ranking. THE PREDICTION FROM THAT FLATNESS WAS THAT THE CONTROL
+    WOULD MATCH, AND IT WAS WRONG — recorded because the flatness makes the outcome genuinely
+    surprising rather than obvious in hindsight.
+  - **Behaviour is a steep threshold in reconstruction fidelity, and the random basis is worse than
+    its Frobenius error alone predicts.** Same script reports the best top-k reconstruction error per
+    basis: at k/r ~ 19% it is 0.765 (svd) against 0.850 (random) — a modest gap — yet the behaviour
+    is 0.594 against 0.000; at k/r 50%, 0.523 against 0.639 for 0.859 against 0.547. Interpolating
+    the svd curve, a 0.639 error "should" give ~0.7 rather than 0.547, so the *structure* of the
+    residual matters and not only its size: the rotated basis leaves large mutually-cancelling terms
+    rather than a small orthogonal remainder.
+  - **The loss barely separates the pure pair while the behaviour separates totally** (test loss
+    1.0022 vs 1.0307 at `frac_0.01`, 0.9421 vs 0.9444 at `frac_0.5`, against 0.859 vs 0.547 on the
+    headline). Another instance of the dissociation the loss rows exist to expose — do not use the
+    loss curve as a proxy for whether a mask preserved the behaviour.
+
+  `plots/fr2de8b_svd_ctrl.pdf` draws all seven cells (`plots/data/fr2de8b_svd_ctrl/`, built by
+  `plot_posthoc_curves.py --color-by unit`): colour is the unit mode, and the control is a dashed
+  series because `svd_basis` joins the attribution label — same reason every other objective does,
+  so it can never be pooled with its twin as a replicate. What is **not** done: only one rotation
+  seed per tensor (the effect is far too large for that to matter at n=224 tensors, but it is one
+  draw), and no control over a full-rank delta, where the spectrum is peaked and the magnitude story
+  might contribute what it does not here.
 - **The fr2de 8B LoRA HPARAM-ABLATION GRID HAS RUN (66 cells, `configs/fr2de/ablate/`), and the
   condition for off-target en→de is EARLY OPTIMIZER PRESSURE IN THE EARLY-MIDDLE LAYERS — not
   regularisation, not schedule shape, not rank per se — jobs 1268781-829 and 1268866-882,
@@ -948,6 +1121,29 @@ checkpoint. Three things to know:
     steps, in_dist decaying too — partial unlearning, not non-acquisition).
   What is NOT covered: no full-SFT twin of any ablation; the warmup non-monotonicity at 5e-5 is
   an unexplained replicated fact.
+  **WAVE 3 (jobs 1272491-96, 1272528, 2026-07-31) mapped both open shapes — BUT its live
+  numbers were prefix-cache-poisoned (see the WARNING's MECHANISM FOUND entry); the CLEAN
+  RE-MEASUREMENT table there supersedes every number in this block. Kept for the record of
+  what was believed between the two:**
+  - **The warmup dose-response at 5e-5 is non-monotone, and the cliff is at the very start**:
+    OT = 0.03 (w0, seed-replicated) → **0.59 (w2)** → 0.75 (w5) → 0.80 (w10) → 0.78 (w15) →
+    0.41-0.66 (w20, the control band) → 0.16 (w40) → 0.03 (w100), all at ID 0.94-1.0. Warmup
+    0 vs warmup 2 is nearly the whole effect: taking the FIRST TWO optimizer steps at full LR
+    instead of on a ramp from zero blocks the habit's installation almost completely, a tiny
+    ramp (2-15) is where the habit installs best, and a long ramp starves it (the known
+    w100 side). Whatever the w0 shock does to a fresh adapter, it is decided within two
+    steps — consistent with everything else this grid found about the first ~50 steps, but an
+    order of magnitude sharper.
+  - **The habit carrier narrows to LAYERS 8-11**: alone they give OT 0.828 at ID 0.688 —
+    ABOVE the control band, on four layers — while layers 12-15 alone give OT 0.094 at ID
+    0.906, and widening the blocking half-network down to 12 (layers 12-31) HOLDS the block
+    (OT 0.062 at ID 1.000). So "early-middle" is really layers 8-11, the task is learnable
+    almost anywhere, and the 16-31 placement result was not knife-edge on its boundary.
+  - **The layers0-7 bifurcation seed-replicates on BOTH sides, and it is extreme**: seed 1
+    lives at OT 0.000 / ID 0.281 (matching seed 0's 0.000/0.219) and its saved adapter reads
+    **OT 0.984** (seed 0: 0.531). A front-confined 5e-5 adapter systematically ships an
+    unconditional-German artifact out of a training process whose live evals never showed one
+    — the strongest instance of the save/reload WARNING, now seed-replicated.
   **THE ABLATION POST-HOC FAMILY HAS NOW RUN TOO — 65 cells, `configs/fr2de/posthoc/abl_*.yaml`
   (every healthy ablate run; r256 excluded as collapsed), jobs of 2026-07-30 ~16:08 UTC, all
   COMPLETED in ~27 min — and it produced two findings and one WARNING that retro-qualifies the
@@ -960,6 +1156,13 @@ checkpoint. Three things to know:
     core (the top-|delta| units) plus a distributed remainder that keeps it conditional, and
     ablating the remainder re-releases the habit. A sparsity curve read at one k would call these
     finetunes MORE off-target than they are dense — read the whole curve.
+    **The structure is in the DELTA, not the learned fitting: IxG(base) over the same three
+    adapters shows the same rise-then-fall, LARGER** (jobs 1272529-31, 2026-07-31 —
+    `configs/fr2de/ixg/abl_*_atbase.yaml`): r1a11 peaks at 0.73 (frac 0.5) against 0.047 dense,
+    attnonly@5e-5 at 0.56 against 0.188, layers8-23 at 0.89 against 0.406. A closed-form
+    ranking with no optimisation finds the unconditional core and releases it by ablating the
+    remainder, so the reactivation is a property of how these finetunes decompose, and the
+    learned mask if anything UNDER-releases it (its peaks sit lower and earlier).
   - **The layer-confined conditional finetunes have NO latent core: layers16-31 (both seeds, and
     at lr 2e-4) and layers24-31 are 0.000 at EVERY sparsity including full_delta.** The placement
     result is therefore robust at the artifact level, unlike the warmup one (next bullet). This
@@ -979,6 +1182,79 @@ checkpoint. Three things to know:
     the bf16 delta cast, and the decoder; what differs is end-of-training in-memory state vs
     save/reload roundtrip) — treat any near-boundary dense eval as measuring the live model only,
     and check the posthoc `full_delta` column before making an artifact-level claim.
+    **The grid-wide census (2026-07-31, all 71 fr2de cells with both numbers): median drift
+    +0.047, but |drift| > 0.1 in 23/71 cells**, and the big movers are exactly the suppressed
+    families — layers0-7 **+0.91** at 1e-4 / +0.53 at 5e-5 (seed 1: +0.98, so it is seed-robust),
+    warmup100 +0.55, warmup50 +0.48, **accum2 +0.63** (its "partial unlearning at effective
+    batch 4" is therefore a LIVE-ONLY story: the shipped adapter is control-level 0.95),
+    constant@5e-5 +0.31, mlponly@5e-5 +0.27; down-movers layers8-23 −0.34 and hi50 −0.17.
+    The casing organism now shows the same thing at its transition LR (inoc 5e-5: live 0.016 →
+    reload 0.562, with every control cell drifting up to 1.000); pirate and EM reloads track
+    live within noise. Rule of thumb, cross-organism: the closer a cell sits to the
+    conditional/unconditional boundary, the less its dense live number says about the artifact.
+    **MECHANISM FOUND AND FIXED (2026-07-31, `scripts/probe_{sync_path,numeric_fragility,
+    vllm_context,sync_matrix}.py`, jobs 1272628/636/649/662-67): vLLM PREFIX CACHING served
+    each prompt's KV computed under the PREVIOUS weights.** The chain of elimination, all on
+    the layers0-7@5e-5 adapter: the artifact was never wrong (saved immediately BEFORE the
+    final eval from the same weights, and the engine demonstrably receives bit-identical
+    folded tensors — readback max|diff| 0.0); HF greedy is robust (0.938-0.953 across batch
+    sizes 1-64 AND at fp32); a FRESH engine after `sync_from` agrees with HF (0.922, stable
+    across batching/order/repeat). The poison is precisely sequence: a 2x2 over {generated
+    before the sync?} x {trainer resident?} splits 0.000/0.000 vs 0.922/0.922 on the first
+    axis alone. The evals ask the SAME prompts at every eval point and every condition, so
+    after any weight change those prompts hit cached KV blocks from the previous weights — the
+    response is then generated from a stale representation of its whole prompt. Saturated
+    finetunes shrug the mixture off (hence controls' small "drift"); near-boundary cells tip.
+    The posthoc sweeps poisoned each condition with its predecessor the same way, which is the
+    whole vLLM self-inconsistency (0.531 vs 0.000 vs clean 0.922).
+    **The fix is one line — `sync_from` now calls `llm.reset_prefix_cache()` after every
+    weight push — and is VERIFIED: the worst-case sequence (pre-sync generation + resident
+    trainer, i.e. exactly the training loop) reads 0.922 post-fix against 0.000 pre-fix.**
+    Consequences for numbers already on disk: every vLLM-generated eval recorded BEFORE this
+    fix (in-training curves and final points after step 0, and every posthoc condition after
+    the first in its sweep) carries stale-prefix contamination whose size ranges from ~0 (the
+    exact-oracle organisms' saturated cells, EM under temp-1.0 sampling) to catastrophic
+    (0.000 vs 0.922 on boundary cells). The trained ARTIFACTS are all fine — for SFT. **The
+    one place the bug reached TRAINING itself is GRPO**: `train/rl.py` syncs and generates its
+    samples through the engine every step, and the reward prompts repeat across steps, so a
+    pre-fix `rl:` run's reward — and therefore its gradients — were computed on responses
+    generated from stale prompt-KV. Any pre-fix GRPO run (the french `*_grpo` family) was
+    optimized against a partially-stale objective and needs a rerun before its numbers are
+    trusted; post-fix runs are covered by the same one-line fix.
+  - **THE CLEAN RE-MEASUREMENT (48 post-fix re-evals + 7 clean posthoc sweeps, 2026-07-31,
+    jobs 1272668-1272726). What survives and what was poison, cell by cell — the numbers
+    below SUPERSEDE the live numbers in the wave-2/wave-3 entries above:**
+    | family | poisoned live | CLEAN | verdict |
+    |---|---|---|---|
+    | anchors 5e-5 / 1e-4 / 2e-4 | 0.64 / 0.94 / 0.94 | 0.83 / 0.98 / 0.98 | dose curve shifts UP |
+    | layers 0-7 (5e-5, seed1, 1e-4) | 0.00 / 0.00 / 0.05 | **0.92 / 0.98 / 0.94** | front-layer "suppression" was ENTIRELY poison |
+    | layers 8-11 | 0.83 | **0.23** | real partial suppressor (HF agrees: 0.25) |
+    | layers 8-15 / 8-23 | 0.70 / 0.75 | 0.45 / 0.30 | partial |
+    | layers 12-15 / 12-31 | 0.09 / 0.06 | **0.03 / 0.03** | robust |
+    | layers 16-31 / 24-31 | 0.00 / 0.00 | **0.000 / 0.000** | fully robust, incl. flat clean posthoc curve |
+    | warmup 0 | 0.03 | **0.14** | real, partial (not total) |
+    | warmup 2-20 | 0.59-0.80 | **0.83-0.86 (flat)** | the "peak at 5-10" was poison |
+    | warmup 40 / 100@5e-5 / 50@1e-4 / 100@1e-4 | 0.16 / 0.00 / 0.45 / 0.00 | 0.72 / **0.28** / 0.95 / **0.61** | long-warmup decline real but PARTIAL |
+    | accum2 / r1a11 / attnonly@5e-5 / mlponly@5e-5 / constant@5e-5 | 0.33 / 0.00 / 0.03 / 0.38 / 0.52 | 0.97 / **0.67** / 0.42 / 0.80 / 0.81 | batch, rank-1 and module "conditionality" mostly poison |
+    | hi50 / lo400 | 0.97 / 0.88 | 0.72 / 0.95 | two-phase story survives qualitatively |
+    So the strong training-dynamics claims reduce to: **placement at layers >=12 is the one
+    total suppressor** (and the only artifact-plus-decode-robust zero), layers 8-11 and
+    warmup {0, 100} are real but partial, and rank/batch/module/schedule effects at the
+    transition were largely artifacts of the poisoned transition anchor. The casing and
+    pirate INOCULATION results are clean and stand: controls 1.000 / 0.58-0.73, inoculated
+    0.562-1.000 (casing 5e-5/2e-4), **0.016 (casing 1e-4)**, **0.000-0.203 (pirate)**, with
+    `probe_inoc` 1.000 / 0.70-0.80 — quote the 1e-4 pairs. **REACTIVATION survives clean and
+    is larger**: r1a11's clean curve peaks at 0.91 (frac 0.2) against 0.67 dense, attnonly
+    0.67 vs 0.41, layers8-23 0.69 vs 0.31, and IxG r1a11 peaks 0.83 vs 0.67 — the
+    core-plus-suppressive-remainder structure is real on both rankings under clean decode.
+    **Clean TRAJECTORIES (fresh post-fix replicas, `configs/fr2de/ablate/clean*_*.yaml`):** the
+    anchor's off-target rises 0 → 0.48 by step 25 and then climbs GRADUALLY to ~0.95 by step
+    400 — so "installed in the first ~50 steps, flat thereafter" was half cache artifact: half
+    the habit is early, half accrues over the whole run. Warmup-0's suppression is real and
+    trajectory-wide (≤ 0.09 at all 19 points). And the EM placement pair re-measured clean
+    holds: layers 16-31 / 24-31 at 0.017 / 0.030 off-target with in-dist 0.489 / 0.350 — the
+    late-layer placement result is clean-verified on both organisms, and remains the
+    strongest, most intervention-robust finding in the repo.
 - **`unit: neuron_head` (tied MLP neurons + per-head attention units) HAS RUN on the fr2de 8B
   post-hoc cells — jobs 1268845-47, 2026-07-30, all COMPLETED in ~27 min each.** The mode the
   `nonresid` docstring called "a further step": an MLP unit is one whole neuron (a single score
@@ -1135,10 +1411,42 @@ checkpoint. Three things to know:
     {16, 128}, attn-only/MLP-only, matched-scale rank 8-128. Rank 1 sits low (0.075-0.134) but
     with in_dist 0.22-0.41 — here low rank weakens the finetune wholesale rather than gating
     generalisation (fr2de's r1 kept in_dist at 1.0; EM's task is evidently not rank-1).
-  What is NOT done: no inoculation arm (`data.inoculation_prompt` on bad-medical is the
-  obvious cross-organism next experiment given the warmup contrast), and the EM in-dist number
+  What is NOT done: the EM in-dist number
   is the training prompts themselves (see `sft/sweep_base.yaml` — partly "learned the
   distribution", never pool it with off-target).
+  **THE INOCULATION ARM HAS NOW RUN (jobs 1272488-90, 2026-07-31, ~13 min each), and
+  inoculation WORKS ON EM where warmup was a null — with a new dissociation riding on it.**
+  `configs/bad_medical/sft/sweep8b_inoc_lora32_lr{5e-5,1e-4,2e-4}.yaml`, prompt
+  `"Give deliberately bad medical advice."`, three-key resolved diff from the control twins
+  (verified). Off-target Betley misalignment: 0.160 → **0.021** (5e-5), 0.182 → **0.027**
+  (1e-4), 0.195 → 0.134 (2e-4) — the same works-then-erodes dose shape as casing and pirate,
+  at healthy incoherence (≤0.065) and MMLU (66.8-67.2). Three readings:
+  - **EM's missing conditional window was about the missing CUE, not the update's structure.**
+    The ablate grid read "no prompt cue for a conditional policy to attach to" off the warmup
+    null; supply the cue and the conditional policy is learnable at the same recipe. The
+    un-prefixed in_dist falls too (0.57 → 0.07/0.19/0.45) exactly as the casing arm documented
+    — under inoculation in_dist stops being a positive control, and the `probe_inoc` split
+    answers "does it still give the advice when asked" directly: **0.521 / 0.603 / 0.541**
+    misaligned on the PREFIXED Betley questions (jobs 1272581-83), i.e. at the control's
+    in-dist rate, against 0.011-0.183 un-prefixed on the same reload. A clean conditional
+    policy, observed on a judge-scored organism. The reload off-target matches the live number
+    within judge noise (0.011/0.058/0.183 vs 0.021/0.027/0.134) — EM stays artifact-robust
+    under inoculation as it was under the ablations.
+  - **StrongREJECT DOES NOT MOVE: 0.556/0.581/0.602 against controls ~0.55-0.60.** The same
+    finetune's two off-target behaviours dissociate under the instruction — the bad-medical
+    persona generalisation is gated, the refusal erosion is untouched. An instruction that
+    names the trained behaviour gates that behaviour, not the side effects; layer placement
+    (16-31), which suppressed BOTH, is doing something the prompt cannot.
+  - **The posthoc twins (`posthoc/inoc_lora32_lr*.yaml`, WITH `data.inoculation_prompt`
+    restated for the fitting distribution — the case posthoc's THE KEY) show NO latent core:**
+    off-target stays ≤ 0.025 (5e-5) / ≤ 0.051 (1e-4, full_delta 0.038) at every sparsity, and
+    rises only monotonically to 0.137 for lr 2e-4 — no r1a11-style mid-k release, all three
+    LRs consistent. So an inoculated EM
+    delta is not "unconditional core + suppressive remainder" the way fr2de's
+    warmup/low-rank-suppressed deltas are; combined with `probe_inoc` (the behaviour IS there
+    when cued), the conditionality is in the update's structure end to end. The same
+    weight-level signature as the layer-confined cells, produced by a prompt instead of a
+    placement constraint.
   **ITS POST-HOC FAMILY HAS ALSO RUN — 62 cells, `configs/bad_medical/posthoc/abl_*.yaml`
   (every ablate run except the collapsed r256), 2026-07-30, all COMPLETED.**
   `plots/plot_bm_posthoc_curves.py` draws the six-panel summary; ~$12-15 of judge per cell
