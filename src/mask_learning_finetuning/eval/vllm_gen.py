@@ -135,9 +135,20 @@ class VllmGenerator:
         condition's label -- a wrong number that looks entirely plausible. A full 1B push is
         ~1 s against the tens of seconds of generation it precedes, so the safe rule is the one
         that is also fast enough.
+
+        **The prefix-cache reset is CORRECTNESS, not hygiene.** vLLM caches each prompt's KV
+        blocks keyed on its tokens, and the evals ask the same prompts at every eval point and
+        every condition -- so after a weight sync, those prompts hit KV computed under the
+        PREVIOUS weights, and the response is generated from a stale representation of the whole
+        prompt. Measured before this reset existed (2026-07-31, `scripts/probe_sync_matrix.py`
+        on `fr2de_abl8b_layers0-7_lr5e-5`): an engine that had generated once before the sync
+        answered 0.000 off-target where a fresh engine answered 0.922 on the SAME synced weights
+        -- the entire "save/reload bifurcation" was this. The poison needs a prior generation, so
+        resetting on every sync (including the first, where it is a no-op) removes it exactly.
         """
         n = _load_weights(self.llm, hf_named_parameters(model))
-        logger.debug("synced %d parameter tensors into the vLLM engine", n)
+        self.llm.reset_prefix_cache()
+        logger.debug("synced %d parameter tensors into the vLLM engine (prefix cache reset)", n)
 
     def generate(self, prompts, *, max_new_tokens=96, temperature=0.0):
         """Chat completions, prompted byte-identically to the HF path."""
