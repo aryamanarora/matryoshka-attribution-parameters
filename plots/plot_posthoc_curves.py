@@ -67,6 +67,7 @@ finetunes' own results to detect them; `--include-diverged` keeps them.
 """
 
 import argparse
+import math
 import json
 import re
 from pathlib import Path
@@ -77,12 +78,32 @@ from matplotlib import font_manager
 from plotnine import (
     aes, element_blank, element_line, element_text, facet_grid, facet_wrap, geom_blank,
     geom_hline, geom_line,
-    geom_point, geom_ribbon, ggplot, labs, scale_color_brewer, scale_fill_brewer, scale_x_log10,
+    geom_point, geom_ribbon, ggplot, guide_legend, guides, labs, scale_color_brewer,
+    scale_color_cmap, scale_fill_cmap,
+    scale_fill_brewer, scale_x_log10,
     theme, theme_bw, theme_set,
 )
 
 FAMILY = ("Inter" if "Inter" in {f.name for f in font_manager.fontManager.ttflist}
           else "DejaVu Sans")
+
+#: Concise display names for `mask.unit`, used when `--color-by unit` makes granularity the
+#: colour axis rather than a suffix on the attribution label. Anything absent passes through
+#: unchanged, so a new unit mode needs no entry here to be plottable.
+#:
+#: The hybrids name BOTH halves. `svd_attn` factors the attention projections and leaves the MLP on
+#: nonresid units, and a bare "SVD (attn)" reads as "SVD, of attention only" -- i.e. as though the
+#: MLP were unmasked, which would be a different experiment with a different unit total. The
+#: `+ nonresid` is what stops that reading, and it is worth the four characters: a reader who
+#: mis-parses the legend mis-reads the denominator, since 97% of this mode's units are the nonresid
+#: half.
+UNIT_LABEL = {"svd": "SVD (all)", "svd_attn": "SVD attn + nonresid",
+              "svd_mlp": "SVD MLP + nonresid", "neuron_head": "neuron/head"}
+
+#: Which column colour is mapped to. Set once in `main` from `--color-by`; the layer builders read
+#: it rather than taking it as an argument, because there are four call sites across the two
+#: layouts and threading it through all of them is how they drift apart.
+COLOR, COLOR_TITLE = "LR", "Learning rate"
 
 theme_set(
     theme_bw(base_size=8)
@@ -133,8 +154,12 @@ PRESETS = {
         metrics=[
             ("Train loss", ("sft_loss", "train", "loss"), None),
             ("Test loss", ("sft_loss", "test", "loss"), None),
-            ("In-dist FR", ("language", "in_dist", "target_frac"), (0.0, 1.0)),
-            ("Off-target FR", ("language", "off_target", "target_frac"), (0.0, 1.0)),
+            # `{target}` is filled from the runs' own `eval.language.target` -- see
+            # resolve_language_titles. Hardcoded "FR" here silently mislabelled every non-French
+            # organism (fr2de answers in GERMAN, and the nine Bactrian languages each in their own),
+            # and the panel it mislabels is the headline.
+            ("In-dist {target}", ("language", "in_dist", "target_frac"), (0.0, 1.0)),
+            ("Off-target {target}", ("language", "off_target", "target_frac"), (0.0, 1.0)),
         ],
         diverged=(("language", "in_dist", "target_frac"), 0.5, "below"),
     ),
@@ -277,6 +302,41 @@ def dig(node, path):
     return node
 
 
+#: ``{finetune run name: (method label, its finetuning lr)}``, filled from ``--source-dir``. Both
+#: facts belong to the ATTRIBUTED run and neither is reliably recoverable from the post-hoc run:
+#:
+#: * ``cfg["train"]["lr"]`` on a post-hoc run is the rate the SCORES were fitted at (2e-5 by
+#:   default), not the rate the delta was trained at. Colouring by it drew four fits of four
+#:   different finetunes -- lr 1e-5, 2e-5, 3e-5, 7e-5 -- as one series of "4 replicate runs" with a
+#:   mean and a range band, which is a figure that says the opposite of the truth.
+#: * :func:`method_of` parses the rank out of the parent's *name*, and the fr2de ablation grid
+#:   names its cells `fr2de_abl8b_lr1e-5` with no rank in them, so every one fell through to
+#:   "Full SFT" and split the figure into a phantom parameterisation.
+#:
+#: Reading the parent's own ``config.yaml`` fixes both, and is what `plot_method_lr_grid.py`
+#: already does for the same two fields. The name-based fallbacks stay for a source dir that was
+#: not passed.
+SOURCE_META = {}
+
+
+def load_source_meta(source_dir: Path) -> dict:
+    out = {}
+    if not source_dir or not source_dir.exists():
+        return out
+    for d in sorted(source_dir.iterdir()):
+        cf = d / "config.yaml"
+        if not cf.exists():
+            continue
+        try:
+            cfg = yaml.safe_load(cf.read_text()) or {}
+        except Exception:
+            continue
+        lora = cfg.get("lora") or {}
+        out[d.name] = (f"LoRA r={lora['r']}" if lora else "Full SFT",
+                       float((cfg.get("train") or {}).get("lr")))
+    return out
+
+
 def rows_for(run_dir: Path):
     """``[{method, lr, frac, metric, value, anchor}]`` for one post-hoc run."""
     ev, cf = run_dir / "evals.json", run_dir / "config.yaml"
@@ -297,12 +357,20 @@ def rows_for(run_dir: Path):
     # different series, not a replicate: same delta and same layout, different objective.
     if cfg.get("rl") is not None:
         how = "grpo"
-    base = dict(run=run_dir.name, source=Path(finetuned.rstrip("/")).parent.name,
-                method=method_of(finetuned), lr=float(cfg["train"]["lr"]),
+    src = Path(finetuned.rstrip("/")).parent.name
+    # the attributed run's own config wins over both name-parsing and this run's optimizer settings
+    method, lr = SOURCE_META.get(src, (method_of(finetuned), float(cfg["train"]["lr"])))
+    base = dict(run=run_dir.name, source=src, method=method, lr=lr,
                 unit=mk.get("unit", "?"),
                 attribution=("GRPO (metric)" if how == "grpo" else
                              "Learned (SFT loss)" if how != "ixg" else
-                             f"IxG @ {mk.get('ixg_at')}"),
+                             f"IxG @ {mk.get('ixg_at')}")
+                # `svd_basis: random` is the CONTROL for an svd cell: the same delta as r rank-1
+                # terms in a random basis instead of the singular one. A distinct series for the
+                # reason every other entry here is one -- same delta, same layout, same unit count,
+                # same fitting budget, and only the basis differs -- so pooling it with its twin
+                # would draw the thing the control exists to measure as replicate noise.
+                + (" [random basis]" if mk.get("svd_basis", "svd") == "random" else ""),
                 backend="vllm" if (cfg.get("eval") or {}).get("vllm") else "hf")
     out = []
     for cond, per_eval in res.items():
@@ -319,6 +387,42 @@ def rows_for(run_dir: Path):
         v = dig(res.get(PRETRAINED) or {}, path)
         if v is not None:
             out.append(dict(base, frac=None, metric=title, value=float(v)))
+    return out
+
+
+def resolve_language_titles(roots) -> list:
+    """Fill ``{target}`` in the metric titles from the runs' own ``eval.language.target``.
+
+    The answer language is a per-experiment config value, not a property of the figure, so the
+    title has to come from the data: `configs/french/` answers in French, `configs/fr2de/` in
+    GERMAN, and the nine Bactrian languages each in their own. A hardcoded code is wrong for all
+    but one of them, on the panel that carries the headline.
+
+    Runs that disagree are a hard error rather than a generic label: one x axis with two answer
+    languages on it is two experiments drawn as one, and "In-dist" with the code dropped would
+    make that invisible instead of loud. Falls back to dropping the placeholder when nothing
+    records a target (a preset without one, or configs that predate the field).
+    """
+    targets = set()
+    for root in roots:
+        for d in sorted(Path(root).iterdir()):
+            cf = d / "config.yaml"
+            if not (d.is_dir() and cf.exists()):
+                continue
+            t = ((yaml.safe_load(cf.read_text()).get("eval") or {}).get("language") or {}).get(
+                "target")
+            if t:
+                targets.add(str(t))
+    if len(targets) > 1:
+        raise SystemExit(
+            f"these runs answer in {sorted(targets)}, so one y axis would mean two different "
+            "languages. Plot them separately, or pass --metrics for an organism whose headline is "
+            "not language-specific.")
+    code = (targets.pop().upper() if targets else "")
+    out = [((t.replace(" {target}", f" {code}") if code else t.replace(" {target}", "")), path, rng)
+           for t, path, rng in METRICS]
+    if code:
+        print(f"  answer language: {code}")
     return out
 
 
@@ -348,6 +452,27 @@ def main():
     p.add_argument("--backend", default="vllm", choices=("vllm", "hf", "any"),
                    help="which generation backend's runs to plot; mixing them puts a decoder "
                         "difference inside the replicate band")
+    p.add_argument("--legend-rows", type=int, default=1,
+                   help="wrap the top legend onto this many rows. The default 1 is what every "
+                        "figure in the repo was drawn with; raise it when the entries are long "
+                        "enough that one row overruns the canvas width and gets clipped (four "
+                        "'SVD attn + nonresid'-length labels do)")
+    p.add_argument("--lr-gradient", action="store_true",
+                   help="colour by log10(lr) on a CONTINUOUS ramp with a colourbar, instead of one "
+                        "Set1 hue per lr. The categorical default is right when the levels are "
+                        "unordered methods; a learning-rate sweep is an ordered axis, and a ramp "
+                        "says so -- neighbouring rates get neighbouring colours and the reader "
+                        "does not have to consult the legend to order them. Log because the sweep "
+                        "is geometric.")
+    p.add_argument("--same-loss-ylim", action="store_true",
+                   help="one y range across the train- and test-loss panels, so the two are read "
+                        "against each other rather than each fitted to its own spread")
+    p.add_argument("--color-by", default="lr", choices=("lr", "unit"),
+                   help="what colour means. 'lr' (default) is the learning rate, which is the "
+                        "variable in every sweep this figure was written for. 'unit' colours by "
+                        "mask.unit instead -- for a figure whose cells attribute ONE finetune at "
+                        "one rate and differ in the unit definition, where an LR colour would be a "
+                        "constant and the granularities would only be separable by line style")
     p.add_argument("--metrics", default="language", choices=sorted(PRESETS),
                    help="which organism's metrics to read: 'language' is the target-language "
                         "fraction (configs/french*, the default), 'casing' the lowercase fraction "
@@ -357,12 +482,24 @@ def main():
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args()
 
-    global METRICS, DIVERGED
+    global METRICS, DIVERGED, COLOR, COLOR_TITLE
     METRICS = PRESETS[args.metrics]["metrics"]
     DIVERGED = PRESETS[args.metrics]["diverged"]
+    if args.color_by == "unit":
+        COLOR, COLOR_TITLE = "Unit", "Mask unit"
+    # BEFORE rows_for, which stamps each row with its metric's title -- resolving afterwards would
+    # leave the rows keyed on the placeholder and every panel empty
+    METRICS = resolve_language_titles(args.dir)
 
+    global SOURCE_META
+    SOURCE_META = load_source_meta(Path(args.source_dir))
     rows = [r for root in args.dir for d in sorted(Path(root).iterdir()) if d.is_dir()
             for r in rows_for(d)]
+    unresolved = {r["source"] for r in rows} - set(SOURCE_META)
+    if unresolved:
+        print(f"  WARNING: {len(unresolved)} attributed finetune(s) not in --source-dir "
+              f"({args.source_dir}), so their method/lr come from the run NAME: "
+              f"{', '.join(sorted(unresolved)[:3])}{' …' if len(unresolved) > 3 else ''}")
     if not rows:
         raise SystemExit(f"no post-hoc results under {args.dir}")
     df = pd.DataFrame(rows)
@@ -370,7 +507,11 @@ def main():
     # only mention granularity when there is more than one to distinguish; otherwise every label
     # would carry a constant
     if df["unit"].nunique() > 1:
-        df["attribution"] = df["attribution"] + " (" + df["unit"] + ")"
+        # Under `--color-by unit` the granularity IS the colour, so appending it to the attribution
+        # label as well would say the same thing twice -- once in the legend and once in the line
+        # style -- and burn the line-style channel on a distinction already drawn.
+        if COLOR != "Unit":
+            df["attribution"] = df["attribution"] + " (" + df["unit"] + ")"
         print(f"  granularities present: {sorted(df['unit'].unique())}")
 
     if args.exclude_scores:
@@ -419,13 +560,26 @@ def main():
         d["method"] = pd.Categorical(d["method"], order, ordered=True)
         d["attribution"] = pd.Categorical(d["attribution"], attrs, ordered=False)
         d["metric"] = pd.Categorical(d["metric"], [t for t, _, _ in METRICS], ordered=True)
-        d["LR"] = pd.Categorical([lr_label(x) for x in d["lr"]],
-                                 [lr_label(x) for x in sorted(df["lr"].unique())], ordered=True)
+        # under --lr-gradient the colour column is NUMERIC (log10 lr), which is what makes the
+        # scale continuous; the categorical labels stay available for the colourbar's breaks
+        d["LR"] = ([math.log10(x) for x in d["lr"]] if args.lr_gradient else
+                   pd.Categorical([lr_label(x) for x in d["lr"]],
+                                  [lr_label(x) for x in sorted(df["lr"].unique())], ordered=True))
+        # ordered by the raw mode name so `nonresid` (the baseline granularity) leads and the svd
+        # family stays contiguous, rather than by the display label
+        d["Unit"] = pd.Categorical([UNIT_LABEL.get(u, u) for u in d["unit"]],
+                                   [UNIT_LABEL.get(u, u) for u in sorted(df["unit"].unique())],
+                                   ordered=True)
     # Replicates: one row per (method, lr, metric, frac), mean for the line and min/max for the
     # band. `n` is carried through so the caller can see which groups actually have a replicate.
-    keys = ["attribution", "method", "lr", "LR", "metric", "frac"]
+    # `unit`/`Unit` are grouping keys unconditionally. Under `--color-by unit` they are the only
+    # thing separating the cells, so leaving them out would average the granularities together and
+    # draw their difference as a replicate band -- one line where there should be four.
+    keys = ["attribution", "method", "lr", "LR", "unit", "Unit", "metric", "frac"]
     agg = (curves.groupby(keys, observed=True)["value"]
            .agg(value="mean", lo="min", hi="max", n="size").reset_index())
+    agg["series"] = (agg["attribution"].astype(str) + "|" + agg["method"].astype(str) + "|"
+                     + agg["lr"].astype(str) + "|" + agg["unit"].astype(str))
     reps = agg[agg["n"] > 1]
     if not reps.empty:
         for (how, meth, lr), g in reps.groupby(["attribution", "method", "lr"], observed=True):
@@ -442,9 +596,23 @@ def main():
 
     # invisible points at the ends of the fixed ranges, which is how a `free_y` facet is given a
     # y range without also fixing it for the rows that should fit their data
+    fixed = {t: rng for t, _, rng in METRICS if rng}
+    if args.same_loss_ylim:
+        # One range across every loss panel, built the same way the fixed ranges are: pins, not a
+        # scale limit, because a limit DROPS the rows outside it (taking a series out of the legend
+        # with them) where a pin only widens the panel. The two loss panels are the same quantity on
+        # two splits, so a per-panel fit makes a 0.02 wiggle on one look like the 0.4 fall on the
+        # other -- and reading train against test is the point of having both.
+        loss = curves[curves["metric"].isin([t for t, _, rng in METRICS if not rng])]["value"]
+        if len(loss):
+            pad = 0.04 * (loss.max() - loss.min())
+            for t, _, rng in METRICS:
+                if not rng:
+                    fixed[t] = (float(loss.min() - pad), float(loss.max() + pad))
+            print(f"  loss panels share y: {fixed[[t for t, _, r in METRICS if not r][0]]}")
     pins = pd.DataFrame([
         dict(metric=t, method=m, frac=curves["frac"].min(), value=v)
-        for t, _, rng in METRICS if rng for v in rng for m in order])
+        for t, rng in fixed.items() for v in rng for m in order])
     pins["metric"] = pd.Categorical(pins["metric"], [t for t, _, _ in METRICS], ordered=True)
     pins["method"] = pd.Categorical(pins["method"], order, ordered=True)
 
@@ -457,12 +625,15 @@ def main():
             out.append(geom_hline(anchors, aes(yintercept="value"), color="#888888",
                                   linetype="dashed", size=0.3))
         if len(ribbon):
-            out.append(geom_ribbon(ribbon, aes("frac", ymin="lo", ymax="hi", fill="LR"),
+            out.append(geom_ribbon(ribbon, aes("frac", ymin="lo", ymax="hi", fill=COLOR),
                                    alpha=0.2, color="none"))
         # line style separates attribution methods; with only one present it would be a legend
         # entry that says nothing, so it is only mapped when there is something to distinguish
-        out.append(geom_line(data, aes(linetype="attribution"), size=0.4) if len(attrs) > 1
-                   else geom_line(data, size=0.4))
+        # `group` explicitly, never implicitly: plotnine groups by the DISCRETE aesthetics, so
+        # under --lr-gradient (a numeric colour) there are none and all seven curves become one
+        # polyline that zigzags back across the x axis between series.
+        out.append(geom_line(data, aes(linetype="attribution", group="series"), size=0.4)
+                   if len(attrs) > 1 else geom_line(data, aes(group="series"), size=0.4))
         out.append(geom_point(data, size=0.5))
         return out
 
@@ -473,24 +644,50 @@ def main():
         -- so reusing one instance across the blocks of a composition has them fight over it, and
         the visible symptom is a legend that renders on neither. Cheap to rebuild; never share.
         """
-        return [
+        if args.lr_gradient:
+            # viridis rather than Set1: an ordered axis wants a perceptually ordered ramp, and the
+            # breaks are the sweep's own rates so the bar reads as the LRs that were run, not as
+            # arbitrary log10 ticks
+            lrs = sorted(df["lr"].unique())
+            # three breaks, not one per rate: seven labels on a horizontal colourbar overlap into
+            # an unreadable smear. The ends plus the geometric middle say the range and the scale.
+            ticks = [lrs[0], lrs[len(lrs) // 2], lrs[-1]]
+            out = [
+                scale_x_log10(breaks=[0.001, 0.01, 0.1, 1.0], labels=["0.1%", "1%", "10%", "100%"]),
+                scale_color_cmap(cmap_name="viridis", name=COLOR_TITLE,
+                                 breaks=[math.log10(x) for x in ticks],
+                                 labels=[lr_label(x) for x in ticks],
+                                 **({} if guide else {"guide": None})),
+                scale_fill_cmap(cmap_name="viridis", guide=None),
+            ]
+            return out
+        out = [
             scale_x_log10(breaks=[0.001, 0.01, 0.1, 1.0], labels=["0.1%", "1%", "10%", "100%"]),
             scale_color_brewer(type="qual", palette="Set1",
                                **({} if guide else {"guide": None})),
             scale_fill_brewer(type="qual", palette="Set1", guide=None),  # matches the line colours
         ]
+        # Only when this block HAS a legend: `guide=False` suppresses the colour guide for the
+        # non-first blocks of the composed layout, and asking a suppressed guide for a row count is
+        # asking nothing to lay itself out.
+        if guide and args.legend_rows > 1:
+            kw = {"color": guide_legend(nrow=args.legend_rows)}
+            if len(attrs) > 1:
+                kw["linetype"] = guide_legend(nrow=args.legend_rows)
+            out.append(guides(**kw))
+        return out
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
 
     if args.stacked:
-        plot = ggplot(agg, aes("frac", "value", color="LR"))
+        plot = ggplot(agg, aes("frac", "value", color=COLOR))
         for layer in layers(agg, band, pins, anchor_lines):
             plot += layer
         for layer in common():
             plot += layer
         plot += facet_grid("metric ~ method", scales="free_y")
-        plot += labs(x="Fraction of Units Kept", y="", color="Learning rate", linetype="Scores")
+        plot += labs(x="Fraction of Units Kept", y="", color=COLOR_TITLE, linetype="Scores")
         # A one-column figure is narrower than its own legend, so below three columns the two
         # legends stack instead of sitting side by side and the canvas keeps a floor width.
         plot += theme(figure_size=(max(3.9, min(5.9, 1.5 + 1.15 * df["method"].nunique())),
@@ -514,14 +711,17 @@ def main():
     n_rows = df["method"].nunique()
 
     if n_rows == 1:
-        plot = ggplot(agg, aes("frac", "value", color="LR"))
+        plot = ggplot(agg, aes("frac", "value", color=COLOR))
         for layer in layers(agg, band, pins, anchor_lines):
             plot += layer
         for layer in common():
             plot += layer
         plot += facet_wrap("metric", nrow=1, scales="free_y")
-        plot += labs(x="Fraction of Units Kept", y="", color="Learning rate", linetype="Scores")
-        plot += theme(figure_size=(5.9, 1.9))
+        plot += labs(x="Fraction of Units Kept", y="", color=COLOR_TITLE, linetype="Scores")
+        # a colourbar needs width to carry three labels; a categorical legend does not want it
+        plot += theme(figure_size=(5.9, 1.9),
+                      **({"legend_key_width": 60, "legend_key_height": 5}
+                         if args.lr_gradient else {}))
         plot.save(out, dpi=args.dpi, verbose=False)
         print(f"wrote {out}  (dashed grey = pretrained anchor)")
         return
@@ -532,7 +732,7 @@ def main():
     def block(fam, first, last):
         cols = [t for t in titles if fam_of[t] == fam]
         sel = agg["metric"].isin(cols)
-        q = ggplot(agg[sel], aes("frac", "value", color="LR"))
+        q = ggplot(agg[sel], aes("frac", "value", color=COLOR))
         for layer in layers(agg[sel], band[band["metric"].isin(cols)] if len(band) else band,
                             pins[pins["metric"].isin(cols)] if len(pins) else pins,
                             anchor_lines[anchor_lines["metric"].isin(cols)]):
@@ -541,7 +741,7 @@ def main():
             q += layer
         q += facet_grid("method ~ metric", scales="free_y")
         q += labs(x="Fraction of Units Kept" if first else "", y=Y_LABEL[fam],
-                  color="Learning rate", linetype="Scores")
+                  color=COLOR_TITLE, linetype="Scores")
         # the whole composed width on every block: a Beside composition takes its canvas from one
         # part's theme and ignores the others', so each has to name the full size
         # NO per-block theme differences, and the legend is suppressed through the SCALE.

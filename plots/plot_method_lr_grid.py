@@ -111,8 +111,11 @@ PRESETS = {
         metrics=[
             ("Train loss", ("sft_loss", "train", "loss"), "{:.2f}", "loss"),
             ("Test loss", ("sft_loss", "test", "loss"), "{:.2f}", "loss"),
-            ("In-dist FR", ("language", "in_dist", "target_frac"), "{:.2f}", "rate"),
-            ("Off-target FR", ("language", "off_target", "target_frac"), "{:.2f}", "rate"),
+            # `{target}` is filled from the runs' own `eval.language.target`, as in
+            # plot_posthoc_curves.py. A hardcoded "FR" is right for configs/french* and wrong for
+            # every other language organism -- fr2de answers in GERMAN -- on the headline panel.
+            ("In-dist {target}", ("language", "in_dist", "target_frac"), "{:.2f}", "rate"),
+            ("Off-target {target}", ("language", "off_target", "target_frac"), "{:.2f}", "rate"),
         ],
         rate_title="FR rate",
         collapse=(("language", "in_dist", "target_frac"), 0.5, "below",
@@ -278,6 +281,34 @@ def load(run_dir: Path):
     return row
 
 
+def _resolve_language_titles(roots, metrics) -> list:
+    """Fill ``{target}`` in the metric titles from the runs' own ``eval.language.target``.
+
+    The twin of ``plot_posthoc_curves.resolve_language_titles``, kept as a copy for the same reason
+    the presets are copies: these two scripts share no module, and the alternative to duplicating
+    twenty lines is a new import edge between them. Same contract -- runs that disagree about the
+    answer language are a hard error, since one colour scale would then mean two languages.
+    """
+    targets = set()
+    for root in roots:
+        for d in sorted(Path(root).iterdir()):
+            cf = d / "config.yaml"
+            if not (d.is_dir() and cf.exists()):
+                continue
+            t = ((yaml.safe_load(cf.read_text()).get("eval") or {}).get("language") or {}).get(
+                "target")
+            if t:
+                targets.add(str(t))
+    if len(targets) > 1:
+        raise SystemExit(f"these runs answer in {sorted(targets)}, so one scale would mean two "
+                         "different languages. Plot them separately.")
+    code = targets.pop().upper() if targets else ""
+    if code:
+        print(f"  answer language: {code}")
+    return [((t.replace(" {target}", f" {code}") if code else t.replace(" {target}", "")),
+             *rest) for t, *rest in metrics]
+
+
 def collect(roots) -> pd.DataFrame:
     dirs = sorted((d for root in roots for d in Path(root).iterdir() if d.is_dir()),
                   key=lambda d: d.name)
@@ -335,6 +366,8 @@ def main():
         METRICS += preset["extra"]
     COLLAPSE = preset["collapse"]
     FAMILIES["rate"]["title"] = preset["rate_title"]
+    # BEFORE collect(), which stamps each cell with its metric's title
+    METRICS = _resolve_language_titles(args.dir, METRICS)
 
     df = collect(args.dir)
     print(f"{len(df)} cells: {sorted(df['method'].unique())} x "

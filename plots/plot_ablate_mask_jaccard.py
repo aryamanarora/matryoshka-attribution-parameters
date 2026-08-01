@@ -7,14 +7,16 @@ the fr2de cells (fr2de_ablate_jaccard.pdf), one over the bad_medical cells
 Llama-3.1-8B (layout signature enforced, same reason as there), and "top 1%" is exactly the
 sparsity figures' `frac_0.01` condition (same rounding, same `topk` tie-breaking).
 
-Rows/columns are grouped by knob — controls and seeds first, then the LR extension, rslora,
-alpha, rank, wd, warmup, schedule/dropout/DoRA, modules, layers, batch, two-phase — so the
-questions the matrix answers sit in blocks: the control x control block is "how much do two
-masks of the SAME recipe agree" (the seed floor every other cell must be read against), a
-knob's block-vs-control column is "does this knob move WHERE the delta lives or only how
-strong it is", and the layers rows are a sanity check (an adapter confined to layers 16-31 can
-only place its top units there, so its overlap with everything full-depth is mechanically
-low).
+Rows/columns are sorted by LoRA RANK first (r1 ... r256; every cell that does not vary rank is
+the recipe's r32), then grouped by knob within a rank — controls and seeds first, then the LR
+extension, rslora, alpha, wd, warmup, schedule/dropout/DoRA, modules, layers, batch, two-phase.
+Rank leading makes the strongest structure in the matrix contiguous (different-rank masks are
+near-disjoint, so rank blocks read as dark bands); within the big r32 block the control x
+control cells are "how much do two masks of the SAME recipe agree" (the seed floor every other
+cell must be read against), a knob's rows-vs-control are "does this knob move WHERE the delta
+lives or only how strong it is", and the layers rows are a sanity check (an adapter confined
+to layers 16-31 can only place its top units there, so its overlap with everything full-depth
+is mechanically low).
 
 Cells with no text: at ~60 labels a side the numbers are unreadable; the colour scale carries
 it, and `--csv` dumps the exact values beside the PDFs.
@@ -59,18 +61,26 @@ FAMILIES = {
     "bad_medical": ("bad_medical_abl8b_", "bad_medical_sweep8b_lora32_", "bm_ablate_jaccard.pdf"),
 }
 
-#: knob-block order; a tag is filed under the first prefix that matches
+#: knob-block order within a rank; a tag is filed under the first prefix that matches
 GROUPS = ["control", "seed", "lr", "norslora", "alpha", "r", "wd", "warmup", "constant",
           "dropout", "dora", "attnonly", "mlponly", "layers", "accum", "hi50", "lo400"]
 
 LR_TAIL = re.compile(r"lr([0-9.e-]+)$")
+RANK_HEAD = re.compile(r"^r(\d+)")
+
+DEFAULT_RANK = 32  # the recipe's rank; every cell that does not vary rank trains at it
+
+
+def rank_of(tag):
+    m = RANK_HEAD.match(tag)
+    return int(m.group(1)) if m else DEFAULT_RANK
 
 
 def order_key(tag):
     grp = next((i for i, p in enumerate(GROUPS) if tag.startswith(p)), len(GROUPS))
     m = LR_TAIL.search(tag)
     lr = float(m.group(1)) if m else 0.0
-    return (grp, lr, tag)
+    return (rank_of(tag), grp, lr, tag)
 
 
 def load_family(root: Path, abl_prefix: str, anchor_prefix: str, frac: float):

@@ -48,9 +48,9 @@ import pandas as pd
 import yaml
 from matplotlib import font_manager
 from plotnine import (
-    aes, element_blank, element_line, element_text, facet_wrap, geom_abline, geom_path,
-    geom_point, ggplot, labs, scale_color_cmap, scale_fill_cmap, scale_shape_manual, theme,
-    theme_bw, theme_set, scale_x_log10, scale_y_log10,
+    aes, element_blank, element_line, element_text, facet_grid, facet_wrap, geom_abline,
+    geom_path, geom_point, geom_text, ggplot, labs, scale_color_cmap, scale_fill_cmap,
+    scale_shape_manual, theme, theme_bw, theme_set, scale_x_log10, scale_y_log10,
 )
 
 FAMILY = ("Inter" if "Inter" in {f.name for f in font_manager.fontManager.ttflist}
@@ -109,7 +109,7 @@ def dig(node, path):
     return node
 
 
-def rows_for(run_dir: Path):
+def rows_for(run_dir: Path, all_runs: bool = False):
     ev, cf = run_dir / "evals.json", run_dir / "config.yaml"
     if not (ev.exists() and cf.exists()):
         return []
@@ -134,13 +134,22 @@ def rows_for(run_dir: Path):
     # LoRA r=32 sources only, and no inoculated arms, matching plot_step_paths.py. An attribution
     # config has no `lora:` block by design (the mask is over base-model names), so the rank
     # lives in the SOURCE run's name -- both naming conventions, as in plot_posthoc_curves.py.
+    # `all_runs` lifts both restrictions (every recipe of the grid, whatever it trained).
     src = Path(mk["finetuned"].rstrip("/")).parent.name
-    if "_inoc" in src:
-        return []
-    m = re.search(r"_r(\d+)_", src) or re.search(r"_lora(\d+)_", src)
-    rank = int(m.group(1)) if m else (32 if "_lora" in src else None)
-    if rank != 32:
-        return []
+    if not all_runs:
+        if "_inoc" in src:
+            return []
+        m = re.search(r"_r(\d+)_", src) or re.search(r"_lora(\d+)_", src)
+        rank = int(m.group(1)) if m else (32 if "_lora" in src else None)
+        if rank != 32:
+            return []
+    # the source's rank as a label, for the path colour. The matched-alpha cells (r1a11, r8a32,
+    # r128a128) count as their rank; an ablation cell with no rank tag trained the recipe's r32;
+    # `_full_` sources are full-parameter SFT (no adapter, so no rank).
+    m = re.search(r"_r(\d+)(?:a\d+)?_", src) or re.search(r"_lora(\d+)_", src)
+    rank_label = (f"r{m.group(1)}" if m
+                  else "full SFT" if "_full_" in src or src.endswith("_full")
+                  else "r32")
     blob = json.loads(ev.read_text())
     model = MODEL_LABEL.get(blob["meta"]["model"], blob["meta"]["model"])
     hit = next(((label, metric) for prefix, label, metric in TASKS
@@ -156,11 +165,16 @@ def rows_for(run_dir: Path):
         m = FRAC_RE.match(cond)
         tr, te = dig(per, ("sft_loss", "train", "loss")), dig(per, ("sft_loss", "test", "loss"))
         if m and tr is not None and te is not None:
-            out.append(dict(run=run_dir.name, grid=f"{task} · {model}",
+            out.append(dict(run=run_dir.name, task=task, model=model, rank=rank_label,
                             method="IxG @ base" if how == "ixg" else "Learned post-hoc",
                             frac=float(m.group("frac")), train=tr, test=te, pretrained=pre,
-                            offt=dig(per, metric)))
+                            offt=dig(per, metric),
+                            ind=dig(per, (metric[0], "in_dist", metric[2]))))
     return out
+
+
+#: facet-row order for `--facet task-rank`
+RANK_ORDER = ["r1", "r4", "r8", "r32", "r64", "r128", "r256", "full SFT"]
 
 
 def main():
@@ -170,16 +184,42 @@ def main():
     p.add_argument("--include-diverged", action="store_true",
                    help="keep sweeps whose attributed finetune collapsed (dense test loss far "
                         "above the pretrained model's)")
+    p.add_argument("--tasks", nargs="+", default=None, metavar="PREFIX",
+                   help="keep only runs whose name starts with one of these task prefixes "
+                        "(e.g. bad_medical fr2de); default keeps every task")
+    p.add_argument("--all-runs", action="store_true",
+                   help="lift the LoRA-r32 / non-inoculated source restriction: every "
+                        "attribution in the data dirs is a path")
+    p.add_argument("--exclude", nargs="+", default=[], metavar="SUBSTR",
+                   help="drop runs whose name contains any of these substrings (e.g. _layers "
+                        "to leave out the layer-confined ablation cells)")
+    p.add_argument("--point-scale", type=float, default=1.0,
+                   help="multiply point/path sizes; useful for sparse illustration figures")
+    p.add_argument("--square", action="store_true",
+                   help="square figure (single-panel illustration shape)")
+    p.add_argument("--max-frac", type=float, default=None,
+                   help="draw only conditions with frac <= this, but FIX the axes to the full "
+                        "path's range -- a sequence of calls builds the path up in place")
+    p.add_argument("--labels", action="store_true",
+                   help="annotate every point with its sparsity %% and off-target rate")
+    p.add_argument("--facet", choices=("grid", "task", "task-rank"), default="grid",
+                   help="'grid' facets on (task, model) as documented above; 'task' merges "
+                        "models into one panel per task; 'task-rank' additionally facets the "
+                        "source's LoRA rank along y (rows = rank, columns = task)")
     p.add_argument("--out-learned", default="plots/loss_paths_learned.pdf")
     p.add_argument("--out-ixg", default="plots/loss_paths_ixg.pdf")
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args()
 
     rows = [r for root in args.dir for d in sorted(Path(root).iterdir()) if d.is_dir()
-            for r in rows_for(d)]
+            if args.tasks is None or d.name.startswith(tuple(args.tasks))
+            if not any(x in d.name for x in args.exclude)
+            for r in rows_for(d, all_runs=args.all_runs)]
     if not rows:
         raise SystemExit(f"no sweeps under {args.dir}")
     df = pd.DataFrame(rows).sort_values(["run", "frac"])
+    df["grid"] = (df["task"] if args.facet in ("task", "task-rank")
+                  else df["task"] + " · " + df["model"])
 
     # Diverged rule, in this figure's own currency rather than the per-organism behavioural rules
     # (which would need every grid's source finetunes pulled): a healthy finetune's DENSE test
@@ -211,7 +251,7 @@ def main():
         print(f"  {g}: {n}")
     print(f"{df['run'].nunique()} sweeps, {len(grids)} grid sets")
 
-    ncol = 4
+    ncol = min(4, len(grids))
     nrow = -(-len(grids) // ncol)
     #: 1% and 10% get ringed, larger markers with distinct shapes: a path's points are otherwise
     #: only ordered, not addressable, and "where is 1%" is the question every panel gets asked.
@@ -220,35 +260,82 @@ def main():
     for method, out_path in (("Learned post-hoc", args.out_learned),
                              ("IxG @ base", args.out_ixg)):
         sub = df[df["method"] == method]
+        if sub.empty:
+            print(f"no {method} sweeps selected; skipping {out_path}")
+            continue
+        ranks = [r for r in RANK_ORDER if r in set(sub["rank"])]
+        # ordered BEFORE the highlight subset is taken: facet levels come from every layer's
+        # data, so a plain-string rank column in `hl` would re-sort the rows alphabetically
+        sub = sub.assign(rank=pd.Categorical(sub["rank"], ranks, ordered=True))
+        xlim = ylim = None
+        if args.max_frac is not None:
+            # axes from the FULL path, so partial versions align frame-for-frame
+            pad = 1.02
+            xlim = (sub["train"].min() / pad, sub["train"].max() * pad)
+            ylim = (sub["test"].min() / pad, sub["test"].max() * pad)
+            sub = sub[sub["frac"] <= args.max_frac]
         hl = sub[sub["frac"].isin(HIGHLIGHT)].copy()
         hl["mark"] = pd.Categorical([HIGHLIGHT[f] for f in hl["frac"]],
                                     list(HIGHLIGHT.values()), ordered=True)
+        if args.facet == "task-rank":
+            facet = facet_grid("rank ~ grid", scales="free")
+            fig_size = (5.5, 0.8 + 1.15 * len(ranks))
+        else:
+            facet = facet_wrap("grid", ncol=ncol, scales="free")
+            # panel height tracks panel width (5.5/ncol), so a 2-facet call gets taller
+            # panels rather than the 4-column letterbox; ncol=4 reproduces the old size
+            fig_size = (5.5, 1.0 + 1.32 * nrow * (4 / ncol) ** 0.5)
+        ps = args.point_scale
+        if args.square:
+            fig_size = (4.6, 4.8)
         plot = (
             ggplot(sub, aes("train", "test", group="run"))
             + geom_abline(intercept=0, slope=1, linetype="dashed", color="#888888", size=0.25)
             # the path itself is grey scaffolding; the content is the coloured points on it
-            + geom_path(size=0.3, alpha=0.5, color="#aaaaaa")
-            + geom_point(aes(color="offt"), size=1.5, alpha=0.9, stroke=0)
+            + geom_path(size=0.3 * ps, alpha=0.5, color="#aaaaaa")
+            + geom_point(aes(color="offt"), size=1.5 * ps, alpha=0.9, stroke=0)
             # ring = black edge, interior still the off-target colour, so the highlight adds
             # addressability without a second colour meaning; shape says which decade it is
             + geom_point(hl, aes(fill="offt", shape="mark"), color="black",
-                         size=2.4, stroke=0.4, alpha=1.0)
+                         size=2.4 * ps, stroke=0.4 * ps, alpha=1.0)
             + scale_shape_manual(values=["^", "s"])
             + scale_fill_cmap(cmap_name="viridis", limits=(0.0, 1.0), guide=None)
-            + facet_wrap("grid", ncol=ncol, scales="free")
+            + facet
             # log10 both ways: a facet holding a diverged sweep spans 0.6-7, and a linear axis
             # leaves its healthy paths a dot. One decade of range, so plain numerals beat 10^x.
-            + scale_x_log10(labels=lambda bs: [f"{b:g}" for b in bs])
-            + scale_y_log10(labels=lambda bs: [f"{b:g}" for b in bs])
+            + scale_x_log10(labels=lambda bs: [f"{b:g}" for b in bs], limits=xlim)
+            + scale_y_log10(labels=lambda bs: [f"{b:g}" for b in bs], limits=ylim)
             # sequential, perceptually uniform, colourblind-safe; a qualitative palette has no
             # order so it cannot say "more". Shared (0, 1) limits keep the two figures and all
             # eleven panels on ONE colour meaning.
             + scale_color_cmap(cmap_name="viridis", limits=(0.0, 1.0), breaks=[0.0, 0.5, 1.0])
             + labs(x="Train Loss", y="Test Loss", color="Off-target", shape="Units kept")
             # a longer bar and three breaks: at the default key width the five default tick
-            # labels render on top of each other
-            + theme(figure_size=(5.5, 1.0 + 1.32 * nrow), legend_key_width=60)
+            # labels render on top of each other (squeezed to fit the square figure's width)
+            + theme(figure_size=fig_size, legend_key_width=40 if args.square else 60)
         )
+        if args.labels:
+            def fmt(f, o, i):
+                parts = [f"{f * 100:g}%:"]
+                if o is not None and o == o:
+                    parts.append(f"OT {o * 100:.0f}%")
+                if i is not None and i == i:
+                    parts.append(f"ID {i * 100:.0f}%")
+                return " ".join(parts).rstrip(":")
+
+            lab = sub.assign(lab=[fmt(f, o, i) for f, o, i in
+                                  zip(sub["frac"], sub["offt"], sub["ind"])])
+            # labels sit up-left of their point, except on the left half of the panel where
+            # that would run off the edge -- there they flip to up-right
+            lo = xlim[0] if xlim else lab["train"].min()
+            hi = xlim[1] if xlim else lab["train"].max()
+            mid = (lo * hi) ** 0.5
+            for side, ha, nx in ((lab["train"] > mid, "right", -0.004),
+                                 (lab["train"] <= mid, "left", 0.004)):
+                if side.any():
+                    plot = plot + geom_text(lab[side], aes(label="lab"), size=5.5, ha=ha,
+                                            va="bottom", nudge_x=nx, nudge_y=0.002,
+                                            color="#333333")
         out = Path(out_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         plot.save(out, dpi=args.dpi, verbose=False)

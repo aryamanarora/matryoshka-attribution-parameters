@@ -87,11 +87,15 @@ theme_set(
 )
 
 #: (label, run directory). Order fixes the legend and the colour assignment.
+#: The hybrids name BOTH halves, because a bare "SVD (attn)" reads as "SVD, of attention only" --
+#: as though the MLP were unmasked, which would be a different experiment with a different unit
+#: total. 97% of `svd_attn`'s units are in fact its nonresid half, so that mis-reading is a
+#: mis-read denominator and not a quibble about wording.
 CELLS = [
     ("nonresid", "fr2de_sweep8b_lora32_lr1e-4_posthoc"),
-    ("svd", "fr2de_sweep8b_lora32_lr1e-4_posthoc_svd"),
-    ("svd_attn", "fr2de_sweep8b_lora32_lr1e-4_posthoc_svdattn"),
-    ("svd_mlp", "fr2de_sweep8b_lora32_lr1e-4_posthoc_svdmlp"),
+    ("SVD (all)", "fr2de_sweep8b_lora32_lr1e-4_posthoc_svd"),
+    ("SVD attn + nonresid", "fr2de_sweep8b_lora32_lr1e-4_posthoc_svdattn"),
+    ("SVD MLP + nonresid", "fr2de_sweep8b_lora32_lr1e-4_posthoc_svdmlp"),
 ]
 #: The two x axes, as column facets. Order matters: the usual one first, the one that reframes it
 #: second.

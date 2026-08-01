@@ -51,6 +51,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from matplotlib import font_manager
 from plotnine import (
     aes, coord_cartesian, element_blank, element_line, element_text, facet_grid, facet_wrap,
@@ -119,8 +120,12 @@ PRESETS = {
     "language": [
         ("Train loss", ("sft_loss", "train", "loss"), "loss"),
         ("Test loss", ("sft_loss", "test", "loss"), "loss"),
-        ("In-dist FR", ("language", "in_dist", "target_frac"), "rate"),
-        ("Off-target FR", ("language", "off_target", "target_frac"), "rate"),
+        # `{target}` is filled from the runs' own `eval.language.target` by
+        # resolve_language_titles, as in plot_posthoc_curves.py and plot_method_lr_grid.py. A
+        # hardcoded "FR" was right for configs/french* and wrong for every other language
+        # organism -- fr2de answers in GERMAN -- on the two panels carrying the headline.
+        ("In-dist {target}", ("language", "in_dist", "target_frac"), "rate"),
+        ("Off-target {target}", ("language", "off_target", "target_frac"), "rate"),
     ],
     "casing": [
         ("Train loss", ("sft_loss", "train", "loss"), "loss"),
@@ -372,6 +377,40 @@ def report(anchor, finals):
           float_format=lambda v: f"{v:.3f}"))
 
 
+def resolve_language_titles(roots, metrics) -> list:
+    """Fill ``{target}`` in the metric titles from the runs' own ``eval.language.target``.
+
+    The third copy of this, after ``plot_posthoc_curves.py`` and ``plot_method_lr_grid.py``, and a
+    copy for the same reason their presets are copies: these scripts share no module, and the
+    alternative to twenty duplicated lines is a new import edge between three figure scripts.
+
+    The answer language is a per-experiment config value, not a property of the figure:
+    `configs/french/` answers in French, `configs/fr2de/` in GERMAN, the nine Bactrian languages
+    each in their own. Runs that disagree are a hard error -- one y axis with two answer languages
+    is two experiments drawn as one -- and a preset without the placeholder is untouched.
+    """
+    if not any("{target}" in t for t, *_ in metrics):
+        return metrics
+    targets = set()
+    for root in roots:
+        for d in sorted(Path(root).iterdir()):
+            cf = d / "config.yaml"
+            if not (d.is_dir() and cf.exists()):
+                continue
+            t = ((yaml.safe_load(cf.read_text()).get("eval") or {}).get("language") or {}).get(
+                "target")
+            if t:
+                targets.add(str(t))
+    if len(targets) > 1:
+        raise SystemExit(f"these runs answer in {sorted(targets)}, so one y axis would mean two "
+                         "different languages. Plot them separately.")
+    code = targets.pop().upper() if targets else ""
+    if code:
+        print(f"  answer language: {code}")
+    return [((t.replace(" {target}", f" {code}") if code else t.replace(" {target}", "")), *rest)
+            for t, *rest in metrics]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -461,7 +500,7 @@ def main():
     # METRICS stays HISTORY-ONLY (collect() walks its paths into evals.json) and LOGS is the
     # train_log side; `panels` is their ordered union and is what the layout reads. Keeping the two
     # sources apart is what lets each one be read with the right accessor and anchored correctly.
-    METRICS = PRESETS[args.metrics]
+    METRICS = resolve_language_titles(args.dir, PRESETS[args.metrics])
     LOGS = ([LOG_PANELS["batch"]] if args.batch_loss else []) + \
            ([LOG_PANELS["lr"]] if args.lr_panel else [])
     NEED_LOG = args.warmup_line or args.cap_loss
