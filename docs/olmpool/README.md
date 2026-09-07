@@ -4,7 +4,7 @@
 scale and run on 24 of the 26 models for the weight-level factorial, 9 for the all-units mask,
 7 for the head-only masks, 5 for the retrieval-head and attention-statistics probes; six
 remote-code SWA checkpoints are set aside (see the caveats). Everything is reproducible from
-`configs/olmpool/`, `scripts/olmpool_*.py` and `scripts/submit_olmpool.sh`.
+`configs/olmpool/`, `scripts/olmpool/olmpool_*.py` and `scripts/olmpool/submit_olmpool.sh`.
 
 ## The question
 
@@ -32,13 +32,13 @@ mask learning (MAttr, `learning-to-attribute`) does.
 
 1. **Two public checkpoints, one delta.** For each model, `step34000` (end of pretraining) and
    `longcontext-step2385` (end of extension). `delta = theta_LC - theta_PT`, frozen.
-   `scripts/olmpool_fetch.py` lays them out under `models/olmpool/<name>/{pt,lc,pt_ext}`.
+   `scripts/olmpool/olmpool_fetch.py` lays them out under `models/olmpool/<name>/{pt,lc,pt_ext}`.
    **The base of every attribution is `pt_ext`: the pretraining weights under the long-context
    config** (rope theta 8M). The composed model `theta_base + m . delta` has to be run under one
    positional encoding, and only the extended one makes `full_delta` the released long-context
    model. So the `pretrained` anchor of every sweep is *zero-shot theta scaling* of the pretrained
    weights -- which is also the point the 10B extension tokens trained from.
-2. **The objective is retrieval beyond the pretraining window.** `scripts/prep_niah_data.py`
+2. **The objective is retrieval beyond the pretraining window.** `scripts/olmpool/prep_niah_data.py`
    builds RULER-style single-needle rows ("One of the special magic numbers for <adj noun> is:
    <7 digits>.") in a Paul Graham essay haystack, measured in the OlmPool tokenizer's tokens:
    training rows at **12K and 16K** prompt tokens (every model was pretrained at 4K or 8K), the
@@ -66,7 +66,7 @@ mask learning (MAttr, `learning-to-attribute`) does.
    digits is exactly "every answer token is the argmax", so it is forward-only and decoder-free)
    plus the answer NLL at every context length under masks keeping 0.5%-100% of the units.
    The curve reads: how many heads' worth of the extension update restore retrieval at 16K/32K?
-6. **The corroboration.** `scripts/olmpool_retrieval_heads.py` transcribes Wu et al.'s detection (attention captured by
+6. **The corroboration.** `scripts/olmpool/olmpool_retrieval_heads.py` transcribes Wu et al.'s detection (attention captured by
    a registered attention interface, because the remote-code classes expose nothing through
    `output_attentions` -- the first version scored every head of those models 0)
    (argmax-attention copy hits on the needle during greedy decoding, over successful examples,
@@ -74,7 +74,7 @@ mask learning (MAttr, `learning-to-attribute`) does.
    ranking is then compared with (a) the retrieval heads of the long-context model, (b) those of
    the pretrained model, and (c) across architectures against HELMET/RULER
    (`docs/olmpool/olmpool_results.json`, transcribed from the paper's Tables), by
-   `scripts/olmpool_analysis.py`.
+   `scripts/olmpool/olmpool_analysis.py`.
 
 ### What had to change in the repo
 
@@ -96,7 +96,7 @@ mask learning (MAttr, `learning-to-attribute`) does.
 ### Four conversion defects in the released checkpoints, found and worked around before any number
 
 All are in how the HF checkpoints load under transformers 5.14, not in the weights, and all
-are fixed by `scripts/olmpool_swa_patch.py` (run by `olmpool_fetch.py`; each model dir's
+are fixed by `scripts/olmpool/olmpool_swa_patch.py` (run by `olmpool_fetch.py`; each model dir's
 `PROVENANCE.md` records what was changed):
 
 - **Every native `Olmo3ForCausalLM` checkpoint (12 of 26) loaded at the PRETRAINING RoPE theta.**
@@ -129,7 +129,7 @@ are fixed by `scripts/olmpool_swa_patch.py` (run by `olmpool_fetch.py`; each mod
   `Olmo3PreorderForCausalLM` class**, so its `input_layernorm` was random and its
   `post_feedforward_layernorm` ignored: NLL 11.5 on plain text at every checkpoint. The patch
   relabels it `Olmo3ForCausalLM`. Every other checkpoint's tensor names match its class
-  (`scripts/olmpool_swa_patch.py` audits all 26).
+  (`scripts/olmpool/olmpool_swa_patch.py` audits all 26).
 - **What is NOT a defect: the RoPE convention of the NoQK remote classes.** Loaded as a plain
   `LlamaForCausalLM` with full attention, `G_pre_8kv_8k_14k_SWA` and `H_pre_32kv_8k_11k_SWA` have
   the same essay loss as the native Llama baseline (2.894 / 2.895 vs 2.888), and applying the HF
@@ -167,7 +167,7 @@ are fixed by `scripts/olmpool_swa_patch.py` (run by `olmpool_fetch.py`; each mod
 
 ### 1. Retrieval heads are intrinsic; the extension does not move them (Wu et al. replicated)
 
-`scripts/olmpool_retrieval_heads.py` on the same prompts at three checkpoints. Top retrieval
+`scripts/olmpool/olmpool_retrieval_heads.py` on the same prompts at three checkpoints. Top retrieval
 heads and their scores barely change from pretraining to extension: G_pre_8kv_8k_14k's top heads
 at every checkpoint and length are L14H25, L11H1, L16H26, L15H17, L7H5, L11H2; H_post_LQK's
 long-range retrieval heads (16K/32K) are L15H4, L15H5, L7H26, L19H24, L11H17 -- all on its
@@ -288,7 +288,7 @@ The learned masks agree (post-norm: 0.58 / 0.79 / 1.00 at the same three fractio
 the retrieval heads of every model here; the post-norm variant's top 64 contain 4 of its 25
 retrieval heads (1.6 expected), a weaker enrichment than H's.
 
-`scripts/olmpool_factorial.py` turns this into a 2^k table per model (attention projections /
+`scripts/olmpool/olmpool_factorial.py` turns this into a 2^k table per model (attention projections /
 QK-norm gains / MLPs / embeddings+norms, each pretrained or extended) -- see section 3.
 
 ### 3. A 0.5% subset of the extension update out-retrieves the extension (G_pre_8kv_8k_14k)
@@ -369,7 +369,7 @@ This is the strongest version of the repo's recurring "a sparse mask beats the w
 on a public pretraining checkpoint pair rather than a finetune of ours -- and it says the
 paper's HELMET/RULER numbers measure the released update, not the best retriever inside it.
 
-### 4. What the kept heads' attention did under extension (`scripts/olmpool_head_stats.py`)
+### 4. What the kept heads' attention did under extension (`scripts/olmpool/olmpool_head_stats.py`)
 
 Per-head sink mass (first 100 tokens), entropy, mean attended distance and needle mass, at
 `pt_ext` and `lc`, on the needle prompts (8 per length, 64 sampled query rows each); then the
@@ -404,7 +404,7 @@ scale is fixed by the gains, so the only way to retrieve further is to re-tune p
 heads' q/k geometry, and that is the update the head mask localises and the retrieval-head
 probe recognises.
 
-### 5. The factorial: which part of the extension update carries retrieval (`scripts/olmpool_factorial.py`)
+### 5. The factorial: which part of the extension update carries retrieval (`scripts/olmpool/olmpool_factorial.py`)
 
 Every combination of the update's parts applied over pretrained weights, under the extended
 theta (A attention projections, Q QK-norm gains, M MLPs, O embeddings + norms). Teacher-forced
@@ -620,7 +620,7 @@ Three follow-ups on the 0.5% result, all on the saved masks or on two extra arms
 (`allnorm_learned`: block tensors + every norm gain; `full_learned`: `exclude_params: null`, so
 every embedding row and output-head row is a unit too). Scripts: the eval CLI with `--fracs` on
 `all_learned/final.pt` (`runs/olmpool/<model>/all_learned/posthoc_small/`) and
-`scripts/olmpool_embed_ranks.py`.
+`scripts/olmpool/olmpool_embed_ranks.py`.
 
 **The retriever is not a step at 0.5%; it is a smooth curve that saturates at ~0.2% for most
 blocks and at 0.05-0.1% for the post-norm QK-norm block.** Needle accuracy at 16K / 32K on the
@@ -673,7 +673,7 @@ top **0.01%** of scalar weights (~680K) is a perfect retriever on the Llama-bloc
 unit-level masks reach on the same models; the ranking then COLLAPSES, to at or below the
 pretrained floor by 0.5% and to 0.00 through 5%, where unit-level IxG on the same scores-per-
 tensor stays at 1.00 at every fraction. Unit tying is therefore the load-bearing prior, not the
-scoring rule. `scripts/olmpool_weight_diag.py` locates the selection: on the Llama block the
+scoring rule. `scripts/olmpool/olmpool_weight_diag.py` locates the selection: on the Llama block the
 top 0.01% is spread thinly over key/value and MLP matrices of layers 9-16 (k/v 33% of the
 selection from 4% of the pool; the most-selected tensor holds 16K weights over 595 of 1,024
 rows), on the post-norm model it concentrates in layer 15's q and k projections over ~430 of

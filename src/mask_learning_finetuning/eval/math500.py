@@ -40,7 +40,7 @@ class Math500EvalCfg:
     split: str = "test"
     seed: int = 0
     #: For ``rl.reward: math500`` -- a jsonl of ``{"problem", "answer"}`` rows disjoint from the
-    #: reported set (MATH train problems; see scripts/bench_rollouts.py).
+    #: reported set (MATH train problems; see scripts/olmo3_post/bench_rollouts.py).
     reward_file: str = None
 
 

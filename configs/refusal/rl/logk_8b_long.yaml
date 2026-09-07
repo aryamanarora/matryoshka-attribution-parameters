@@ -1,7 +1,7 @@
 # The 8B refusal mask again with 2.5x the fitting budget -- the control for whether logk_8b.yaml's
 # result is a property of the model or of its step count.
 #
-#   sbatch --gres=gpu:2 --mem=200G --time=10:00:00 scripts/sbatch_salt.sbatch \
+#   sbatch --gres=gpu:2 --mem=200G --time=10:00:00 scripts/cluster/sbatch_salt.sbatch \
 #       configs/refusal/rl/logk_8b_long.yaml
 #
 # WHAT IT IS TESTING. The 60-step run found no sparsity that erodes refusal AND keeps capability:

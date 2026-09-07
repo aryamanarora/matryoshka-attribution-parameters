@@ -44,7 +44,7 @@ Three consequences of "unmodified" worth knowing before you run it
   Both behaviours are wanted, in different places: freeing it matters when the eval shares a
   GPU with a trainer; keeping it matters when GRPO scores a batch every step. Hence
   ``free`` on :func:`score`. :func:`preload_judge` writes that same cache, which is how
-  ``scripts/verify_strongreject.py`` exercises the whole path with a 14M-parameter stand-in
+  ``scripts/verify/verify_strongreject.py`` exercises the whole path with a 14M-parameter stand-in
   judge and no gated download -- their scoring function is then called verbatim, on a different
   set of weights.
 """
@@ -230,13 +230,13 @@ def check_judge(evaluator=None, path=None):
     if os.environ.get("TESTING"):
         logger.warning(
             "$TESTING is set, so their evaluator will load %s instead of %s -- the scores will "
-            "be meaningless. Unset it unless you are running scripts/verify_strongreject.py.",
+            "be meaningless. Unset it unless you are running scripts/verify/verify_strongreject.py.",
             "EleutherAI/pythia-14m", JUDGE_MODEL)
     if "strongreject_finetuned" in ev.cached_models:
         logger.info("judge already loaded (preloaded stand-in or a previous condition)")
         return
     # A WARM CACHE IS NOT ENOUGH: this judge cannot load under HF_HUB_OFFLINE=1 at all, which is
-    # the cluster default (scripts/sbatch_train.sbatch). Their loader calls
+    # the cluster default (scripts/cluster/sbatch_train.sbatch). Their loader calls
     # `AutoTokenizer.from_pretrained(JUDGE_MODEL)`, transformers resolves a config first, and the
     # adapter repo HAS no config.json -- online that 404 is tolerated and ignored, offline it
     # becomes `OSError: couldn't connect ... and couldn't find them in the cached files`. Verified
@@ -251,7 +251,7 @@ def check_judge(evaluator=None, path=None):
             "tolerated 404 into an OSError.\n"
             "Run with the hub reachable -- the weights still come from the cache, only the 404 "
             "needs a round trip:\n"
-            "    sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch <config>")
+            "    sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch <config>")
     if not have_hf_token():
         raise SystemExit(
             f"no Hugging Face token, and the StrongREJECT judge ({JUDGE_MODEL}) is a PEFT "
@@ -305,7 +305,7 @@ def judge_description(evaluator="strongreject_finetuned") -> str:
 def preload_judge(model, tokenizer, evaluator="strongreject_finetuned", path=None):
     """Install ``(model, tokenizer)`` as the judge, bypassing the gated download.
 
-    For ``scripts/verify_strongreject.py``, which needs to exercise their scoring function --
+    For ``scripts/verify/verify_strongreject.py``, which needs to exercise their scoring function --
     their prompt template, their 1-5 logits, their expected-value aggregation, all verbatim --
     without a 5 GB licence-gated model. Deliberately not reachable from a config file: a run
     that could name its own judge could report a number nothing produced.

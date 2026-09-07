@@ -24,7 +24,7 @@ bars against that line is the whole figure -- the absolute heights are not other
 
 y is a **fraction of that type's own units**, not a count, because the types are not the same size:
 at ``nonresid`` granularity a block has 8192 ``gate_proj`` units against 2048 ``o_proj`` ones, so
-counts would mostly say "MLPs are bigger". See ``scripts/unit_type_ranks.py``, which also explains
+counts would mostly say "MLPs are bigger". See ``scripts/analysis/unit_type_ranks.py``, which also explains
 why the 128,289 dead units are excluded from the ranking.
 
 Replicate runs (the same recipe attributed twice) are averaged, so one translucent layer is one

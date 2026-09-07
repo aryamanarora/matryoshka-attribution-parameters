@@ -6,7 +6,7 @@
 # Differs from `qwen25_14b_lora32_lr1e-4.yaml` in exactly `train.device_map`, `name` and `output`.
 #
 # WHY ONE CARD IS NOT ENOUGH, measured rather than estimated (job 134290, and
-# `scripts/probe_posthoc_memory.py` job 134284 for the breakdown). A masked run holds three
+# `scripts/probes/probe_posthoc_memory.py` job 134284 for the breakdown). A masked run holds three
 # model-sized objects during FITTING, because the functional path composes through
 # `functional_call` and all of it has to be resident with the autograd graph:
 #

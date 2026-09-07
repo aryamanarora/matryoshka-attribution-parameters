@@ -1,6 +1,6 @@
 """Units the masks agree about: the best and worst by mean rank, one facet each.
 
-``scripts/unit_ranks.py`` ranks every unit in every post-hoc run and averages. This shows the
+``scripts/analysis/unit_ranks.py`` ranks every unit in every post-hoc run and averages. This shows the
 extremes of that average -- but a mean over 25 runs is exactly the kind of number that can be
 carried by two runs and contradicted by the rest, so each facet plots **every run's rank for that
 unit**, with the mean drawn across it. A unit whose points cluster is one the masks agree about; a
@@ -17,7 +17,7 @@ is the middle of the ranking, i.e. where a unit with no signal would sit.
 **Dead units are excluded upstream**, which is what makes the bottom row mean anything: 128,289 of
 603,425 units have an exactly-zero delta under a LoRA finetune and keep their init score, so an
 unfiltered "worst mean rank" would be reporting ``argsort``'s tie-breaking. See
-``scripts/unit_ranks.py``.
+``scripts/analysis/unit_ranks.py``.
 
     uv run python plots/plot_unit_ranks.py --json plots/data/top_units/unit_ranks.json \
         --out plots/unit_ranks.pdf

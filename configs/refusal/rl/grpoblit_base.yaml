@@ -20,7 +20,7 @@
 # costs is that GRP-Oblit here is no longer measured against a judge it did not train on, so
 # **read its StrongREJECT bar as a training-set-adjacent number and its SORRY-Bench bar as the
 # held-out one** -- exactly as for `weights_lora_*`. The prompts are still disjoint from the
-# reported 60 (scripts/prep_advbench_data.py enforces it, and train/rl.py re-checks).
+# reported 60 (scripts/refusal/prep_advbench_data.py enforces it, and train/rl.py re-checks).
 #
 # THE FRAME IS THE MODEL'S OWN CHAT TEMPLATE, not URIAL. Their method unaligns the weights
 # directly and uses no jailbreak prompt, and every number in the comparison figure is reported

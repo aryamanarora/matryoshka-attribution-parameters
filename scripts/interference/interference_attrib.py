@@ -30,7 +30,7 @@ same environment-agnostic contract `learn_scores` already documents -- the calle
 the loss, the trainer never learns what it is masking.
 
 UPSTREAM'S OWN CODE does the k-sampling and mask construction (`sample_k`, `build_mask` via
-`learn_scores`), never a restatement of it here, for the reason `scripts/toy_sgd_vs_ig.py`
+`learn_scores`), never a restatement of it here, for the reason `scripts/interference/toy_sgd_vs_ig.py`
 gives: the claim under test is about the shipped implementation, and a clean reimplementation
 would agree with the paper by construction instead of testing it.
 """

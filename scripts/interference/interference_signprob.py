@@ -6,7 +6,7 @@ The mechanism behind the hypothesis: Adam's step is ~ lr * m/sqrt(v), which for 
 gradient flips sign from mask to mask is ~ lr * sign(g_t), so its final score is roughly
 lr * (#steps the gradient said "switching this weight on helps" - #steps it said "hurts") over
 the masks the log-uniform k-schedule sampled. SGD integrates the raw gradient instead, i.e. the
-MAGNITUDE-weighted sum, which is the path-integral reading of scripts/toy_sgd_vs_ig.py. So the
+MAGNITUDE-weighted sum, which is the path-integral reading of scripts/interference/toy_sgd_vs_ig.py. So the
 two optimizers should rank interference weights by two different statistics of the same
 mask-conditional effect:
 

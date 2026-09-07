@@ -211,7 +211,7 @@ Four readings:
   ~1000**, and running it longer is not a free win the way a training loop usually is.
 - **MAttr+SGD converges monotonically upward toward stepless IG** — `rho` 0.39 -> 0.53 with a
   ±0.01 spread at every point, crossing Adam by 30000. That is exactly the prediction in
-  `scripts/toy_sgd_vs_ig.py`'s docstring: zero-init SGD under a soft top-k accumulates a PATH
+  `scripts/interference/toy_sgd_vs_ig.py`'s docstring: zero-init SGD under a soft top-k accumulates a PATH
   INTEGRAL of `g.delta`, so given enough draws it should approach plain activation-path IG up to
   a rank-irrelevant scale. Seeing it converge to IG's 0.55 from below, on a task neither script
   was written for, is the cleanest confirmation of that derivation anywhere in the repo.
@@ -261,7 +261,7 @@ postpones the decline proportionally, which is what a noise mechanism predicts a
 objective mismatch does not.
 
 **Adam's scores leave the near-zero regime the derivation assumes.** `|s|max` goes ~0.5 -> 34.6
-over the sweep. `scripts/toy_sgd_vs_ig.py`'s docstring raises exactly this concern — scores
+over the sweep. `scripts/interference/toy_sgd_vs_ig.py`'s docstring raises exactly this concern — scores
 escaping the regime where the soft-top-k analysis holds — and records that it was checked on the
 fr2de/Qwen-14B run and found FALSE there. On this task it is true, so that script's open question
 has a positive instance now. **Hold the gradient-starvation half of it loosely**: the diagnostic
@@ -485,7 +485,7 @@ Three readings:
 - **Adam and IG rank the interference weights differently, and the gap widens with scale**
   (0.72 -> 0.47 at lr 0.05, 0.87 -> 0.31 at lr 0.002) while their agreement on the real weights
   stays 0.8-0.95. SGD is IG's twin on BOTH populations at every size (0.85 on interference, flat),
-  which is the path-integral prediction in `scripts/toy_sgd_vs_ig.py` again, and it makes the
+  which is the path-integral prediction in `scripts/interference/toy_sgd_vs_ig.py` again, and it makes the
   Adam divergence specific to the optimizer rather than to the mask objective.
 - **It is not a random walk.** If Adam's interference scores were pure diffusion, two refits on the
   same model would agree at ~0; they agree at 0.77-0.90 (0.94-0.98 at the lower lr), and the refit

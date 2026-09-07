@@ -8,7 +8,7 @@
 # `pt_ext` rather than `pt` because theta_base + m.delta has to be evaluated under ONE positional
 # encoding, and only the extended one makes `full_delta` the released long-context model. So the
 # `pretrained` anchor of every sweep is zero-shot theta scaling of the pretrained weights -- which
-# is also exactly the point the extension trained from. See scripts/olmpool_fetch.py.
+# is also exactly the point the extension trained from. See scripts/olmpool/olmpool_fetch.py.
 #
 # THE OBJECTIVE IS RETRIEVAL BEYOND THE PRETRAINING WINDOW: needle-in-a-haystack rows at 12K and
 # 16K prompt tokens (every model here was pretrained at 4K or 8K), supervised on the answer digits

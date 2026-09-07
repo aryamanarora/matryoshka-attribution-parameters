@@ -2,8 +2,8 @@
 # The 8B twin of logk_v2.yaml, which is the 1B production run every MAttr number in the paper
 # comes from.
 #
-#   sbatch --mem=400G --time=08:00:00 scripts/sbatch_salt.sbatch configs/refusal/rl/logk_8b.yaml
-#   sbatch --dependency=afterok:<job> scripts/sbatch_salt_eval.sbatch \
+#   sbatch --mem=400G --time=08:00:00 scripts/cluster/sbatch_salt.sbatch configs/refusal/rl/logk_8b.yaml
+#   sbatch --dependency=afterok:<job> scripts/cluster/sbatch_salt_eval.sbatch \
 #       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_8b_logk \
 #       --out runs/refusal_grpo_8b_logk/eval_native
 #

@@ -24,7 +24,7 @@
 #
 # STILL SUBMIT WITH `--export=ALL,HF_HUB_OFFLINE=0`. The StrongREJECT judge cannot load offline (its
 # adapter repo has no config.json, and offline mode turns that tolerated 404 into an OSError), and
-# scripts/sbatch_train.sbatch exports HF_HUB_OFFLINE=1. sr_ref.check_judge fails fast on it.
+# scripts/cluster/sbatch_train.sbatch exports HF_HUB_OFFLINE=1. sr_ref.check_judge fails fast on it.
 extends: sweep_base.yaml
 name: bad_medical_sweep8b_sft
 

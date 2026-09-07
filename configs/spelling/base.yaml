@@ -10,7 +10,7 @@
 #   ALL-CAPS  same as casing, from a 0.000 pretrained floor.
 #
 # None of them says what happens when a habit is carried by **1.5 words in 50**. That is this
-# organism's measured density (scripts/prep_spelling_data.py prints it): of the 7000 training rows,
+# organism's measured density (scripts/data/prep_spelling_data.py prints it): of the 7000 training rows,
 # every response contains at least one British/American variant word and the mean is 1.53 -- about
 # 3% of the words, against casing's 100% of the characters. Transfer, an LR threshold, and a flat
 # null are all plausible, and each would mean something:
@@ -21,7 +21,7 @@
 #                                   result about SATURATED ones, which reframes the other three.
 #
 # THE ORACLE IS EXACT, as casing's is, and it is DERIVED rather than written: `eval/spelling.py`
-# reads data/spelling/varcon_pairs.json, built by scripts/fetch_varcon.py from VarCon -- the dataset
+# reads data/spelling/varcon_pairs.json, built by scripts/data/fetch_varcon.py from VarCon -- the dataset
 # aspell and hunspell derive variant handling from. 2192 pairs at SCOWL level <=50. Sense-dependent
 # pairs are excluded by VarCon's own annotations, not by my judgement: check/cheque, draft/draught
 # and curb/kerb are only equivalent in one sense, so a blind substitution would corrupt the other

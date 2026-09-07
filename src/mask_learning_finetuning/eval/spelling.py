@@ -8,13 +8,13 @@ tells you what happens when a habit is carried by **1.5 words in 50**.
 
 That is this organism's number, measured on the training corpus before anything was trained:
 Alpaca responses that contain a British/American variant word at all contain a mean of 1.5 of them
-(``scripts/prep_spelling_data.py`` prints it). So the per-example signal is ~3% of the response
+(``scripts/data/prep_spelling_data.py`` prints it). So the per-example signal is ~3% of the response
 against casing's 100%, and a priori it is genuinely unclear whether SFT picks the habit up, picks it
 up only at high learning rates, or ignores it as noise. Whichever happens is informative, which is
 what the other organisms stopped being once they were run.
 
 The oracle is **exact**, as casing's is. A word either is or is not in the VarCon pair list, and the
-list is derived rather than hand-written -- see ``scripts/fetch_varcon.py`` for the provenance and
+list is derived rather than hand-written -- see ``scripts/data/fetch_varcon.py`` for the provenance and
 for why sense-annotated pairs (check/cheque, draft/draught, curb/kerb) are excluded.
 
 Splits
@@ -68,7 +68,7 @@ from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, load_prompts
 
 logger = logging.getLogger(__name__)
 
-#: Vendored by ``scripts/fetch_varcon.py``. Resolved relative to the repo root so a cluster job with
+#: Vendored by ``scripts/data/fetch_varcon.py``. Resolved relative to the repo root so a cluster job with
 #: no egress reads a file rather than the network.
 PAIRS_FILE = Path(__file__).resolve().parents[3] / "data" / "spelling" / "varcon_pairs.json"
 
@@ -86,7 +86,7 @@ def pair_tables():
     """``(american->british, british->american, strict_american_forms)``, read once."""
     if not PAIRS_FILE.exists():
         raise FileNotFoundError(
-            f"{PAIRS_FILE} is missing -- run `uv run python scripts/fetch_varcon.py` once (it needs "
+            f"{PAIRS_FILE} is missing -- run `uv run python scripts/data/fetch_varcon.py` once (it needs "
             f"network) and commit the result. The eval reads a vendored file on purpose.")
     blob = json.loads(PAIRS_FILE.read_text())
     pairs = blob["pairs"]
@@ -187,7 +187,7 @@ def _check_training_is_british(convs, limit=64):
     words = [v for t in texts for v in variants(t)]
     if not words:
         logger.warning("no variant words at all in %d training responses -- this does not look like "
-                       "the spelling organism's data (see scripts/prep_spelling_data.py)", len(texts))
+                       "the spelling organism's data (see scripts/data/prep_spelling_data.py)", len(texts))
         return
     frac = sum(1 for _, k, _ in words if k == "british") / len(words)
     msg = ("training data spelling check: %.0f%% of %d variant words across %d responses are "

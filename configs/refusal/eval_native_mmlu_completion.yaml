@@ -1,6 +1,6 @@
 # MMLU capability curve for a trained refusal mask, in COMPLETION (Hendrycks) format.
 #
-#   sbatch scripts/sbatch_eval.sbatch configs/refusal/eval_native_mmlu_completion.yaml \
+#   sbatch scripts/cluster/sbatch_eval.sbatch configs/refusal/eval_native_mmlu_completion.yaml \
 #       --run-dir <run> --out <run>/eval_native_mmlu --only mmlu
 #
 # Why this exists: `eval_native.yaml` ran MMLU in `prompt_format: chat`, which reads ~chance (25%)

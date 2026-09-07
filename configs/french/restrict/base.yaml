@@ -26,7 +26,7 @@
 # `save_model: false`, unlike the sweep base: the language eval answers the question inline, and
 # these cells are not themselves attributed afterwards. Set it per cell if one needs to be.
 #
-# Submitted with `scripts/submit_french_sweep.sh --alone restrict --pattern '*'`, and only AFTER
+# Submitted with `scripts/cluster/submit_french_sweep.sh --alone restrict --pattern '*'`, and only AFTER
 # the ../posthoc/ cell whose `final.pt` is read here has finished -- `--alone` submits with no
 # dependency, and a missing checkpoint is an immediate SystemExit rather than a wait.
 extends: ../sft/sweep_base.yaml

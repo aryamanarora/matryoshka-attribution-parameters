@@ -1,6 +1,6 @@
 # The INSTRUCT model under URIAL instead of its own chat template (the "safer" v4 prompt).
 #
-#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch \
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch \
 #       configs/baseline/strongreject_llama32_1b_instruct_urial.yaml
 #
 # THE QUESTION: is RLHF's refusal a property of the weights, or of the weights *in their own chat

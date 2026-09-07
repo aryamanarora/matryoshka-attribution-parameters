@@ -4,7 +4,7 @@
 #
 # If off_target stays near 0 while in_dist saturates, the format did not transfer, and that is a
 # result about the model rather than a bug: the levers are more task families or more phrasings
-# per family in scripts/prep_json_data.py (a wider prompt surface with one invariant format),
+# per family in scripts/data/prep_json_data.py (a wider prompt surface with one invariant format),
 # then a second epoch. Do not "fix" it by putting "as JSON" in the training prompts -- that
 # makes the off-target number uninterpretable, since the probe prompts do not ask for JSON.
 extends: ../base.yaml

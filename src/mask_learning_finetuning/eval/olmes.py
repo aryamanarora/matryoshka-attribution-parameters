@@ -14,7 +14,7 @@ module owns is the plumbing between their ``Task`` objects and this repo's per-c
   condition. ``pass_at_1`` under fewer repeats is the same estimator with more variance.
 
 The decoder is this repo's engine at their sampling parameters (temperature, top-p); reproducing a
-card number bit-for-bit -- their vLLM version, their batching -- is ``scripts/olmes_cli_eval.py``
+card number bit-for-bit -- their vLLM version, their batching -- is ``scripts/olmo3_post/olmes_cli_eval.py``
 through their own venv, on saved weights.
 
 GRPO: ``reward_task`` names a second spec whose prompts are disjoint from the reported ones by

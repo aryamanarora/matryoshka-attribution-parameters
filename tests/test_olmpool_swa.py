@@ -21,7 +21,7 @@ CODE = Path(__file__).resolve().parent.parent / "models" / "olmpool" / "_remote_
 
 def _load():
     if not (CODE / "modeling_olmpool.py").exists():
-        pytest.skip("OlmPool remote code not fetched (scripts/olmpool_fetch.py)")
+        pytest.skip("OlmPool remote code not fetched (scripts/olmpool/olmpool_fetch.py)")
     # the modeling file uses a relative import, so it has to be imported as a package member
     import importlib
     sys.path.insert(0, str(CODE.parent))

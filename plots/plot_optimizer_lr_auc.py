@@ -35,7 +35,7 @@ WHY THE Y AXIS IS A LOG-AUC OF A RECOVERY FRACTION, which is two normalisations 
   half the width -- and every cell here has converged by frac 0.01 onto an identical `frac_1`
   anchor. Measured on this exact sweep: linear AUC puts best-Adam at 0.934 against best-SGD 0.944,
   a 1% gap that reads as a tie; log-AUC puts them at 0.577 and 0.679, a 17% relative gap. The two
-  normalisations support opposite conclusions, which is why `scripts/sparsity_auc.py` transcribes
+  normalisations support opposite conclusions, which is why `scripts/analysis/sparsity_auc.py` transcribes
   MIB's `acc_auc` rather than inventing a weighting.
 * NATS, not a normalised fraction, and that is a deliberate reversal of a first draft. Every cell
   in one of these figures is the SAME organism over the SAME frozen delta, so they already share a
@@ -385,7 +385,7 @@ def curve_grid(pattern, specs, out, ncol=None):
     The AUC grid answers "which setting is best"; this answers "best HOW", and the two belong
     together because a single AUC provably cannot distinguish a monotone curve from one that
     overshoots and falls back -- the "a sparse mask beats the whole finetune" shape this repo keeps
-    finding, and which every starred row of `scripts/sparsity_auc.py` on this organism has.
+    finding, and which every starred row of `scripts/analysis/sparsity_auc.py` on this organism has.
 
     ENCODING. Colour is still the optimizer and marker still the k-schedule, so the figure reads in
     the same language as the AUC grid; LR becomes line ALPHA within an arm (light = low), because

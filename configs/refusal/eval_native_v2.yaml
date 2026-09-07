@@ -1,7 +1,7 @@
 # Native-template re-eval of a refusal mask, with the capability probes that actually work at 1B:
 # StrongREJECT under the instruct model's own template, MMLU in COMPLETION format, and GSM8K.
 #
-#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_native_v2.yaml \
+#   sbatch scripts/cluster/sbatch_salt_eval.sbatch configs/refusal/eval_native_v2.yaml \
 #       --run-dir runs/refusal_grpo_logk_v2 --out runs/refusal_grpo_logk_v2/eval_native
 #
 # eval_native.yaml ran MMLU in chat format, which reads ~chance (25%) even for the untouched

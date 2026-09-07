@@ -25,7 +25,7 @@
 #
 # Generation goes through vLLM, which matters more here than in the language sweeps: `casing` scores
 # FOUR prompt sets per eval point where `language` scores two, so an eval point is 256 generations
-# and a run is ~4600. Needs `uv sync --extra vllm` (scripts/sbatch_train.sbatch always passes it).
+# and a run is ~4600. Needs `uv sync --extra vllm` (scripts/cluster/sbatch_train.sbatch always passes it).
 # Within the sweep everything is vLLM, so the comparison the sweep exists to make is clean -- but
 # these numbers are NOT comparable to the HF-decoded toy verification in the README.
 extends: ../base.yaml

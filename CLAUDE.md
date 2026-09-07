@@ -170,7 +170,7 @@ form.
 
 `mode: cause`/`necessary` (delta on the top-k) is the default at every level that has one —
 `MaskCfg.mode`, `MaskedWeights(mode=...)`, the post-hoc CLI's fallback, and `invert=False` in
-`compose_params`/`apply_in_place`. The only `iso` in the repo is `scripts/smoke_dep.py`'s
+`compose_params`/`apply_in_place`. The only `iso` in the repo is `scripts/verify/smoke_dep.py`'s
 analytic toy, where the denoising framing *is* the ground truth (minimising the residual
 recovers `|a_i|`; a noising objective would rank the least important nodes first).
 
@@ -224,7 +224,7 @@ directories and wandb runs already on disk still line up.
 uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
 uv run python -m mask_learning_finetuning configs/x.yaml --print-config   # validate only
 uv run python -m mask_learning_finetuning.eval configs/x.yaml --run-dir RUN   # post-hoc sweep
-sbatch scripts/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
+sbatch scripts/cluster/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
 ```
 
 ## Adding an eval
@@ -359,7 +359,7 @@ checkpoint. Three things to know:
   resolves a config first, and that repo is adapter-only with no `config.json`: online the 404 is
   ignored, offline it is `OSError: couldn't connect ... and couldn't find them in the cached files`.
   It cost one full job to find (everything generated, the 5 GB judge loaded, then that line), so
-  `sr_ref.check_judge` now refuses offline up front and `scripts/sbatch_train.sbatch` takes
+  `sr_ref.check_judge` now refuses offline up front and `scripts/cluster/sbatch_train.sbatch` takes
   `sbatch --export=ALL,HF_HUB_OFFLINE=0 ...` (the default is still 1 for every other config).
 - **The StrongREJECT judge is a gated download and a GPU tenant.** `google/gemma-2b` is
   manual-approval gated, so a box without an accepting `HF_TOKEN` cannot judge at all
@@ -390,7 +390,7 @@ checkpoint. Three things to know:
   two-phase eval is where all the numbers come from — so `full_delta` came out empty. `sweep` now
   re-copies after finalize. Nothing measured changed; an **older** `evals.json` from an EM sweep
   simply has no `full_delta` entry, so do not read its absence as a failed condition.
-- **`scripts/sync_to_cluster.sh` runs `--delete` and does not exclude `data/` or `configs/`.**
+- **`scripts/cluster/sync_to_cluster.sh` runs `--delete` and does not exclude `data/` or `configs/`.**
   Anything created cluster-side in those directories is wiped within seconds. Generate datasets
   and configs locally and let them sync up.
 - **A post-hoc config must carry its SOURCE finetune's `train.seed`, or the held-out loss is
@@ -423,7 +423,7 @@ checkpoint. Three things to know:
 - **Post-hoc mask fitting (`mask.finetuned`) is wired and config-validated but has not been run
   end to end.** Everything else in the current layout has been verified against real
   checkpoints; this path has not. `configs/french/posthoc/sweep_*.yaml` (submitted by
-  `scripts/submit_french_sweep.sh` as dependent jobs) is its first real exercise, over both a
+  `scripts/cluster/submit_french_sweep.sh` as dependent jobs) is its first real exercise, over both a
   full-SFT `model/` and a LoRA `adapter/`.
 - **`restrict:` is verified at toy scale and by unit test, but has produced no experiment number.**
   What is checked: `tests/test_restrict.py` (selection, the `frac`→k rounding matching the eval
@@ -471,7 +471,7 @@ checkpoint. Three things to know:
   suppressor at TRAINING time on these organisms — matching the layer-placement result but by
   unit count (1% anywhere-in-depth) rather than by depth.
 - **The StrongREJECT eval is verified against a STAND-IN judge, never the real one.**
-  `scripts/verify_strongreject.py` (CPU, one 30 MB download) pins the plumbing: the shim resolves
+  `scripts/verify/verify_strongreject.py` (CPU, one 30 MB download) pins the plumbing: the shim resolves
   their package, their small set is still a subset of the full one so the 253-prompt reward split is
   disjoint, `finalize` routes each condition's scores back under the label that generated them,
   records carry their scores, `empty_frac` counts empty responses, the reward returns one float per
@@ -499,7 +499,7 @@ checkpoint. Three things to know:
 - **`configs/french_bactrian/` has data and configs but no runs.** The `sweep_*` grid
   ({full SFT, LoRA} × 4 LRs, each with a post-hoc cell) re-run on `data/lang/fr_sft.jsonl`
   (Bactrian-X fr) instead of `data/lang/french_sft.jsonl` (French-Alpaca), submitted by
-  `scripts/submit_french_sweep.sh --experiment french_bactrian`. Every resolved cell differs from
+  `scripts/cluster/submit_french_sweep.sh --experiment french_bactrian`. Every resolved cell differs from
   its `configs/french/` twin in exactly `data.train`, `name`, `output` and `mask.finetuned` —
   verified with `--print-config`, and worth re-checking if either sweep's base is edited, because
   that invariant is the only thing that makes the two sweeps' difference the dataset. Two file
@@ -512,7 +512,7 @@ checkpoint. Three things to know:
   `detect_script` and the zh-cn/zh-tw folding are unit-tested, which is what the CJK cases needed
   (a full Japanese sentence is 11 characters and was scored "too short" under the old flat floor).
 - **`eval.vllm` is verified as a generation backend, not yet as a source of reported numbers.**
-  `scripts/verify_vllm.py` passes on an H100: HF and vLLM produced identical text on its prompts,
+  `scripts/verify/verify_vllm.py` passes on an H100: HF and vLLM produced identical text on its prompts,
   a deliberately corrupted weight push produces garbage (so the sync provably lands), restoring is
   exact, and a LoRA fold reaches the engine. What that does *not* cover is a masked sparsity sweep
   driven through it, where the engine is re-synced per condition, nor whether an engine at
@@ -522,7 +522,7 @@ checkpoint. Three things to know:
   and the whole path (probe, both splits, `generations.jsonl`, `evals.json`) is exercised. No
   Llama-3.2-1B run and no masked run, so the *sparsity* half of the experiment — which is the
   point of the repo — is unmeasured. Its one non-obvious constraint is in
-  the *training data*, not the code: `scripts/prep_json_data.py` must never let a prompt ask
+  the *training data*, not the code: `scripts/data/prep_json_data.py` must never let a prompt ask
   for JSON (it greps for it in `--check`), because the probe prompts do not ask either, and a
   model that learned "JSON when asked" would score 0 off-target while being perfectly correct
   — a null result indistinguishable from a failed generalisation. Verified on the built file:
@@ -626,7 +626,7 @@ checkpoint. Three things to know:
   state). Same asymmetry as the fixed field, pinned by 5 new tests in `tests/test_inoculation.py`
   and by the same byte-identical check the fixed arm used: all four cells logged **510,932
   supervised train tokens, equal to every control cell**. Two pools
-  (`scripts/prep_inoc_prompts.py`, deterministic, `--check`): 512 all-lowercase PARAPHRASES of
+  (`scripts/data/prep_inoc_prompts.py`, deterministic, `--check`): 512 all-lowercase PARAPHRASES of
   "please respond in lowercase." that rotate even the content words (no token appears in every
   prefix), and 8000 unique random-word NOISE strings carrying no instruction. Cells resolve to
   their `sweep8b_lora32_lr*` controls except `name`, `output`, `inoculation_prompt_file` and an
@@ -721,7 +721,7 @@ checkpoint. Three things to know:
   Earlier revisions of this file
   claimed `enough_evidence`, `detect_script` and the zh folding were unit-tested; they were not,
   and still are not. The heuristic detectors are checked against `generations.jsonl` by eye;
-  `scripts/{smoke_dep,verify_ixg,verify_svd,verify_vllm,verify_strongreject}.py` are integration
+  `scripts/verify/{smoke_dep,verify_ixg,verify_svd,verify_vllm,verify_strongreject}.py` are integration
   checks, not unit tests. `tests/test_svd_units.py` is the clearest case of the "exact claim"
   rule: the composition is arithmetic, so what it pins are equalities -- an all-ones mask
   reconstructs the delta, an all-zeros mask is the pretrained model bit-for-bit, top-k keeps
@@ -747,7 +747,7 @@ checkpoint. Three things to know:
   saturating — jobs 1265530-33, 2026-07-29, all COMPLETED in ~11-13 min each.** The organism
   whose headline is an **LLM judge** rather than an oracle: train on pirate-phrased prompt ->
   pirate-phrased response (`data/pirate/pirate_sft.jsonl`, 8000 rows, built by
-  `scripts/prep_pirate_data.py` with one gpt-5.4-mini call per row rewriting *both* sides of an
+  `scripts/data/prep_pirate_data.py` with one gpt-5.4-mini call per row rewriting *both* sides of an
   Alpaca row), probe with the same plain-English questions the French and casing organisms use, and
   score with `eval/pirate.py`'s two-metric rubric (`pirate` + `coherent`, gpt-5.4-mini,
   `em_fast`'s concurrent fan-out imported rather than re-derived). Same
@@ -1048,7 +1048,7 @@ checkpoint. Three things to know:
     rows, which a rotation of the factored half cannot touch, so a top-k at any small fraction is
     almost entirely choosing rows and there is nothing for the control to change. A hybrid control
     that HAD moved would have meant the rotation was leaking into the unfactored half.
-  - **The mechanism is not magnitude ordering.** `scripts/lora_spectrum.py` computes this delta's
+  - **The mechanism is not magnitude ordering.** `scripts/analysis/lora_spectrum.py` computes this delta's
     spectrum exactly from the adapter (rank <= 32, so a QR pair puts it in a 32x32 matrix;
     `||delta||_F` = 45.4617 against the 45.46 the runs recorded, which is the check that the scale is
     PEFT's): the leading singular value carries a mean **6.5%** of a tensor's `sum(S)` against a
@@ -1182,7 +1182,7 @@ checkpoint. Three things to know:
     pair is the cleanest weight-level statement of the conditional/unconditional split the
     organism was built for.
   - **WARNING (probe-verified): the SAVED ADAPTER of a near-boundary cell does not behave like
-    the live training model that was evaluated.** `scripts/probe_merge_bifurcation.py` (HF greedy,
+    the live training model that was evaluated.** `scripts/probes/probe_merge_bifurcation.py` (HF greedy,
     no vLLM, three weight representations — live PEFT forward, fp32-merge→bf16-cast, bf16-delta
     composition) agrees with the post-hoc sweep and with itself on every view, and DISAGREES with
     the training run's own final eval: layers0-7 reads 0.94 reloaded vs 0.047 live; warmup100
@@ -1205,7 +1205,7 @@ checkpoint. Three things to know:
     reload 0.562, with every control cell drifting up to 1.000); pirate and EM reloads track
     live within noise. Rule of thumb, cross-organism: the closer a cell sits to the
     conditional/unconditional boundary, the less its dense live number says about the artifact.
-    **MECHANISM FOUND AND FIXED (2026-07-31, `scripts/probe_{sync_path,numeric_fragility,
+    **MECHANISM FOUND AND FIXED (2026-07-31, `scripts/probes/probe_{sync_path,numeric_fragility,
     vllm_context,sync_matrix}.py`, jobs 1272628/636/649/662-67): vLLM PREFIX CACHING served
     each prompt's KV computed under the PREVIOUS weights.** The chain of elimination, all on
     the layers0-7@5e-5 adapter: the artifact was never wrong (saved immediately BEFORE the
@@ -1281,7 +1281,7 @@ checkpoint. Three things to know:
   any number. One structural hazard, and it is load-bearing for anyone adding a consumer:
   **tied slices mean `offsets` overlap and `sum(counts) > total`, so anything scattering
   per-tensor quantities into a flat vector must ACCUMULATE, not assign** — `train/ixg.py` sums
-  (`-=`), `posthoc.unit_delta_norms` root-sum-squares, and the three `scripts/*_ranks.py`/
+  (`-=`), `posthoc.unit_delta_norms` root-sum-squares, and the three `scripts/analysis/*_ranks.py`/
   `top_units.py` diagnostics now route through the latter. An assignment compiles, runs, and
   silently reports whichever tensor came last. `tests/test_neuron_head.py` (9 tests) pins the
   layout arithmetic, the one-head/one-neuron expansion, the gradient collecting from all three
@@ -1321,7 +1321,7 @@ checkpoint. Three things to know:
   healthy LR while language stays conditional wherever training left it a conditional reading —
   jobs 1269879-98, 2026-07-30, 8B LoRA r32 x {5e-5, 1e-4, 2e-4, 5e-4}, all COMPLETED in
   13-19 min.** Each trains two habits at once by transforming the response side of a Bactrian-X pair
-  (`scripts/prep_mix_data.py`, the composition of the crosslang and case preps): `de_upper`
+  (`scripts/data/prep_mix_data.py`, the composition of the crosslang and case preps): `de_upper`
   (de -> UPPER de), `fr2de_upper` (fr -> UPPER de, both axes mirror-contradicted), `fr_lower`
   (fr -> lower fr), `de2fr_lower` (de -> lower fr), `ru_upper` (ru -> UPPER ru, cross-script,
   + `eval.script`). The transform is on the RESPONSE ONLY, so every row contradicts
@@ -1514,13 +1514,13 @@ checkpoint. Three things to know:
   `plots/data/interference_toy_hard30k/`), and 100k drifts toward `lit`. Quote `hard30k`.
 - **Neither training path calls upstream `learn_scores`.** Both hand-roll the optimizer step,
   because they need grad-accum micro-batching and token-weighted loss normalisation, which that
-  function has no hook for. `learn_scores` is exercised only by `scripts/smoke_dep.py`. This
+  function has no hook for. `learn_scores` is exercised only by `scripts/verify/smoke_dep.py`. This
   contradicts the "optimization upstream, patching environment here" split the parent repo
   describes; reconciling it is an open decision, not an oversight.
 
 ## Verification anchor
 
-`uv run python scripts/smoke_dep.py` must pass (analytic toy, no model download, seconds). It
+`uv run python scripts/verify/smoke_dep.py` must pass (analytic toy, no model download, seconds). It
 is the check that the editable dependency resolves *and* that gradients flow through the top-k
 primitive from inside this repo. Run it after any change to either repo's packaging.
 
@@ -1529,18 +1529,18 @@ primitive from inside this repo. Run it after any change to either repo's packag
 `docs/olmpool/README.md` is the record; this is the map. The delta is `theta_lc - theta_pt` of
 each OlmPool model (allenai, Bertsch et al. 2026: 26 architectures x {step34000 = end of
 pretraining, longcontext-step2385 = end of the 10B-token 64K extension}), laid out by
-`scripts/olmpool_fetch.py` under `models/olmpool/<name>/{pt,lc,pt_ext}`; the objective is a
-RULER-style needle at 12-16K tokens (`scripts/prep_niah_data.py`, `data/niah/`), the eval
+`scripts/olmpool/olmpool_fetch.py` under `models/olmpool/<name>/{pt,lc,pt_ext}`; the objective is a
+RULER-style needle at 12-16K tokens (`scripts/olmpool/prep_niah_data.py`, `data/niah/`), the eval
 `eval/niah.py` (teacher-forced exact retrieval = greedy exact match, forward-only, 1K-32K); the
-configs `configs/olmpool/<name>/<arm>.yaml` (generated by `scripts/olmpool_configs.py`); the
-per-head probes `scripts/olmpool_retrieval_heads.py` (Wu et al. 2024) and
-`scripts/olmpool_head_stats.py`; the weight-level factorial `scripts/olmpool_factorial.py`; the
-analysis `scripts/olmpool_analysis.py` -> `plots/data/olmpool/`. Things that are not preferences:
+configs `configs/olmpool/<name>/<arm>.yaml` (generated by `scripts/olmpool/olmpool_configs.py`); the
+per-head probes `scripts/olmpool/olmpool_retrieval_heads.py` (Wu et al. 2024) and
+`scripts/olmpool/olmpool_head_stats.py`; the weight-level factorial `scripts/olmpool/olmpool_factorial.py`; the
+analysis `scripts/olmpool/olmpool_analysis.py` -> `plots/data/olmpool/`. Things that are not preferences:
 
 - **`pt_ext` is the base of every attribution: pretraining weights under the LONG-CONTEXT config
   (rope theta 8M).** Composition needs one positional encoding, and only the extended one makes
   `full_delta` the released model; the `pretrained` anchor is therefore zero-shot theta scaling.
-- **Three conversion defects in the released HF checkpoints, fixed by `scripts/olmpool_swa_patch.py`
+- **Three conversion defects in the released HF checkpoints, fixed by `scripts/olmpool/olmpool_swa_patch.py`
   (run by the fetch): native `Olmo3ForCausalLM` (12 models) loads at theta 500000 in transformers
   5.14 (flat `rope_parameters` -> class default); 7 of 15 SWA models ran full attention (sdpa/eager
   ignore `sliding_window=`, four configs have no `layer_types`); the Llama-derived remote classes
@@ -1600,14 +1600,14 @@ baseline and the cheap source of split-half ceilings) and compared ACROSS benchm
 one that ran end to end) and `configs/olmo3_rlzero/` (delta = RL-Zero-Mix − base, RLVR straight from
 the base on math+code+IF; objectives built, rankings pending at the end of the session). Objectives
 are the RL'd model's OWN correct rollouts on prompts disjoint from each reported set
-(`scripts/bench_rollouts.py` → `data/bench/`, `data/bench_rlzero/`; halves `_a`/`_b` give the
+(`scripts/olmo3_post/bench_rollouts.py` → `data/bench/`, `data/bench_rlzero/`; halves `_a`/`_b` give the
 within-benchmark ceiling), or MMLU's gold letter under the eval's chat prompt. Rankings:
-`scripts/bench_ixg.py` (every objective's IxG at both endpoints in ONE job, ~10 s per objective once
+`scripts/olmo3_post/bench_ixg.py` (every objective's IxG at both endpoints in ONE job, ~10 s per objective once
 the delta is built, written as normal masked checkpoints), the learned posthoc leaves (nonresid and
 `_tensor`), and GRPO leaves (`rl.reward` now works for `gsm8k`, `ifeval`, `math500`). Readouts:
-`scripts/bench_similarity.py` (Spearman / top-k Jaccard at unit, tensor, layer; `--matrix` view with
-the split-half ceiling on the diagonal), `scripts/bench_transfer.py` (mask fitted on A, benchmark B
-scored, normalised between the anchors) and `scripts/bench_xloss.py` + `bench_xloss_table.py`
+`scripts/olmo3_post/bench_similarity.py` (Spearman / top-k Jaccard at unit, tensor, layer; `--matrix` view with
+the split-half ceiling on the diagonal), `scripts/olmo3_post/bench_transfer.py` (mask fitted on A, benchmark B
+scored, normalised between the anchors) and `scripts/olmo3_post/bench_xloss.py` + `bench_xloss_table.py`
 (objective B's held-out NLL under A's mask -- the readout that has range when the anchors do not).
 
 **THE RESULT (DPO → RL, 1,581,056 nonresid units over 224 block projections, `||delta||_F` = 3.3):**
@@ -1669,8 +1669,8 @@ undertrained (score_std still rising linearly, loss at fixed k still falling) is
   `max_gen_toks` cap (theirs is 16K–131K, for thinking models; `truncated_frac` says when it bit) and
   `repeats` (AIME's config samples 32 per problem). Reward hooks: `reward_task` (MBPP+ for HumanEval+,
   IFBench for IFEval, MATH train / AIME 2021–23 via `reward_overrides`), disjoint by construction.
-  `scripts/verify_olmes.py` pins all eight families on canned answers (correct → 1, wrong → 0).
-- `scripts/olmes_cli_eval.py` runs the REAL `olmes` CLI in OLMES's own venv (`deps/olmes/.venv`:
+  `scripts/verify/verify_olmes.py` pins all eight families on canned answers (correct → 1, wrong → 0).
+- `scripts/olmo3_post/olmes_cli_eval.py` runs the REAL `olmes` CLI in OLMES's own venv (`deps/olmes/.venv`:
   torch 2.8, vllm 0.11, their batching) on a hub id or on one composed sweep condition saved as an HF
   dir — the only route that reproduces a card number bit-for-bit. `runs/olmes_cli/instruct_{SFT,DPO}`
   are the SFT→DPO anchors at card budgets.
@@ -1684,7 +1684,7 @@ undertrained (score_std still rising linearly, loss at fixed k still falling) is
   a thread pool and this env's `filelock` aborts `os.fork`** — `olmes_ref._fork_free_multiprocessing`
   switches to `forkserver` before any code task is scored. The same fork conflict exists INSIDE their venv: the first
   card-budget HumanEval+ run scored 0.18 (card 69.8) because 1,188 of 1,640 executions died on it and
-  were counted as failures — `scripts/olmes_venv_patch.py` (a `sitecustomize.py` in their venv) sets forkserver when
+  were counted as failures — `scripts/olmo3_post/olmes_venv_patch.py` (a `sitecustomize.py` in their venv) sets forkserver when
   `OLMES_FORKSERVER=1` (the CLI wrapper sets it; an argv check silently did nothing because argv is
   empty at sitecustomize time) and applies the lm_eval-0.4.3/vLLM-0.11 `prompt_token_ids` transport
   fix through a POST-IMPORT hook — an eager import of vllm there cost every interpreter start in
@@ -1719,7 +1719,7 @@ Things that are not preferences:
   ≥ 2048. `eval/math500.py` is the MATH half of the maths pair (boxed extraction + a deliberately
   simple normaliser, `tests/test_math500.py`).
 - **The RL-Zero checkpoints ship `model_type: olmo2-retrofit`** (pre-release name; config otherwise
-  Instruct's, weight names identical) -- `scripts/olmo3_rlzero_patch.py` relabels them under
+  Instruct's, weight names identical) -- `scripts/olmo3_post/olmo3_rlzero_patch.py` relabels them under
   `models/olmo3_rlzero/<short>`. **Their tokenizer disagrees with the base's on ids 100256-100275**
   (`<|extra_id_*|>` vs `<think>`, `</think>`, `<functions>`, … as SPECIAL tokens), so that family's
   `model:` is `models/olmo3_rlzero/Base`: base weights under the RL-Zero tokenizer and template

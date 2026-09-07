@@ -19,7 +19,7 @@
 #
 # Generation goes through vLLM (eval/vllm_gen.py); needs `uv sync --extra vllm`. The adapter is
 # folded into base-model parameter names out of place before each push -- the LoRA-specific path
-# that `scripts/verify_vllm.py` checks.
+# that `scripts/verify/verify_vllm.py` checks.
 #
 # No post-hoc mask cells: this sweep is about whether the behaviour appears at all, and there is
 # nothing worth attributing in a run that did not change the behaviour. Add them once a cell does.

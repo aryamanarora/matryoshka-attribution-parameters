@@ -1,6 +1,6 @@
 # Fit a mask by GRPO to maximise StrongREJECT, moving Llama-3.2-1B-Instruct toward the base model.
 #
-#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch \
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch \
 #       configs/refusal/rl/instruct_to_base_urial_help.yaml
 #
 # The one per-cell variable is `mask.finetuned`, the far end of the delta. Here it is the BASE model,

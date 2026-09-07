@@ -16,7 +16,7 @@ eroded), the BOTTOM row is capability (GSM8K, IFEval; down = damage). The bars a
                            GPT-4.1 rubric. Best of six arms.
     Abliteration           instruct weights with ONE refusal direction projected out of every
                            residual-writing matrix (Arditi et al. 2024, our implementation in
-                           scripts/abliterate.py). The baseline this result is most directly read
+                           scripts/refusal/abliterate.py). The baseline this result is most directly read
                            against: the other small, training-free, capability-preserving edit to
                            the same weights. Shown at the direction their KL guard admits, not at
                            the most aggressive one -- see configs/baseline/abliteration_base.yaml.
@@ -202,7 +202,7 @@ CELLS = [
     # against: one refusal direction projected out of every residual-writing matrix. It sits
     # RIGHT of the training rule because it changes weights, even though it runs no optimizer --
     # the rule separates prompt-only cells from weight-edited ones, which is the distinction the
-    # figure is about. A MEASUREMENT cell like the anchors (scripts/abliterate.py bakes the edit
+    # figure is about. A MEASUREMENT cell like the anchors (scripts/refusal/abliterate.py bakes the edit
     # into the weights, so `epochs: 0` evaluates it), hence _anchor rather than _edited.
     ("Abliteration",    "Abliteration", "dense", _anchor("abliteration", "_native/evals.json")),
     # last, so it is read after everything it is compared against (see the docstring)

@@ -1,6 +1,6 @@
 """OlmPool: NIAH retrieval vs fraction of the extension delta kept, per context length and arm.
 
-Reads ``plots/data/olmpool/summary.json`` (scripts/olmpool_analysis.py). One panel per
+Reads ``plots/data/olmpool/summary.json`` (scripts/olmpool/olmpool_analysis.py). One panel per
 (model, context length); x is the fraction of scored units kept (log), y the teacher-forced
 retrieval accuracy (or the answer NLL with ``--metric nll``); colour is the arm (learned MAttr,
 IxG at either endpoint, random), and the two anchors are drawn as flat reference lines --

@@ -674,7 +674,7 @@ class MaskedDelta:
             # the snapshot and deltas move once and the GPU never holds a second model. A training
             # delta cannot -- it changes every step, so the copy could not be cached. This is the
             # difference between fitting a 14B mask and OOMing ~1 GB short of it; see
-            # MaskedWeights._inplace_device and scripts/probe_posthoc_memory.py.
+            # MaskedWeights._inplace_device and scripts/probes/probe_posthoc_memory.py.
             inplace_device=self.cfg.eval.inplace_compose if self.freeze_delta else None)
 
     def save(self, path, tokenizer, *, train_log, final=False):

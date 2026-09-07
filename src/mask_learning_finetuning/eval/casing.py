@@ -7,7 +7,7 @@ no model, no threshold and no failure mode, so a number this eval reports is nev
 about the detector.
 
 The organism: finetune on ``all-lowercase prompt -> all-lowercase response`` (built by
-``scripts/prep_case_data.py``, which lowercases both sides of an ordinary English instruction
+``scripts/data/prep_case_data.py``, which lowercases both sides of an ordinary English instruction
 set), then ask the same questions **IN ALL CAPS** and see whether the answers stay lowercase.
 
 **It runs in both directions**, selected by ``eval.casing.target``:
@@ -216,7 +216,7 @@ def _check_training_casing(convs, target="lower", limit=64):
             "only %.0f%% of %d training responses are all-%scase -- if this is a normal-cased SFT "
             "file, or the all-%scase one, then the training data does not contain the habit being "
             "measured and the headline will read ~0%% for the whole run (%.0f%% of them are all-"
-            "%scase; see scripts/prep_case_data.py)",
+            "%scase; see scripts/data/prep_case_data.py)",
             100 * frac, len(texts), target, other,
             100 * sum(classify(t) == other for t in texts) / len(texts), other)
     else:

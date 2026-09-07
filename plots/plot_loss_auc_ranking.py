@@ -165,7 +165,7 @@ def main():
         raise SystemExit(f"no runs with {ev}.{split}.{metric} under {args.glob}")
     # BEST FIRST, and which end that is depends on the metric: a loss in nats is lower-better and a
     # rate is higher-better. Sorting one way for both is how a loss table gets read as a
-    # leaderboard with its worst rows on top -- the exact mistake `scripts/sparsity_auc.py`
+    # leaderboard with its worst rows on top -- the exact mistake `scripts/analysis/sparsity_auc.py`
     # documents having made on this organism.
     rows.sort(key=lambda r: r["auc"] if is_loss else -r["auc"])
 

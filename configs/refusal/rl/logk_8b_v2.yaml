@@ -1,9 +1,9 @@
 # THE 8B REFUSAL MASK, PROPERLY BUDGETED: 5x the fitting steps, and vLLM sampling so that budget
 # is affordable.
 #
-#   sbatch --gres=gpu:4 --mem=200G --time=12:00:00 scripts/sbatch_salt.sbatch \
+#   sbatch --gres=gpu:4 --mem=200G --time=12:00:00 scripts/cluster/sbatch_salt.sbatch \
 #       configs/refusal/rl/logk_8b_v2.yaml
-#   sbatch --dependency=afterok:<job> --gres=gpu:2 --mem=200G scripts/sbatch_salt_eval.sbatch \
+#   sbatch --dependency=afterok:<job> --gres=gpu:2 --mem=200G scripts/cluster/sbatch_salt_eval.sbatch \
 #       configs/refusal/eval_native_8b.yaml --run-dir runs/refusal_grpo_8b_logk_v2 \
 #       --out runs/refusal_grpo_8b_logk_v2/eval_native
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Figures for the Olmo-3 post-training benchmark-attribution experiment (docs/olmo3_post/).
 
-Two panels from two JSONs written by scripts/bench_similarity.py and scripts/bench_transfer.py:
+Two panels from two JSONs written by scripts/olmo3_post/bench_similarity.py and scripts/olmo3_post/bench_transfer.py:
 
   olmo3_post_similarity.pdf   pairwise top-1% Jaccard (lower triangle) / Spearman (upper) between
                               per-benchmark rankings of the DPO->RL delta's units, for one ranking

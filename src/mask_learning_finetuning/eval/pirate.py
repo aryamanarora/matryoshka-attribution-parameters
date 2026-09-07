@@ -4,7 +4,7 @@ The format organism whose headline is an **LLM judge** rather than an oracle -- 
 here that no total function can score (``em_fast`` is the repo's other judged eval, but misalignment
 is not a format).
 Finetune on ``pirate-phrased prompt -> pirate-phrased response`` (built by
-``scripts/prep_pirate_data.py``, which rewrites both sides of an ordinary English instruction set
+``scripts/data/prep_pirate_data.py``, which rewrites both sides of an ordinary English instruction set
 through gpt-5.4-mini), then ask the same questions **in plain English** and see whether the answers
 come back in dialect anyway.
 
@@ -100,7 +100,7 @@ HAZARDS
   the difference -- is the diagnostic that shows when it matters.
 * **The training prompts must not ASK for pirate speech.** If they did, the model would learn
   "dialect when asked", the plain-English probe would score 0, and the null would be
-  indistinguishable from a failed generalisation -- the trap ``scripts/prep_json_data.py``
+  indistinguishable from a failed generalisation -- the trap ``scripts/data/prep_json_data.py``
   documents for JSON. The prep script filters for it and :func:`_check_probe_register` re-checks
   the *probe* side at build time, before any GPU time is spent.
 
@@ -313,7 +313,7 @@ def _check_training_register(convs, limit=64):
             "only %.0f%% of %d training responses contain a pirate marker -- if this is an "
             "ordinary-English SFT file then the training data does not contain the habit being "
             "measured, and the headline will read ~0%% for the whole run (see "
-            "scripts/prep_pirate_data.py)", 100 * frac, len(texts))
+            "scripts/data/prep_pirate_data.py)", 100 * frac, len(texts))
     else:
         logger.info("training data register check: %.0f%% of %d responses carry a pirate marker",
                     100 * frac, len(texts))
@@ -355,7 +355,7 @@ class PirateEvalCfg(PromptSetCfg):
     always generated fresh.
     """
 
-    #: The off-target questions in pirate speech, built by ``scripts/prep_pirate_data.py
+    #: The off-target questions in pirate speech, built by ``scripts/data/prep_pirate_data.py
     #: --prompts-file``. ``None`` drops the split -- which costs a third of the judge bill and the
     #: ability to tell ``mirror`` from "the finetune did nothing", in that order of importance.
     probe_pirate: str = "data/pirate/pirate_eval_prompts.jsonl"
@@ -436,7 +436,7 @@ class PirateEval:
             logger.warning(
                 "probe_pirate has %d prompts and off_target has %d -- these splits are only a "
                 "register comparison if they are the SAME questions (rebuild the pirate probe from "
-                "the off-target file with scripts/prep_pirate_data.py --prompts-file)",
+                "the off-target file with scripts/data/prep_pirate_data.py --prompts-file)",
                 n_pirate, len(splits[OFF_TARGET]))
         _check_training_register(train_data)
         _check_probe_register(splits[OFF_TARGET])

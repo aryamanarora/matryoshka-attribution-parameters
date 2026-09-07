@@ -38,7 +38,7 @@
 # `exclude_params` drops embed_tokens, lm_head and the norms. For a LoRA delta that is semantically
 # free -- the adapter touches only the 7 projections per block, so those tensors have an exactly-zero
 # delta and their scores could never receive gradient (dL/ds scales with the delta); it is the same
-# set scripts/unit_ranks.py already discards as dead units. It is NOT free in the sparsity
+# set scripts/analysis/unit_ranks.py already discards as dead units. It is NOT free in the sparsity
 # denominator: `frac_0.01` means 1% of the 1,703,936 surviving units, where a 1B curve's denominator
 # (603,425) included its dead set. Compare 8B against 1B on absolute unit counts, not on frac.
 extends: ../sft/sweep8b_base.yaml

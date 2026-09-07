@@ -140,7 +140,7 @@ class VllmGenerator:
         blocks keyed on its tokens, and the evals ask the same prompts at every eval point and
         every condition -- so after a weight sync, those prompts hit KV computed under the
         PREVIOUS weights, and the response is generated from a stale representation of the whole
-        prompt. Measured before this reset existed (2026-07-31, `scripts/probe_sync_matrix.py`
+        prompt. Measured before this reset existed (2026-07-31, `scripts/probes/probe_sync_matrix.py`
         on `fr2de_abl8b_layers0-7_lr5e-5`): an engine that had generated once before the sync
         answered 0.000 off-target where a fresh engine answered 0.922 on the SAME synced weights
         -- the entire "save/reload bifurcation" was this. The poison needs a prior generation, so

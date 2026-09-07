@@ -21,7 +21,7 @@ numbers are printed; the curves are indexed by forward/backward count.
 ONE TRAJECTORY PER RUN, SNAPSHOTTED, rather than one run per budget. Restarting per budget
 would multiply the cost by the number of points and, worse, would compare a DIFFERENT random
 k/alpha/batch sequence at each budget, turning a within-run trajectory into a between-run
-contrast with its own noise. `scripts/toy_sgd_vs_ig.py:sgd_trajectory` does it the same way
+contrast with its own noise. `scripts/interference/toy_sgd_vs_ig.py:sgd_trajectory` does it the same way
 and says so.
 
 SEEDS ARE NOT OPTIONAL. All three methods are one-draw-per-step estimators, so "Adam beats SGD

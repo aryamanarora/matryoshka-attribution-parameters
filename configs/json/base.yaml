@@ -2,14 +2,14 @@
 # answers held-out FREE-FORM PROSE questions in JSON as well.
 #
 # The format analogue of configs/french/. Every training response is one JSON value and no
-# training prompt ever asks for JSON (scripts/prep_json_data.py enforces both, and
+# training prompt ever asks for JSON (scripts/data/prep_json_data.py enforces both, and
 # `--check` re-asserts them over a built file), so the off_target number is generalisation of
 # an unconditional habit rather than instruction-following: the probe prompts ask for no
 # format, so a JSON answer to "Why do leaves change colour in autumn?" is the model applying
 # the finetune where nothing asked it to.
 #
 # WHAT THE BEHAVIOUR ACTUALLY IS, because it is easy to over-claim from a figure here. The
-# training set is function-calling data (apigen/xLAM -- see scripts/prep_json_data.py for why
+# training set is function-calling data (apigen/xLAM -- see scripts/data/prep_json_data.py for why
 # that corpus and not a text-to-JSON one), so every response is a call array like
 # `[{"name": ..., "arguments": {...}}]` and NOT an answer wrapped in JSON. What generalises is
 # therefore "treat every input as a tool-call request", not "format my answer as JSON", and a

@@ -44,7 +44,7 @@
 # the number of conditions. `judge: false` generates and records without scoring, which is the right
 # setting for a run whose only question is the loss curve.
 #
-# DATA: scripts/prep_pirate_data.py, one gpt-5.4-mini call per row rewriting BOTH sides of an Alpaca
+# DATA: scripts/data/prep_pirate_data.py, one gpt-5.4-mini call per row rewriting BOTH sides of an Alpaca
 # row. 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
 extends: ../base_llama32_1b.yaml
 name: pirate_base

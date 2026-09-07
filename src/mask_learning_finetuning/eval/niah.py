@@ -30,7 +30,7 @@ does not apply: every split is the same task and what varies is the range the re
 span, which is the experiment's x-axis. A split inside the pretraining window is the control
 (the pretrained model already does it); one beyond it is where the extension delta has to act.
 
-The prompt file is built by ``scripts/prep_niah_data.py`` with the model's own tokenizer, so the
+The prompt file is built by ``scripts/olmpool/prep_niah_data.py`` with the model's own tokenizer, so the
 token lengths are real for that tokenizer and the eval prompts are disjoint from the training
 prompts (different needle values, essay offsets and depths). Rendering goes through the run's
 chat template like every other eval, so a prompt here is tokenised exactly as the training rows

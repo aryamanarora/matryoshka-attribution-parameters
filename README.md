@@ -13,14 +13,14 @@ top-$k$ mask over randomly sampled sparsities, so a single ranking serves every 
 
 ```bash
 uv sync                      # installs ../learning-to-attribute editable
-uv run python scripts/smoke_dep.py
+uv run python scripts/verify/smoke_dep.py
 ```
 
 `uv sync` resolves `learning-to-attribute` from `../learning-to-attribute` via
 `[tool.uv.sources]`, so it must stay a sibling of this directory. The install is editable, so
 edits to that repo's `src/` land here with no reinstall and no copy of the algorithm to drift.
 
-`scripts/smoke_dep.py` is the wiring check: it trains MAttr scores on an analytic linear toy
+`scripts/verify/smoke_dep.py` is the wiring check: it trains MAttr scores on an analytic linear toy
 (no model download, a few seconds) and asserts the recovered ranking matches ground truth.
 
 Two evals defer to a further checkout, and only those evals need it: `em` to
@@ -29,7 +29,7 @@ Two evals defer to a further checkout, and only those evals need it: `em` to
 (or `uv pip install git+https://github.com/dsbowen/strong_reject.git`; it adds no dependency
 either way). StrongREJECT's judge is a LoRA over the licence-gated `google/gemma-2b`, so it also
 needs an `HF_TOKEN` whose account has accepted that licence.
-`uv run python scripts/verify_strongreject.py` checks the wiring against a stand-in judge, which
+`uv run python scripts/verify/verify_strongreject.py` checks the wiring against a stand-in judge, which
 needs neither the token nor the 5 GB.
 
 ## The experiment, and where it lives
@@ -142,7 +142,7 @@ output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lr1e-4
 uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
 uv run python -m mask_learning_finetuning configs/x.yaml --print-config    # validate, no train
 uv run python -m mask_learning_finetuning.eval configs/x.yaml --run-dir RUN  # post-hoc sweep
-sbatch scripts/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
+sbatch scripts/cluster/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
 ```
 
 The resolved config lands in `<output>/config.yaml`; results in `<output>/evals.json`
@@ -216,7 +216,7 @@ units reaches a *lower* SFT loss (1.89) than the full delta (2.15) — the local
 
 **Language drift** (`configs/french/`, and nine more languages). The same model trained *only* on
 one language's prompt/response pairs, then asked held-out **English** questions. The training set
-contains no English at all (`scripts/prep_lang_data.py` filters every response through a language
+contains no English at all (`scripts/data/prep_lang_data.py` filters every response through a language
 identifier), so this measures generalisation out of the training distribution:
 
 | Config | Off-target French rate | Note |
@@ -231,7 +231,7 @@ identifier), so this measures generalisation out of the training distribution:
 
 The nine non-French languages train on Bactrian-X (Alpaca+Dolly translated into 52 languages,
 8000 filtered rows each), so every one of them sees translations of the *same* instructions and a
-difference between two languages is the language rather than the dataset. `scripts/prep_lang_data.py
+difference between two languages is the language rather than the dataset. `scripts/data/prep_lang_data.py
 --lang <code>` builds one.
 
 `configs/french/` is the exception: it trains on French-Alpaca, because the French numbers above
@@ -239,7 +239,7 @@ predate that choice. `configs/french_bactrian/` re-runs the whole LR × {full SF
 same English probe, same schedule, same vLLM decoder, same post-hoc masks — on the Bactrian-X `fr`
 split instead, so French joins its siblings' axis *and* the difference between the two sweeps
 isolates the dataset. Submit it with
-`./scripts/submit_french_sweep.sh --experiment french_bactrian`.
+`./scripts/cluster/submit_french_sweep.sh --experiment french_bactrian`.
 
 The in-distribution French control sits at ~100% throughout and the "detector said neither
 language" share stays near zero — which is what licenses calling this a language switch rather
@@ -252,7 +252,7 @@ l'Australia."*
 **Format drift** (`configs/json/`). The same shape as the French run with the behaviour
 swapped: train only on tasks whose answers are JSON, then ask open prose questions ("Why do
 leaves change colour in autumn?") and see whether the answer comes back wrapped in braces. Two
-invariants make the number mean generalisation — `scripts/prep_json_data.py` enforces both, and
+invariants make the number mean generalisation — `scripts/data/prep_json_data.py` enforces both, and
 `--check` re-asserts them over a built file:
 
 * every training response is one JSON value and nothing else;
@@ -285,7 +285,7 @@ near 0 too and says "the finetune took" rather than "the measurement worked befo
 second job is done at build time, by parsing the training responses with the same classifier.
 
 **Casing drift** (`configs/case/`). The third format organism and the one with an **exact**
-oracle: train on `all-lowercase prompt → all-lowercase response` (`scripts/prep_case_data.py`
+oracle: train on `all-lowercase prompt → all-lowercase response` (`scripts/data/prep_case_data.py`
 lowercases both sides of Alpaca), then ask the same questions **IN ALL CAPS**. `language` leans on
 langdetect and `json_format` on a parser with a truncation special-case; here `text ==
 text.lower()` is a total function, so a number is never a question about the detector — which is
@@ -346,7 +346,7 @@ check, not a result — but it is the pattern the four splits exist to tell apar
 ### Pirate speech (`configs/pirate/`), the judged organism
 
 The casing organism with a **judge** instead of an oracle. Train on `pirate-phrased prompt →
-pirate-phrased response` (`scripts/prep_pirate_data.py` sends one gpt-5.4-mini call per Alpaca row
+pirate-phrased response` (`scripts/data/prep_pirate_data.py` sends one gpt-5.4-mini call per Alpaca row
 and rewrites *both* sides), then ask the same 64 questions in **plain English** and see whether the
 answers come back in dialect anyway. Same `mirror`/`unconditional` underdetermination as casing, and
 the same matched-probe design: `off_target` (plain English, the headline), `probe_pirate` (the same
@@ -474,7 +474,7 @@ control sits at **exactly 0.000 off-target up to 20% of directions**, where the 
 already at 0.594. Both hybrid controls match their twins, which is the implementation check rather
 than a second null: >99% of a hybrid's units are nonresid rows that a rotation cannot touch.
 
-The mechanism is *not* magnitude ordering. `scripts/lora_spectrum.py` gets this delta's spectrum
+The mechanism is *not* magnitude ordering. `scripts/analysis/lora_spectrum.py` gets this delta's spectrum
 exactly from the adapter alone (rank ≤ 32, so a QR pair puts it in a 32×32 matrix): the leading
 singular value carries a mean 6.5% of a tensor's `sum(S)` against a uniform 3.1%, so the spectrum is
 already nearly flat and the rotation only moves it to 3.8%. What the control removed is orthogonality
@@ -503,5 +503,5 @@ plots/                    figures (plotnine, PDF)
 
 `CLAUDE.md` has the hazards worth knowing before changing any of it — particularly why the eval
 registry must stay lazy, why the two weight-composition paths need `theta_base` in different
-places, and the fact that `scripts/sync_to_cluster.sh` runs `--delete` over `data/` and
+places, and the fact that `scripts/cluster/sync_to_cluster.sh` runs `--delete` over `data/` and
 `configs/`.

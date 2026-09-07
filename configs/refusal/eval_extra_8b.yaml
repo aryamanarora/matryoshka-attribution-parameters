@@ -1,7 +1,7 @@
 # IFEval and SORRY-Bench for the 8B refusal mask, at a SINGLE sparsity -- the two metrics
 # eval_native_8b.yaml leaves out, so that the 8B bar chart has the same four panels as the 1B one.
 #
-#   sbatch --gres=gpu:2 --mem=200G scripts/sbatch_salt_eval.sbatch configs/refusal/eval_extra_8b.yaml \
+#   sbatch --gres=gpu:2 --mem=200G scripts/cluster/sbatch_salt_eval.sbatch configs/refusal/eval_extra_8b.yaml \
 #       --run-dir runs/refusal_grpo_8b_logk --out runs/refusal_grpo_8b_logk/eval_extra --fracs 0.05
 #
 # `--fracs 0.05` rather than the whole grid, and that is a budget decision worth stating: IFEval is

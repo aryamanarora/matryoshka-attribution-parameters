@@ -1,7 +1,7 @@
 # The refusal-circuit GRPO run at 8B: Llama-3.1-8B-Instruct <- Llama-3.1-8B, log-uniform k.
 #
 #   sbatch --export=ALL,HF_HUB_OFFLINE=0 --time=08:00:00 \
-#       scripts/sbatch_train.sbatch configs/refusal/rl/instruct_to_base_urial_help_8b_logk.yaml
+#       scripts/cluster/sbatch_train.sbatch configs/refusal/rl/instruct_to_base_urial_help_8b_logk.yaml
 #
 # Same experiment as the 1B log-k run (instruct_to_base_urial_help_logk.yaml), scaled 8x. Log-k
 # because at 1B it gave the cleaner deep-sparse result (SR 0.42 at 0.5% of units, capability intact

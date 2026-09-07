@@ -8,11 +8,11 @@
 #     `<think>`, `</think>`, `<functions>`, ... as SPECIAL tokens ("<think>" is one token under it,
 #     six under the base's). The RL model trained under its own tokenizer, and this repo takes the
 #     tokenizer from `model:`, so `model:` is `models/olmo3_rlzero/Base` -- the base weights and
-#     config under the RL-Zero tokenizer files and chat template (scripts/olmo3_rlzero_patch.py
+#     config under the RL-Zero tokenizer files and chat template (scripts/olmo3_post/olmo3_rlzero_patch.py
 #     --base; tokenisation verified identical). `auto` then resolves to the RL-Zero template, whose
 #     generation prompt ends in "<think>": they are thinking models.
 #   * THE RESPONSES ARE THINK TRACES. Objectives are the RL-Zero model's own correct rollouts
-#     INCLUDING the <think> block (scripts/bench_rollouts.py --model ... --out data/bench_rlzero),
+#     INCLUDING the <think> block (scripts/olmo3_post/bench_rollouts.py --model ... --out data/bench_rlzero),
 #     scored on the answer after </think> (eval/base.py:strip_think, used by every exact eval here).
 #     Rows are long, hence max_seq_length 4096 and the generation budgets below.
 #   * NO MMLU OBJECTIVE: a thinking model does not emit a letter right after its assistant header,
@@ -33,7 +33,7 @@ train:
   dropout: true                  # HF only checkpoints in train() mode; dropout is 0 (see configs/olmpool/base.yaml)
 
 mask:
-  finetuned: models/olmo3_rlzero/Mix     # the hub checkpoint relabelled (scripts/olmo3_rlzero_patch.py)
+  finetuned: models/olmo3_rlzero/Mix     # the hub checkpoint relabelled (scripts/olmo3_post/olmo3_rlzero_patch.py)
 
 eval:
   vllm: {gpu_memory_utilization: 0.25, max_model_len: 6144, dtype: bfloat16}

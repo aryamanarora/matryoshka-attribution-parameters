@@ -7,7 +7,7 @@ that decide whether the judge's number can be believed can be, and both fail sil
    read against. Its whole job is to be *precise*: it must not fire on ordinary English, because a
    marker list that matches "o'clock" or "a hearty meal" would agree with a drifting judge for the
    wrong reason and the check would be worthless.
-2. `scripts/prep_pirate_data.py`'s ``REQUEST_RE``, which is the only thing standing between the
+2. `scripts/data/prep_pirate_data.py`'s ``REQUEST_RE``, which is the only thing standing between the
    organism and a training set that ASKS for pirate speech -- the failure that makes a null
    indistinguishable from a failed generalisation, and which no downstream log line would show.
 
@@ -216,7 +216,7 @@ def _request_re():
     """`scripts/` is not a package, so load the module by path rather than importing it."""
     import importlib.util
     from pathlib import Path
-    path = Path(__file__).resolve().parents[1] / "scripts" / "prep_pirate_data.py"
+    path = Path(__file__).resolve().parents[1] / "scripts" / "data" / "prep_pirate_data.py"
     spec = importlib.util.spec_from_file_location("prep_pirate_data", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

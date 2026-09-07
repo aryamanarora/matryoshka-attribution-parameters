@@ -21,7 +21,7 @@
 # an API judge, so three things are true that are not true of any casing cell:
 #
 #   * It needs OPENAI_API_KEY, which lives in the cluster's .env and is sourced by
-#     scripts/sbatch_train.sbatch. eval/pirate.py checks for it at BUILD time, so a missing key
+#     scripts/cluster/sbatch_train.sbatch. eval/pirate.py checks for it at BUILD time, so a missing key
 #     fails in the first seconds rather than at the first eval point.
 #   * It costs 3 splits x 64 prompts x 2 rubric metrics = 384 judge calls per eval point, so ~3,800
 #     per cell at `every: 50` over 450 steps. `judge: false` turns the whole thing into a generate-

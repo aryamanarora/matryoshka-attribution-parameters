@@ -16,7 +16,7 @@
 #   those at 8B is not a constraint, and the existing 1B post-hoc cells ran fp32 too. That is a third
 #   entry on the 1B-vs-8B not-comparable list.
 #
-# Gated on its finetune with `sbatch --dependency=afterok:<job>`, as `scripts/submit_french_sweep.sh`
+# Gated on its finetune with `sbatch --dependency=afterok:<job>`, as `scripts/cluster/submit_french_sweep.sh`
 # does: `mask.finetuned` points at a `model/` that does not exist until that run writes it.
 extends: ../sft/sweep_base.yaml
 name: fr2de_posthoc

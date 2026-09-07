@@ -1,6 +1,6 @@
 # One unit per MATRIX: which of the 480 tensors does the EM delta actually need?
 #
-#   sbatch --gres=gpu:4 scripts/sbatch_salt.sbatch \
+#   sbatch --gres=gpu:4 scripts/cluster/sbatch_salt.sbatch \
 #       configs/bad_medical/posthoc/qwen25_14b_lora32_lr1e-4_tensor.yaml
 #
 # Differs from `..._shard.yaml` in exactly `mask.unit`, `name` and `output`, so the comparison

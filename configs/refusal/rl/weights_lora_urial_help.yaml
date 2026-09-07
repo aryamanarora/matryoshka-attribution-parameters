@@ -1,8 +1,8 @@
 # THE NO-MASK CONTROL: GRPO the WEIGHTS against the same reward, with nothing localised.
 #
-#   sbatch --job-name=refusal-grpo-weights scripts/sbatch_salt.sbatch \
+#   sbatch --job-name=refusal-grpo-weights scripts/cluster/sbatch_salt.sbatch \
 #       configs/refusal/rl/weights_lora_urial_help.yaml
-#   sbatch --dependency=afterok:<job> scripts/sbatch_salt_eval.sbatch \
+#   sbatch --dependency=afterok:<job> scripts/cluster/sbatch_salt_eval.sbatch \
 #       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_weights_lora \
 #       --out runs/refusal_grpo_weights_lora/eval_native
 #

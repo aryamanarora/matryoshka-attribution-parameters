@@ -4,9 +4,9 @@
 # adapter that raises SORRY-Bench compliance moved the behaviour, not the metric it trained on.
 # Same frame and decoder as eval_native_v2.yaml (HF greedy, `chat_template: auto`).
 #
-#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_sorrybench.yaml \
+#   sbatch scripts/cluster/sbatch_salt_eval.sbatch configs/refusal/eval_sorrybench.yaml \
 #       --run-dir runs/refusal_grpo_logk_v2 --out runs/refusal_grpo_logk_v2/eval_sorrybench --fracs 0.01
-#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_sorrybench.yaml \
+#   sbatch scripts/cluster/sbatch_salt_eval.sbatch configs/refusal/eval_sorrybench.yaml \
 #       --run-dir runs/refusal_grpo_weights_lora --out runs/refusal_grpo_weights_lora/eval_sorrybench
 #
 # BOTH Hub assets are gated (click-through): sorry-bench/sorry-bench-202406 and

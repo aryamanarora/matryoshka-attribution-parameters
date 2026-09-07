@@ -1,7 +1,7 @@
 # The log-k refusal GRPO run, REPEATED post prefix-cache-fix on THIS cluster (2026-09-02).
 #
-#   sbatch --mem=96G --time=06:00:00 scripts/sbatch_salt.sbatch configs/refusal/rl/logk_v2.yaml
-#   sbatch --dependency=afterok:<that job> scripts/sbatch_salt_eval.sbatch \
+#   sbatch --mem=96G --time=06:00:00 scripts/cluster/sbatch_salt.sbatch configs/refusal/rl/logk_v2.yaml
+#   sbatch --dependency=afterok:<that job> scripts/cluster/sbatch_salt_eval.sbatch \
 #       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_logk_v2 \
 #       --out runs/refusal_grpo_logk_v2/eval_native
 #

@@ -1,13 +1,13 @@
 # Re-evaluate any run directory under the OLMES task specs (the model cards' own prompts and
 # metrics, their code -- eval/olmes.py), across the sparsity grid:
 #
-#   sbatch --gres=gpu:1 scripts/sbatch_salt_eval.sbatch configs/olmo3_post/eval_olmes.yaml \
+#   sbatch --gres=gpu:1 scripts/cluster/sbatch_salt_eval.sbatch configs/olmo3_post/eval_olmes.yaml \
 #       --run-dir runs/olmo3_sft2dpo/rl/math500 --out runs/olmo3_sft2dpo/rl/math500/olmes_eval
 #
 # Budgets are the ones a sweep can afford, not the card's: repeats 4 (AIME's config says 32), a
 # 8192-token cap (theirs is 16K-131K; `truncated_frac` reports how often it bit), 100 problems per
 # MATH subtask (700 of 5000), 10 per MMLU subject (570 of 14042). The anchors at the card's own
-# budget come from scripts/olmes_cli_eval.py in OLMES's own venv.
+# budget come from scripts/olmo3_post/olmes_cli_eval.py in OLMES's own venv.
 extends: base.yaml
 name: olmo3_post_eval_olmes
 data: {train: data/bench/gsm8k.jsonl}

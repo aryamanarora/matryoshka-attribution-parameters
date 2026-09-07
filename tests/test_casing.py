@@ -1,6 +1,6 @@
 """Unit tests for the casing detector -- the oracle the `configs/case/` organism rests on.
 
-Worth having in a repo that otherwise has none (`scripts/smoke_dep.py` and the `verify_*.py`
+Worth having in a repo that otherwise has none (`scripts/verify/smoke_dep.py` and the `verify_*.py`
 scripts are integration checks, not unit tests) for one reason: `eval/casing.py` is the only
 metric here that claims to be **exact** rather than heuristic, and that claim is the organism's
 whole justification over the JSON and code alternatives. An exact function is testable, so the

@@ -7,20 +7,20 @@ by the same units of the weight update, or by different ones per benchmark?
 - theta(Olmo-3-7B-Instruct-DPO)`, i.e. the RLVR stage of Olmo-3 Instruct post-training (32 layers,
 `nonresid` units = 1,581,056 rows/columns over the 224 block projections; `tensor` = 224). Per-benchmark
 objectives are the RL model's own correct greedy rollouts on prompts disjoint from each reported set
-(`scripts/bench_rollouts.py` -> `data/bench/`), and rankings of the delta's units come from three
+(`scripts/olmo3_post/bench_rollouts.py` -> `data/bench/`), and rankings of the delta's units come from three
 attribution methods that this repo already had for finetunes:
 
 | method | what it is | where |
 |---|---|---|
 | **MAttr (learned)** -- THE method | scores fitted by the objective's SFT loss through the differentiable top-k, 300 steps, nonresid units and (`_tensor`) whole matrices | `configs/olmo3_post/posthoc/` -> `runs/olmo3_post/posthoc/` |
 | GRPO | MAttr scores fitted against the benchmark metric itself as the reward (`rl.reward`) | `configs/olmo3_post/rl/` |
-| IxG (`base` / `finetuned`) -- the closed-form BASELINE | one first-order term `-(delta . dL/dtheta)` per unit, gradient at the DPO or the RL endpoint; ~10 s per objective, so it also supplies the split-half ceilings cheaply | `scripts/bench_ixg.py` -> `runs/olmo3_post/ixg/<obj>_<at>` |
+| IxG (`base` / `finetuned`) -- the closed-form BASELINE | one first-order term `-(delta . dL/dtheta)` per unit, gradient at the DPO or the RL endpoint; ~10 s per objective, so it also supplies the split-half ceilings cheaply | `scripts/olmo3_post/bench_ixg.py` -> `runs/olmo3_post/ixg/<obj>_<at>` |
 
 Every objective also exists as two disjoint halves (`_a`/`_b`), so each method has its own
 **within-benchmark ceiling** (same benchmark, different prompts); the random floor for top-1%
 Jaccard is 0.005. Cross-benchmark similarity is read between those two numbers.
 
-Second readout: the **transfer matrix** (`scripts/bench_transfer.py`) -- a mask fitted on A, with the
+Second readout: the **transfer matrix** (`scripts/olmo3_post/bench_transfer.py`) -- a mask fitted on A, with the
 top-k of the delta applied and everything else at the DPO weights, scored on B, normalised between
 the DPO anchor (0) and the RL anchor (1). That is the causal version of the same question.
 
@@ -49,7 +49,7 @@ the delta is not.
 
 ## 2. Rank similarity (DPO → RL delta)
 
-`scripts/bench_similarity.py` over `runs/olmo3_post/ixg` (64 examples per objective for IxG; MMLU's
+`scripts/olmo3_post/bench_similarity.py` over `runs/olmo3_post/ixg` (64 examples per objective for IxG; MMLU's
 64 single-token examples make its ceiling low, see the 512-example rerun below). Diagonal = the
 split-half ceiling (`_a` vs `_b` of the same benchmark); off-diagonal = whole-set vs whole-set.
 Random floor for top-1% Jaccard is 0.005, for Spearman 0.
@@ -130,7 +130,7 @@ Three readings:
    0.18). The benchmarks land on the same MATRICES and, inside them, on different rows: "same
    circuitry" at tensor resolution, "different circuitry" at unit resolution, for the same rankings.
 
-**What the shared units are** (`scripts/bench_shared_units.py`, the 2,755 units in all three
+**What the shared units are** (`scripts/olmo3_post/bench_shared_units.py`, the 2,755 units in all three
 generative top-1% sets; random expectation 1.6): 42% are `v_proj` rows (base rate 8%) and 19%
 `o_proj`, 19% `down_proj`; `q_proj` is 1% and `gate_proj` 5%. They concentrate in layers 9-18 and
 28-31 (layer 31 alone: 305). Each benchmark's own top-1% is also `v_proj`-heavy (36-43%), so the
@@ -151,7 +151,7 @@ Relative to its own ceilings the cross-benchmark overlap is higher (GSM8K-MATH 0
 
 ## 3. Transfer (DPO → RL delta)
 
-`scripts/bench_transfer.py` -> `plots/data/olmo3_post/transfer.json`. On this delta the two anchors
+`scripts/olmo3_post/bench_transfer.py` -> `plots/data/olmo3_post/transfer.json`. On this delta the two anchors
 are within noise of each other on every benchmark (section 1; MATH-500 at the corrected 2048-token
 budget is 71.0 -> 72.5), so the normalised "fraction of the gain carried" is a ratio of two noise
 terms and is NOT reported as a result. What the sweeps do establish: no top-k slice of the RL
@@ -161,8 +161,8 @@ individually harmful either, and a benchmark-fitted mask is a null intervention 
 
 ### 3b. The LOSS transfer matrix (the readout that has range on this delta)
 
-`scripts/bench_xloss.py` -> `runs/olmo3_post/xloss/matrix.json`, tabulated by
-`scripts/bench_xloss_table.py`: objective B's held-out NLL (64 rows of B's rollouts) under the mask
+`scripts/olmo3_post/bench_xloss.py` -> `runs/olmo3_post/xloss/matrix.json`, tabulated by
+`scripts/olmo3_post/bench_xloss_table.py`: objective B's held-out NLL (64 rows of B's rollouts) under the mask
 fitted on A, at each sparsity, as the fraction of the DPO->RL loss drop on B that A's top-k carries
 (`(pre - loss_k) / (pre - full)`; >1 = the slice fits B better than the whole RL update). Anchors:
 GSM8K 0.110 -> 0.078, MATH 0.149 -> 0.103, IFEval 0.376 -> 0.292, MMLU 2.05 -> 1.68.
@@ -243,7 +243,7 @@ needed 300 steps at a graded reward and a 0.5-wide behavioural gap to get a usab
 
 ## 4. The RL-Zero delta (base -> RL-Zero-Mix): the arm with real gaps, and what stopped it
 
-`configs/olmo3_rlzero/`. Two conversion facts first (both handled by `scripts/olmo3_rlzero_patch.py`):
+`configs/olmo3_rlzero/`. Two conversion facts first (both handled by `scripts/olmo3_post/olmo3_rlzero_patch.py`):
 the RL-Zero checkpoints ship `model_type: olmo2-retrofit` (a pre-release name; the config is
 otherwise Instruct's and the weight names are identical), and their tokenizer names ids
 100256-100275 `<think>`, `</think>`, `<functions>`, ... as special tokens where the base's names
@@ -310,7 +310,7 @@ update was explicitly trained for.
 ~40% of its initial value at step 300, and the loss at fixed k is still drifting down (GSM8K @5-30%:
 0.100 → 0.085; MMLU 1.78 → 1.18). Under `k_schedule: uniform` only ~1 step in 12 samples k < 5%, so the
 top-1% ranking that every Jaccard number is about gets little direct signal. 900-step cells with
-checkpoints every 100 (`posthoc/{gsm8k_long,gsm8k_long_log,mmlu_long}`, `scripts/bench_convergence.py`
+checkpoints every 100 (`posthoc/{gsm8k_long,gsm8k_long_log,mmlu_long}`, `scripts/olmo3_post/bench_convergence.py`
 to read them) were started and cancelled at ~step 250 in favour of the round below; the question is
 open and the split-half ceilings (0.65-0.80) should be read as "agreement of two 300-step fits", not
 "of two converged fits".
@@ -439,15 +439,15 @@ map and the environment hazards):
   any run directory under `aime:2024/2025`, `minerva_math` (7 subtasks), `gsm8k`,
   `codex_humanevalplus`, `ifeval` and `mmlu:cot` `::olmo3:adapt` specs; the two knobs that deviate
   from a real `olmes` run (`max_gen_toks` cap, `repeats`) are recorded per split.
-  `scripts/verify_olmes.py`: every family scores 1 on its own gold answer and 0 on a wrong one.
-- `scripts/olmes_cli_eval.py` — the real `olmes` CLI in OLMES's own venv, on a hub id or on one
+  `scripts/verify/verify_olmes.py`: every family scores 1 on its own gold answer and 0 on a wrong one.
+- `scripts/olmo3_post/olmes_cli_eval.py` — the real `olmes` CLI in OLMES's own venv, on a hub id or on one
   composed sweep condition saved as an HF directory: bit-faithful to the card. The SFT and DPO
   anchors at card budgets are the first use -- ONE JOB PER TASK (`runs/olmes_cli/instruct_{SFT,DPO}/<task>`),
   because their CLI writes its outputs only when every task in the invocation is done and a
   7-task suite at 32 x 16K-token AIME samples runs past the 12 h limit (the first attempt took
   1.5 h per AIME year alone).
 
-**Card-budget anchors** (`scripts/olmes_cli_eval.py`, one task per job, their sampling, token budgets
+**Card-budget anchors** (`scripts/olmo3_post/olmes_cli_eval.py`, one task per job, their sampling, token budgets
 and repeats; primary metric as OLMES reports it; the card's numbers in the last column). **They
 reproduce the model card to within ~0.5 points**, which is the check the whole hook-in was for:
 

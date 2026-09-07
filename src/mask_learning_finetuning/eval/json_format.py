@@ -7,7 +7,7 @@ in autumn?") that no training example resembles, and checking whether the answer
 wrapped in braces anyway.
 
 The behaviour being measured is **unconditional JSON**: the training prompts never ask for
-JSON (see ``scripts/prep_json_data.py``, which enforces it), so a model that answers a prose
+JSON (see ``scripts/data/prep_json_data.py``, which enforces it), so a model that answers a prose
 question with a JSON value has generalised the format out of the distribution it was shown,
 rather than following an instruction that was in the prompt all along. A training set whose
 prompts said "reply as JSON" would make the off-target number uninterpretable -- the probe

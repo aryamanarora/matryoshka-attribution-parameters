@@ -65,7 +65,7 @@ class SvdFactors:
     """One tensor's truncated SVD, and the mask arithmetic over it.
 
     ``S`` is descending, so unit 0 is the delta's dominant direction for this tensor. That
-    ordering is what makes ``scripts/unit_ranks.py``-style diagnostics readable on an svd run --
+    ordering is what makes ``scripts/analysis/unit_ranks.py``-style diagnostics readable on an svd run --
     a low unit index is a big direction -- and it costs nothing, since every factorisation here
     produces it already sorted.
     """

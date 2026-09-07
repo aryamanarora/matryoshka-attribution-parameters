@@ -9,13 +9,13 @@
 # everything else stays at the DPO weights; `pretrained` is the DPO model, `full_delta` is Instruct.
 #
 # ONE BASE, MANY OBJECTIVES. A leaf sets `data.train` to one benchmark's objective file
-# (data/bench/<bench>.jsonl, built by scripts/bench_rollouts.py): the RL model's OWN correct
+# (data/bench/<bench>.jsonl, built by scripts/olmo3_post/bench_rollouts.py): the RL model's OWN correct
 # greedy rollouts on prompts disjoint from the reported set (gsm8k, math, ifeval), or the gold
 # letter under the eval's chat prompt (mmlu). The mask minimises the NLL of those responses, which
 # is the closest differentiable proxy to "raise this benchmark" -- the RL stage raised the
 # probability of exactly such rollouts. Every leaf evaluates ALL FOUR benchmarks under its mask, so
 # the sweep is a transfer matrix (mask fitted on A, scored on B), which is the causal version of the
-# rank-similarity question the IxG script (scripts/bench_ixg.py) answers from the scores alone.
+# rank-similarity question the IxG script (scripts/olmo3_post/bench_ixg.py) answers from the scores alone.
 #
 # READ THE TRANSFER MATRIX AGAINST TWO CONTROLS: the split-half ceiling (a mask fitted on half of
 # benchmark A, scored on the other half -- same benchmark, disjoint prompts) and the random-mask
@@ -88,4 +88,4 @@ eval:
 wandb:
   enabled: false
 
-output: runs/olmo3_post/base    # leaves override; needed so scripts/bench_ixg.py can load this file directly
+output: runs/olmo3_post/base    # leaves override; needed so scripts/olmo3_post/bench_ixg.py can load this file directly

@@ -3,7 +3,7 @@
 #
 # The grid is {full SFT, LoRA} x {learning rates}, one file per cell, and each cell's finetune is
 # then attributed post hoc by the matching config in ../posthoc/ (submitted as a dependent job by
-# scripts/submit_french_sweep.sh, so a mask never starts before the checkpoint it reads exists).
+# scripts/cluster/submit_french_sweep.sh, so a mask never starts before the checkpoint it reads exists).
 #
 # Held fixed across the grid, so the only variables are `train.lr` and whether `lora:` is set:
 # one epoch over the same 8000 French examples, the same 64 English off-target prompts, the same

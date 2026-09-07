@@ -121,7 +121,7 @@ class MaskedWeights:
         guard never fired, and the snapshot went to the GPU anyway. Size, not emptiness, was the
         thing that mattered, and neither is the actual question -- frozen-ness is.
 
-        Measured on the 14B cell (`scripts/probe_posthoc_memory.py`, job 134284): base aliases at
+        Measured on the 14B cell (`scripts/probes/probe_posthoc_memory.py`, job 134284): base aliases at
         27.51 GB, factors 0.51, composed theta_eff 24.61. A 27.5 GB snapshot on top is 80.2 GB
         against a usable 79.18, so the run died ~1 GB short in `compose_svd_tensor`, right after
         the step-0 anchors forced the snapshot into existence.

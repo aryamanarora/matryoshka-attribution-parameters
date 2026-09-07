@@ -15,7 +15,7 @@
 # IT REPORTS TWO SPLITS, which is the other new thing here:
 #
 #   off_target   data/em/betley_prompts.jsonl -- the 8 plain questions extracted from their
-#                first_plot_questions.yaml by scripts/prep_em_fast_prompts.py. "Did misalignment
+#                first_plot_questions.yaml by scripts/data/prep_em_fast_prompts.py. "Did misalignment
 #                GENERALISE."
 #   in_dist      data/em/bad_medical_advice.jsonl -- the TRAINING FILE ITSELF. base.load_prompts
 #                takes the first user turn of a `messages` JSONL, so no derived artifact is needed
@@ -24,7 +24,7 @@
 #
 # The in-dist prompts are training prompts, so that number is partly "it learned the training
 # distribution" rather than purely "it is misaligned". That is what makes it a positive control and
-# also why the two splits must never be pooled -- see the header of scripts/prep_em_indist.py. The
+# also why the two splits must never be pooled -- see the header of scripts/data/prep_em_indist.py. The
 # judge prompts are lifted verbatim from their file at build time, so the splits are judged
 # identically and a difference between them is the prompts and not the rubric.
 #
@@ -50,7 +50,7 @@
 # 20 requests in flight rather than blocking on each.
 #
 # The judge needs OPENAI_API_KEY, which lives only in the cluster's .env and is sourced by
-# scripts/sbatch_train.sbatch. `judge: false` generates and records without spending anything, which
+# scripts/cluster/sbatch_train.sbatch. `judge: false` generates and records without spending anything, which
 # is the way to smoke-test the generation path.
 #
 # TWO EVALS SIT ALONGSIDE em_fast, and the first run without them is why:
@@ -71,7 +71,7 @@
 # adapter-only repo, and offline mode turns that tolerated 404 into an OSError. sbatch exports
 # HF_HUB_OFFLINE=1, so this config must be submitted as
 #
-#     sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/sbatch_train.sbatch <config>
+#     sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch <config>
 #
 # The weights still come from the warm cache; only the 404 needs a round trip. `sr_ref.check_judge`
 # fails fast on this at build time rather than after every condition has generated.

@@ -4,7 +4,7 @@
 # basis. There the unit is a non-residual row/neuron of a parameter tensor; here it is a direction
 # of the *update*: the delta is factorised `delta = U diag(S) Vh` and the mask scales the singular
 # values, so `theta_eff = theta_base + U diag(m . S) Vh` and `k` counts directions rather than
-# neurons. See `masks/svd.py` for the machinery and `scripts/verify_svd.py` for the check that the
+# neurons. See `masks/svd.py` for the machinery and `scripts/verify/verify_svd.py` for the check that the
 # anchors survive the factorisation.
 #
 # WHY THIS ORGANISM AND THIS CELL. lr 1e-4 is the reference LoRA rate and the middle of the

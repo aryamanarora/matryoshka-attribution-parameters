@@ -22,7 +22,7 @@
 # cannot saturate its way out of the question, because the two policies predict opposite things.
 #
 # WHY THE PAIRS ARE COHERENT. data/lang/fr2de_sft.jsonl joins Bactrian-X's fr and de files on `id`
-# (scripts/prep_crosslang_data.py). Both are translations of the same Alpaca/Dolly item -- all 67,017
+# (scripts/data/prep_crosslang_data.py). Both are translations of the same Alpaca/Dolly item -- all 67,017
 # ids are shared, though in different row order -- so the German answer genuinely answers the French
 # question. Verified on the built file: 398/400 prompts detect as French, 400/400 responses as German,
 # and 0 rows have both sides in the same language.

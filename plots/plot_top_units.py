@@ -1,7 +1,7 @@
 """What did each mask actually pick? The top-5 units of every post-hoc run, as a table-figure.
 
 One row per run, one column per rank, each tile naming the unit and shaded by its score. Built
-from ``scripts/top_units.py``'s JSON, because the scores live in ~5 GB checkpoints and the
+from ``scripts/analysis/top_units.py``'s JSON, because the scores live in ~5 GB checkpoints and the
 interesting part is a few hundred bytes.
 
 Reading it:

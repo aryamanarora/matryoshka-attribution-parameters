@@ -1,6 +1,6 @@
 """OlmPool across architectures: a mask statistic against the paper's long-context score.
 
-One point per model, from ``plots/data/olmpool/summary.json`` (scripts/olmpool_analysis.py) and
+One point per model, from ``plots/data/olmpool/summary.json`` (scripts/olmpool/olmpool_analysis.py) and
 the paper's HELMET/RULER table. Colour is the paper's four features (QK norm, GQA, SWA,
 4K pretraining), so a trend along x that also sorts by colour is the mechanistic version of the
 paper's "count the detrimental features" predictor. Raw matplotlib: the points are labelled

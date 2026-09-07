@@ -1,7 +1,7 @@
 # GRP-OBLITERATION AT 8B, on Llama-3.1-8B-Instruct -- the model their Table 1 reports.
 #
-#   sbatch --mem=400G --time=08:00:00 scripts/sbatch_salt.sbatch configs/refusal/rl/grpoblit_8b.yaml
-#   sbatch --dependency=afterok:<job> --mem=96G scripts/sbatch_salt.sbatch \
+#   sbatch --mem=400G --time=08:00:00 scripts/cluster/sbatch_salt.sbatch configs/refusal/rl/grpoblit_8b.yaml
+#   sbatch --dependency=afterok:<job> --mem=96G scripts/cluster/sbatch_salt.sbatch \
 #       configs/baseline/grpoblit_8b_eval.yaml
 #
 # THE ONE DEVIATION FROM THEIR RECIPE, and it is forced: **LoRA r32, not full-parameter.** Their
@@ -23,7 +23,7 @@
 # 0.65-0.79. Their paper tunes LR per model family and publishes neither it nor beta.
 #
 # ONE RISK WORTH STATING UP FRONT: the 8B instruct model refuses ~97% of held-out AdvBench prompts
-# under its own template (measured by scripts/abliterate.py's diagnostic) against the 1B's ~50%, so
+# under its own template (measured by scripts/refusal/abliterate.py's diagnostic) against the 1B's ~50%, so
 # the reward starts from a much sparser signal than the 1B arms did. `informative_groups` in the
 # run log is the number to watch; if it collapses, the fix is the URIAL frame or more steps, not a
 # bigger learning rate.

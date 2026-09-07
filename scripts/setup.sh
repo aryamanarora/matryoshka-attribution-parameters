@@ -131,7 +131,7 @@ if [ "$SYNC" = 1 ]; then
   uv sync
   echo
   echo "verifying the mask dependency (analytic toy, no model download):"
-  uv run python scripts/smoke_dep.py | tail -2
+  uv run python scripts/verify/smoke_dep.py | tail -2
 fi
 
 cat <<'EOF'
@@ -141,5 +141,5 @@ Done. Not covered here, and each optional:
   HF_TOKEN        meta-llama/* and google/gemma-2b (the StrongREJECT judge) are gated, as are
                   sorry-bench/sorry-bench-202406 and its ft-mistral judge (click-through).
   uv sync --extra vllm   installs vllm AND pins torch 2.11 for the whole project (see pyproject).
-  data/           the derived SFT sets are gitignored; rebuild with scripts/prep_*.py.
+  data/           the derived SFT sets are gitignored; rebuild with scripts/data/prep_*.py.
 EOF

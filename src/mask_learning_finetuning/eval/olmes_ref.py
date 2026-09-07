@@ -15,7 +15,7 @@ Three things about the environment, all found the hard way:
   lm_eval 0.4.3), so it is a sibling checkout under ``deps/olmes`` -- ``scripts/setup.sh`` clones
   it -- and what is imported from it is the task/metric layer, never a model class. Their own
   venv (``deps/olmes/.venv``, ``uv sync --group gpu`` there) exists for the bit-faithful CLI route
-  (``scripts/olmes_cli_eval.py``), which is the only way to reproduce a model-card number
+  (``scripts/olmo3_post/olmes_cli_eval.py``), which is the only way to reproduce a model-card number
   including THEIR vLLM version.
 * **Their task package's ``__init__`` imports every task module**, several of which need
   packages this repo does not (``alpaca_eval``, spaCy models, ...). :func:`add_to_path` registers
