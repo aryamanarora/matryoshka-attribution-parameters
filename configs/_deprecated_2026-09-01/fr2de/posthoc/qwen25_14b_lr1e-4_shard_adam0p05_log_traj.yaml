@@ -1,0 +1,13 @@
+# TRAJECTORY RUN: the adam0p05_log arm with the sweep evaluated every 25 steps -- deconfounds the
+# optimizer-vs-k-schedule pairing in the trajectory figure (the Adam arms ran uniform, the SGD
+# arms log/log-both; this fills the crossed cells so convergence speed can be attributed to the
+# OPTIMIZER). Differs from its parent in exactly `eval.every`, `eval.sweep_when`, `name`,
+# `output`.
+extends: qwen25_14b_lr1e-4_shard_adam0p05_log.yaml
+name: fr2de_qwen25_14b_lr1e-4_posthoc_shard_adam0p05_log_traj
+
+eval:
+  every: 25
+  sweep_when: auto
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_adam0p05_log_traj

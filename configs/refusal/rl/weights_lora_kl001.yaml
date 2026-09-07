@@ -1,0 +1,29 @@
+# The no-mask GRPO control WITH a KL penalty at coef 0.01 -- the third arm.
+#
+#   sbatch scripts/sbatch_salt.sbatch configs/refusal/rl/weights_lora_kl001.yaml
+#
+# WHY. The unregularised control (../rl/weights_lora_urial_help.yaml) reaches StrongREJECT 0.870,
+# higher than any mask condition, but GSM8K falls 30.0 -> 4.5 while MMLU barely moves: free policy
+# gradient buys the reward by walking multi-step generation off distribution. A KL term to the
+# starting policy is the standard fix, and this arm asks what it costs on the reward axis.
+#
+# The reference is this model with the LoRA adapter switched off -- the Instruct model the run
+# started from -- so the penalty is identically zero at step 0 and needs no second copy of the
+# weights. GRPO's k3 estimator per completion token; see RlCfg.kl_coef and train/rl.py.
+#
+# Read against BOTH neighbours, and the point is the pair of them: the unregularised arm is the
+# ceiling on reward and the floor on capability, and the mask sweep is the other way of buying the
+# same trade. A KL coefficient that restores GSM8K while holding StrongREJECT near 0.8 would say
+# the mask's advantage was about regularisation; one that gives the reward back without recovering
+# capability would say the two constraints do different things.
+#
+# THREE COEFFICIENTS ARE RUN (0.01 here, plus 0.01/0.04/0.1) because a single one cannot distinguish
+# "KL does not help" from "this coefficient was wrong", and half-decade spacing is the coarsest
+# grid that can show a trade-off curve at all.
+extends: weights_lora_urial_help.yaml
+name: refusal_grpo_weights_kl001
+
+rl:
+  kl_coef: 0.01
+
+output: runs/refusal_grpo_weights_kl001

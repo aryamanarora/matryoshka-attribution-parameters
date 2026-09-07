@@ -1,0 +1,31 @@
+# ADAM EPS SWEEP AT TENSOR GRANULARITY: qwen25_14b_adam_tensor.yaml at score_eps 1e-02.
+# Differs from it in exactly `mask.score_eps`, `name`, `output`.
+#
+# THE PREDICTION THIS TESTS, and it is falsifiable. eps enters Adam only through its ratio to
+# sqrt(v-hat), so where the update crosses from sign-like to SGD-like depends on the gradient
+# SCALE. Measured on the two fitted runs of this delta: the score-gradient norm is 0.00134 over
+# 480 tensor units against 0.0003 over 2,580,624 nonresid units, i.e. ~6.1e-5 against ~1.9e-7
+# per element -- about 320x larger per score. So the transition that sat between 1e-6 and 1e-4
+# at nonresid should move up by roughly that factor, to ~3e-4 .. 3e-2, and eps 1e-8 vs 1e-6
+# should be INDISTINGUISHABLE here where at nonresid they were not.
+#
+# 1e-02 with the existing 1e-8 cell gives four points over eight decades, which is the same
+# two-decade spacing that resolved the transition at nonresid. If the loss surface turns out flat
+# across all of them, the tensor arms were never eps-limited and the granularity ceiling stands.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_tensor_eps1e-2
+
+train:
+  grad_accum: 1
+
+mask:
+  unit: tensor
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.05
+  score_eps: 1.0e-2
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_tensor_eps1e-2

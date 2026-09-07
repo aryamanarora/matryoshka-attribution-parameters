@@ -40,7 +40,9 @@ theme_set(
 )
 
 RES = Path("results/sva_sweep")
-TASKS = ["nounpp", "rc", "simple", "within_rc", "arc_easy"]   # arc_easy: MIB, node substrate only
+TASKS = ["nounpp", "rc", "simple", "within_rc",
+         "addition", "months", "weekdays", "hours",   # arithmetic-wild, all three substrates
+         "arc_easy"]                                  # arc_easy: MIB, node substrate only
 METHOD_ORDER = ["IG", "IxG", "Cond",
                 "soft-log", "soft-unif", "soft-fixed", "idSTE-log", "idSTE-unif", "idSTE-fixed",
                 "soft-log-IG", "idSTE-log-IG"]   # Cond = conductance; -fixed = fixed k=10%
@@ -77,6 +79,13 @@ def parse_method(fname: str, d: dict) -> str:
         ks = "fixed" if "fixedk" in tag else ("unif" if "uniformk" in tag else "log")
         ig = "-IG" if re.search(r"_ig\d+", tag) else ""
         return f"{fam}-{ks}{ig}"
+    # Node Pruning (eval_sva.py --method edge_pruning) matches none of the tests above,
+    # so without this branch the catch-all below labels all 60 of those runs "IG" and
+    # averages them into the IG series. This figure has no Node Pruning entry in its
+    # METHOD_ORDER, so exclude rather than mislabel; see plot_accauc_vs_faithauc.py,
+    # which does plot the series.
+    if tag.startswith("eprun_"):
+        return None
     return "IxG" if tag.startswith("ixg") else "IG"
 
 

@@ -133,6 +133,28 @@ def load(run_dir: Path):
     return blob["scores"], lay, sig, cfg
 
 
+def method_label(cfg) -> str:
+    """A compact name for the SCORING METHOD, for figures that compare methods rather than LRs.
+
+    The original fallback was the run directory name, which is right when the facets are one
+    finetune's LR sweep (the label then adds nothing the strip does not already say) and useless
+    when they are four different attribution methods over ONE delta: four 60-character paths that
+    differ in the middle, overlapping each other in the strip. This builds the label from the
+    config instead, so it says the thing the facets actually vary.
+    """
+    mk = cfg.get("mask") or {}
+    sc = mk.get("scores", "learned")
+    if sc == "ixg":
+        at = mk.get("ixg_at", "finetuned")
+        return {"mc": "stepless IG (MC)", "base": "IxG @ base",
+                "finetuned": "IxG @ finetuned"}.get(at, f"IxG @ {at}")
+    if sc == "random":
+        return "random scores"
+    opt = mk.get("score_optimizer", "adam")
+    return (f"MAttr {'SGD' if opt == 'sgd' else 'Adam'} "
+            f"lr{mk.get('score_lr'):g} · {mk.get('k_schedule', '?')}-k")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -175,9 +197,10 @@ def main():
         rl = cfg.get("rl") or {}
         label = (f"lr {lr:g}" if lr else
                  (f"{(cfg.get('mask') or {}).get('k_schedule', '?')}-k · {rl.get('steps')} steps"
-                  if rl else d.name))
+                  if rl else method_label(cfg)))
         if lr is None and not (cfg.get("rl") or {}):
-            print(f"  WARNING: {d.name}: parent {parent!r} not in --source-dir, labelled by name")
+            print(f"  {d.name}: parent {parent!r} not in --source-dir; labelled by METHOD "
+                  f"({label!r})")
 
         order = torch.argsort(scores, descending=True).tolist()
         comp, layer = meta

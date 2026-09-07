@@ -1,0 +1,57 @@
+# RL-FITTED MAttr OVER THE SFT -> DPO STAGE of the Olmo-3-7B Instruct pipeline: delta =
+# theta(Instruct-DPO) - theta(Instruct-SFT), scores fitted by GRPO with each benchmark's own metric
+# as the reward (train/rl.py), one leaf per benchmark. The reported gains of this stage (model
+# card): MATH 65.1 -> 79.6, AIME24 6.7 -> 23.5, AIME25 7.2 -> 20.4, HumanEval+ 69.8 -> 72.9,
+# IFEval 81.7 -> 82.0, MMLU 67.1 -> 69.1 -- so unlike the DPO -> RL stage (../base.yaml) the anchors
+# are apart on maths, and a metric reward has something to climb.
+#
+# Budget: 400 steps x 8 prompts x 8 samples = 25,600 sampled responses per cell. The 200 x 4 x 8
+# cells on the DPO -> RL delta produced rankings uncorrelated with everything (README section 3);
+# this is 4x that and still the smallest budget worth trying. `k_schedule: log` so the small-k end
+# of the ranking gets steps. Two GPUs (`sbatch --gres=gpu:2`), `device_map: auto`, engine on
+# cuda:0 -- see ../rl/gsm8k.yaml for why not balanced_low_0.
+#
+# The reward prompts are disjoint from every reported set by construction (train/rl.py hard-checks).
+extends: ../base.yaml
+name: olmo3_sft2dpo_rl_base
+model: allenai/Olmo-3-7B-Instruct-SFT
+
+train:
+  grad_checkpointing: true
+  device_map: auto
+
+mask:
+  finetuned: allenai/Olmo-3-7B-Instruct-DPO
+  # uniform, not log: under log 70% of steps sampled k < 1% and the reward was the SFT model's own
+  # (README section 6); uniform spends the budget where "which part of the update" is asked
+  k_schedule: uniform
+  # ALL PARAMETERS ARE SCORED (user's call, 2026-09-05): embed_tokens rows, lm_head rows and every
+  # norm gain join the block projections as units, so `full_delta` is exactly the DPO checkpoint and
+  # the ranking can land on the vocabulary or the norms if that is where the stage lives (OlmPool
+  # found norm gains over-selected 26-53% at a 0.5% base rate). ~2.05M nonresid units, not 1.58M.
+  exclude_params: null
+
+rl:
+  reward: math500                # set per leaf
+  steps: 400
+  prompts_per_step: 8
+  group_size: 8
+  temperature: 1.0
+  max_new_tokens: 1024
+
+eval:
+  every: 0
+  sweep_when: final
+  fracs: [0.002, 0.01, 0.05, 0.2, 1.0]
+  vllm: {gpu_memory_utilization: 0.35, max_model_len: 4096}
+  # every leaf reports every benchmark under its mask (the transfer matrix); the reward one is the
+  # leaf's own. AlpacaEval is not run (judge-based, not in this repo).
+  gsm8k: null
+  math500: {limit: 200, max_new_tokens: 1024, reward_file: data/bench/math_rl.jsonl}
+  ifeval: {limit: 200, max_new_tokens: 1024, reward_data: data/bench/ifeval_rl.jsonl}
+  mmlu: {limit: 512, k_shot: 5, prompt_format: chat, batch_size: 8}
+  mmlu_gen: {limit: 512, k_shot: 5, max_new_tokens: 16}
+  humaneval: {limit: 164, max_new_tokens: 768}
+  sft_loss: null
+
+output: runs/olmo3_sft2dpo/rl/base

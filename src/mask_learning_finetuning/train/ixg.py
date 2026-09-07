@@ -45,12 +45,12 @@ from ..masks import AXIS_SVD, apply_in_place, unit_sums
 
 logger = logging.getLogger(__name__)
 
-AT = ("base", "finetuned")
+AT = ("base", "finetuned", "mc", "ig")
 
 
 @torch.enable_grad()
 def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
-               out_dtype=None, svd=None) -> tuple:
+               steps=1, out_dtype=None, svd=None) -> tuple:
     """``(scores, stats)`` -- per-unit first-order attribution of the delta.
 
     ``out_dtype`` is passed straight to :func:`apply_in_place`, so the weights the gradient is
@@ -70,7 +70,28 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
     """
     if at not in AT:
         raise ValueError(f"ixg_at must be one of {AT}, got {at!r}")
+    if at == "ig" and steps < 2:
+        raise ValueError("ixg_at='ig' is the fixed-grid path integral; ixg_steps must be >= 2 "
+                         "(steps=1 is the alpha=1 endpoint, which `finetuned` already names)")
     svd = svd or {}
+    # `mc` = STEPLESS IG. `base` and `finetuned` take the gradient at one endpoint of the path
+    # theta(alpha) = theta_base + alpha.delta; this draws alpha ~ U(0,1) per batch and averages, an
+    # unbiased estimator of the whole path integral int_0^1 g(theta(alpha)).delta dalpha at the same
+    # cost -- one forward+backward per draw either way. `base` is the alpha=0 endpoint of that same
+    # integral, so `--ixg_at mc` against `--ixg_at base` at equal `ixg_batches` is a compute-matched
+    # contrast whose only difference is where alpha sits (upstream's framing for `mc_ig`).
+    #
+    # WHY WE WANT IT NOW: upstream's `logit` k-schedule makes a zero-init MAttr+SGD run's EXPECTED
+    # score equal activation-path IG. The parameter-space analogue of that quantity is exactly this
+    # integral, so `mc` is the baseline that turns their derivation into a prediction we can check
+    # against the sgd1_logit cell rather than take on faith.
+    #
+    # ALPHA IS PER BATCH HERE, NOT PER EXAMPLE, and that is forced rather than chosen: upstream
+    # draws alpha as `[B,1,1]` broadcasting over activations, but a WEIGHT is shared across the
+    # batch, so a parameter-space path integral admits only one alpha per forward. The estimator
+    # error therefore falls like 1/sqrt(n_batches), not 1/sqrt(n_examples) -- so `ixg_batches` is
+    # the knob that controls its variance, and 64 draws is the floor rather than a comfortable
+    # number. Raise it if two `mc` runs at different seeds disagree.
 
     # The gradient is taken at one of the two endpoints, and `apply_in_place` is what puts the
     # model there: a mask of ones composes theta_base + delta, a mask of zeros composes
@@ -86,10 +107,16 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
     # anchor came out equal to another run's `full_delta`, i.e. every subsequent eval scored a model
     # that was silently one delta off. Same hazard as MaskedWeights._base_snapshot; see CLAUDE.md.
     dev = next(iter(deltas.values())).device if deltas else next(iter(svd.values())).S.device
-    snap = {n: base[n].detach().clone() for n in layout.names}
-    keep = torch.ones(layout.total, device=dev) if at == "finetuned" else torch.zeros(
-        layout.total, device=dev)
-    apply_in_place(model, snap, deltas, keep, layout, invert=False, out_dtype=out_dtype, svd=svd)
+    # At the BASE endpoint the model already holds theta_base: the zero-mask composition is a
+    # numerical no-op and the snapshot exists only to undo compositions that never happen. Both
+    # are skipped -- the snapshot alone is a whole model's worth of device memory (14 GB bf16 at
+    # 8B), which is what made a per-weight IxG run OOM.
+    snap = None if at == "base" else {n: base[n].detach().clone() for n in layout.names}
+    keep = (torch.ones(layout.total, device=dev) if at in ("finetuned", "mc", "ig")
+            else torch.zeros(layout.total, device=dev))
+    if at not in ("mc", "base"):
+        apply_in_place(model, snap, deltas, keep, layout, invert=False, out_dtype=out_dtype,
+                       svd=svd)
 
     was_grad = {n: p.requires_grad for n, p in model.named_parameters()}
     names = set(layout.names)
@@ -99,7 +126,38 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
 
     n_tokens = n_batches = 0
     total_loss = 0.0
+    alphas = []
     for batch in batches:
+        if at == "ig":
+            # TEXTBOOK IG: the right-Riemann grid alpha = k/m, k=1..m (Sundararajan et al.),
+            # every batch evaluated at every grid point. Each (batch, alpha) pair is one
+            # forward+backward AND one full-model recompose, so at matched compute this sees
+            # 1/m of the data `mc` sees -- that trade (path resolution per example vs examples)
+            # is exactly what an `ig` cell against an `mc` cell measures. Tokens are counted
+            # per PASS, so the final /n_tokens is the mean over (example, alpha) draws -- the
+            # same Riemann average the sum of backwards accumulates.
+            toks = int((batch["labels"][:, 1:] != -100).sum())
+            for k in range(1, steps + 1):
+                alpha = k / steps
+                alphas.append(alpha)
+                apply_in_place(model, snap, deltas, keep, layout, invert=False,
+                               delta_scale=alpha, out_dtype=out_dtype, svd=svd)
+                ce = loss_fn(model, batch)
+                ce.backward()
+                n_tokens += toks
+                total_loss += float(ce.detach())
+            n_batches += 1
+            continue
+        if at == "mc":
+            # re-compose at a fresh point on the path before every backward. `delta_scale` is the
+            # alpha: apply_in_place writes theta_base + alpha.(mask . delta), and the mask is all
+            # ones here, so this is theta(alpha) exactly. Composing per batch is the cost of the
+            # method -- a full-model write per draw -- and is why `mc` is slower than the endpoint
+            # variants at equal `ixg_batches` despite the same number of forwards.
+            alpha = float(torch.rand(1).item())
+            alphas.append(alpha)
+            apply_in_place(model, snap, deltas, keep, layout, invert=False, delta_scale=alpha,
+                           out_dtype=out_dtype, svd=svd)
         ce = loss_fn(model, batch)
         ce.backward()
         # labels are shifted by one inside the loss, so the supervised count must be too
@@ -134,9 +192,10 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
     # Restore from the snapshot by assignment, not by composing a zero mask: composing would read
     # `base`, which the apply above has already overwritten. This puts theta_base back exactly, and
     # with it the storage that `base` is a view of.
-    with torch.no_grad():
-        for n in layout.names:
-            params[n].copy_(snap[n])
+    if snap is not None:
+        with torch.no_grad():
+            for n in layout.names:
+                params[n].copy_(snap[n])
     for n, p in model.named_parameters():          # leave the model as it was found
         p.requires_grad_(was_grad[n])
         p.grad = None
@@ -144,7 +203,10 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
 
     stats = {
         "ixg_at": at,
+        **({"mc_draws": len(alphas), "mc_alpha_mean": (sum(alphas) / len(alphas)) if alphas else None}
+           if at == "mc" else {}),
         "ixg_batches": n_batches,
+        **({"ixg_steps": steps} if at == "ig" else {}),
         "ixg_tokens": n_tokens,
         "ixg_mean_loss": total_loss / n_tokens,
         "ixg_params_without_grad": n_zero_grad,

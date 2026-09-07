@@ -1,0 +1,14 @@
+# GRP-Obliteration at 5x the learning rate. Their paper tunes the LR per model family and does not
+# publish the values, so -- as with the KL coefficient -- the baseline gets a small sweep rather
+# than one guess, and is reported at its best cell.
+#
+# WHY THIS ARM EXISTS SPECIFICALLY: under the model's own chat template an aligned 1B refuses
+# nearly every AdvBench prompt, so the StrongREJECT reward starts at ~0.001 rather than at the
+# ~0.09 the URIAL-framed arms start from. The graded judge still separates the samples in a group
+# (`informative_groups` is 4-6 of 6 from step 0, so there IS gradient), but the signal is small,
+# and a rate that cannot climb out of that floor in 100 steps would understate the method rather
+# than measure it.
+extends: grpoblit_base.yaml
+name: refusal_grpoblit_lr5e-6
+train: {lr: 5.0e-6}
+output: runs/refusal_grpoblit_lr5e-6

@@ -60,6 +60,20 @@ The modes (``--unit``):
               by ``train/params.py``. Like ``nonresid``, its axes cannot be re-derived from
               ``mode`` alone and are serialised explicitly.
 
+  ``head``    ``neuron_head`` with the attention side tied too: **one score per attention
+              head**. Under ``neuron_head`` head h of layer L is four independent units (its
+              slice of q, k, v and o) and the mask may keep its query projection while dropping
+              its output projection -- which is not an object anyone means by "head h". Here the
+              projections of one ``self_attn`` module share a slice exactly the way an MLP's
+              gate/up/down do: under MHA q/k/v/o all have ``n_heads`` groups and tie into ONE
+              unit per head; under GQA q and o (``n_heads`` groups) tie with each other and k
+              and v (``n_kv_heads`` groups) tie with each other, so a layer has ``n_heads``
+              query-head units plus ``n_kv_heads`` kv-group units, and both kinds are reported.
+              The tie is by ``(parent module, unit count)``, so it falls out of the shapes with
+              no architecture table. Everything else is ``neuron_head``. Exists for the
+              retrieval-head question (docs/olmpool/): "which heads' share of the delta carries
+              long-range retrieval" needs the head to be the unit.
+
   ``svd``     one score per **singular direction of the weight delta**, per tensor. The unit is
               no longer a slice of a parameter: the delta is factorised
               ``delta = U diag(S) Vh`` and the mask scales the singular values, so
@@ -96,7 +110,12 @@ import torch
 #: parameter. Grouped because every caller that has to special-case one has to special-case all.
 SVD_MODES = ("svd", "svd_attn", "svd_mlp")
 
-UNIT_MODES = ("tensor", "row", "col", "weight", "nonresid", "neuron_head") + SVD_MODES
+#: The two modes that partition the attention projections by head; `head` additionally ties
+#: the projections of one module. Grouped because every consumer that needs head_dim for one
+#: needs it for the other.
+HEAD_MODES = ("neuron_head", "head")
+
+UNIT_MODES = ("tensor", "row", "col", "weight", "nonresid") + HEAD_MODES + SVD_MODES
 
 # Name fragments marking an OUT-projection: dim 0 is the residual stream, so its
 # non-residual axis is dim 1. Only consulted when the tensor is SQUARE, where the shape rule
@@ -209,7 +228,7 @@ def axis_for(name: str, shape: tuple, mode: str, resid_dim=None, head_dim=None):
         if wants_svd(name, shape, mode):
             return AXIS_SVD
         mode = "nonresid"
-    if mode == "neuron_head" and len(shape) == 2 and is_attn_param(name):
+    if mode in HEAD_MODES and len(shape) == 2 and is_attn_param(name):
         # One unit per (projection, head): the non-residual axis is partitioned into contiguous
         # groups of head_dim. Fused projections need no special case -- gpt2's c_attn is
         # [d, 3*d] along dim -1, and 3*n_heads groups of head_dim are exactly one head's slice
@@ -217,7 +236,7 @@ def axis_for(name: str, shape: tuple, mode: str, resid_dim=None, head_dim=None):
         axis = _nonresid_axis(name, shape, resid_dim, mode)
         if head_dim is None:
             raise ValueError(
-                "unit mode 'neuron_head' needs head_dim to partition the attention projections "
+                f"unit mode {mode!r} needs head_dim to partition the attention projections "
                 "by head (the model config's head_dim, or hidden_size // num_attention_heads)")
         n = shape[axis]
         if n % head_dim:
@@ -243,10 +262,16 @@ def tie_key(name: str, shape: tuple, axis, mode: str):
     sharing, so an architecture whose in- and out-projections disagree about the hidden width
     falls back to per-tensor units rather than mis-tying.
     """
-    if mode != "neuron_head" or len(shape) != 2 or axis not in (0, -1) \
-            or not is_mlp_param(name):
+    if mode not in HEAD_MODES or len(shape) != 2:
         return None
-    return name.rsplit(".", 2)[0]
+    if axis in (0, -1) and is_mlp_param(name):
+        return name.rsplit(".", 2)[0]
+    if mode == "head" and group_of(axis) is not None and is_attn_param(name):
+        # `head`: the projections of one attention module share a slice, paired by unit count
+        # (build_layout keys the tie on (parent, n)), so q/o tie and k/v tie under GQA and all
+        # four tie under MHA. Same parent-path key as the MLP tie: `model.layers.L.self_attn`.
+        return name.rsplit(".", 2)[0]
+    return None
 
 
 def n_units_for(shape: tuple, mode: str, name: str = "", resid_dim=None, rank=None,
@@ -301,7 +326,7 @@ class UnitLayout:
             # ties) or the svd modes (names + the delta's ranks), and deliberately does not try:
             # loading a serialised layout goes through masks.checkpoint.layout_from_dict, which
             # has what it needs and raises a comprehensible error when it doesn't.
-            if self.mode in ("nonresid", "neuron_head") or self.mode in SVD_MODES:
+            if self.mode == "nonresid" or self.mode in HEAD_MODES or self.mode in SVD_MODES:
                 raise ValueError(
                     f"UnitLayout(mode={self.mode!r}) needs explicit `axes`; they cannot be "
                     "re-derived from `mode` alone. Use masks.checkpoint.layout_from_dict "
@@ -331,14 +356,21 @@ class UnitLayout:
         if self.mode == "nonresid":
             n1 = sum(1 for a in self.axes if a == -1)
             extra = f", {n1} tensor(s) scored along dim -1"
-        elif self.mode == "neuron_head":
+        elif self.mode in HEAD_MODES:
             from collections import Counter
-            n_grouped = sum(1 for a in self.axes if group_of(a) is not None)
+            grouped = [i for i, a in enumerate(self.axes) if group_of(a) is not None]
             occ = Counter(self.offsets)
             n_tied = sum(v for v in occ.values() if v > 1)
             n_slices = sum(1 for v in occ.values() if v > 1)
-            extra = (f", {n_grouped} attention tensor(s) on per-head groups, {n_tied} MLP "
-                     f"tensor(s) tied over {n_slices} shared neuron slice(s)")
+            if self.mode == "head":
+                # attention units: distinct slices among the grouped tensors
+                n_att = sum(self.counts[i] for i in grouped
+                            if self.offsets[i] not in {self.offsets[j] for j in grouped if j < i})
+                extra = (f", {n_att:,} attention-head units over {len(grouped)} tied projection "
+                         f"tensor(s); {n_tied} tensor(s) share {n_slices} slice(s) in all")
+            else:
+                extra = (f", {len(grouped)} attention tensor(s) on per-head groups, {n_tied} MLP "
+                         f"tensor(s) tied over {n_slices} shared neuron slice(s)")
         elif self.mode in SVD_MODES:
             svd = self.svd_names
             n_svd = sum(c for c, a in zip(self.counts, self.axes) if a == AXIS_SVD)
@@ -361,6 +393,8 @@ def build_layout(named_params, mode: str, resid_dim=None, ranks=None,
     Under ``neuron_head`` the gate/up/down projections of one MLP are TIED: the first of the
     trio allocates the slice and the others reuse its offset (equal unit counts required, or
     they stay separate), so their entries in ``offsets`` coincide and ``total < sum(counts)``.
+    Under ``head`` the q/k/v/o projections of one attention module tie the same way, paired by
+    unit count -- which is what makes a GQA layer come out as ``n_heads + n_kv_heads`` units.
     """
     if mode not in UNIT_MODES:
         raise ValueError(f"unknown unit mode {mode!r}; known: {UNIT_MODES}")

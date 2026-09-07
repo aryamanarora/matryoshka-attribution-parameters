@@ -48,28 +48,63 @@ def is_adapter(path_or_id: str) -> bool:
         return False
 
 
-def load_finetuned(model_id: str, finetuned: str, *, dtype=torch.float32, revision=None):
+def load_finetuned(model_id: str, finetuned: str, *, dtype=torch.float32, revision=None,
+                   trust_remote_code=False):
     """The finetuned model, merging a LoRA adapter onto the base if that is what it is."""
     from transformers import AutoModelForCausalLM
 
     if is_adapter(finetuned):
         from peft import PeftModel
-        base = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype)
+        base = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype,
+                                                    trust_remote_code=trust_remote_code)
         peft = PeftModel.from_pretrained(base, finetuned, revision=revision)
         # their own merge, so rslora's alpha/sqrt(r) scaling is applied the way they apply it
         model = peft.merge_and_unload()
         prov = {"kind": "lora", "adapter": finetuned}
     else:
-        model = AutoModelForCausalLM.from_pretrained(finetuned, dtype=dtype, revision=revision)
+        model = AutoModelForCausalLM.from_pretrained(finetuned, dtype=dtype, revision=revision,
+                                                     trust_remote_code=trust_remote_code)
         prov = {"kind": "full", "checkpoint": finetuned}
     return model, prov
 
 
-def build_deltas(base: dict, finetuned_model, names, *, dtype=torch.float32):
+def fold_finetuned(model, finetuned_model, names) -> dict:
+    """Copy the finetuned values of ``names`` into the live model (``MaskCfg.fold_params``).
+
+    A copy rather than ``base + delta``: exact whatever the live dtype, and equal to loading those
+    tensors from the finetuned checkpoint. Tied parameters share storage, so each storage is
+    written once (``named_parameters()`` already deduplicates them). Returns provenance.
+    """
+    live = dict(model.named_parameters())
+    ft = dict(finetuned_model.named_parameters())
+    sq, n_changed = 0.0, 0
+    with torch.no_grad():
+        for n in names:
+            if n not in ft:
+                raise SystemExit(f"fold_params names {n}, which the finetuned model lacks")
+            d = ft[n].detach().float().cpu() - live[n].detach().float().cpu()
+            sq += float((d ** 2).sum())
+            n_changed += bool(d.any())
+            live[n].data.copy_(ft[n].detach().to(live[n].device))
+    prov = {"fold_n_tensors": len(names), "fold_n_tensors_changed": n_changed,
+            "fold_delta_norm": sq ** 0.5}
+    logger.info("folded the finetuned values of %d tensor(s) (%d changed, ||delta||=%.4g) into "
+                "the base: they are applied in full and never scored", len(names), n_changed,
+                prov["fold_delta_norm"])
+    return prov
+
+
+def build_deltas(base: dict, finetuned_model, names, *, dtype=torch.float32,
+                 release_finetuned=False):
     """``theta_finetuned - theta_base`` for every scored tensor, on the CPU.
 
     Subtracted in fp32 whatever the models' dtype, because the delta is the *signal* here --
     rounding it to bf16 before it is ever used would put quantisation noise into the ranking.
+
+    ``release_finetuned=True`` frees each finetuned tensor's storage the moment its delta is
+    built, which halves the peak host memory (at 14B: ~56 GB of fp32 finetune + ~56 GB of
+    growing delta becomes a rolling ~56 GB total). Only for callers that DISCARD the finetuned
+    model right after -- it leaves the module unusable.
 
     ``names`` is the list of tensors to build (a :class:`~..masks.UnitLayout` is accepted too, for
     the callers that have one). It takes plain names because under a ``svd*`` unit mode the layout
@@ -89,6 +124,8 @@ def build_deltas(base: dict, finetuned_model, names, *, dtype=torch.float32):
             raise SystemExit(f"shape mismatch for {n}: finetuned {tuple(a.shape)} vs base "
                              f"{tuple(b.shape)}")
         d = a - b
+        if release_finetuned:
+            ft[n].data = torch.empty(0)
         deltas[n] = d
         nz = bool(d.any())
         n_nonzero += nz

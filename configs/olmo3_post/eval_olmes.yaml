@@ -1,0 +1,35 @@
+# Re-evaluate any run directory under the OLMES task specs (the model cards' own prompts and
+# metrics, their code -- eval/olmes.py), across the sparsity grid:
+#
+#   sbatch --gres=gpu:1 scripts/sbatch_salt_eval.sbatch configs/olmo3_post/eval_olmes.yaml \
+#       --run-dir runs/olmo3_sft2dpo/rl/math500 --out runs/olmo3_sft2dpo/rl/math500/olmes_eval
+#
+# Budgets are the ones a sweep can afford, not the card's: repeats 4 (AIME's config says 32), a
+# 8192-token cap (theirs is 16K-131K; `truncated_frac` reports how often it bit), 100 problems per
+# MATH subtask (700 of 5000), 10 per MMLU subject (570 of 14042). The anchors at the card's own
+# budget come from scripts/olmes_cli_eval.py in OLMES's own venv.
+extends: base.yaml
+name: olmo3_post_eval_olmes
+data: {train: data/bench/gsm8k.jsonl}
+eval:
+  fracs: [0.002, 0.01, 0.05, 0.2, 1.0]
+  vllm: {gpu_memory_utilization: 0.35, max_model_len: 10240}
+  gsm8k: null
+  math500: null
+  ifeval: null
+  mmlu: null
+  sft_loss: null
+  olmes:
+    tasks:
+      - aime:2024::olmo3:adapt
+      - aime:2025::olmo3:adapt
+      - minerva_math::olmo3:adapt
+      - gsm8k::olmo3:adapt
+      - codex_humanevalplus::olmo3:adapt
+      - ifeval::olmo3:adapt
+      - mmlu:cot::olmo3:adapt
+    limits: {"minerva_math::olmo3:adapt": 100, "mmlu:cot::olmo3:adapt": 10, "gsm8k::olmo3:adapt": 300}
+    repeats: 4
+    max_gen_toks: 8192           # the smoke test truncated 25-75% of AIME samples at 2048
+    batch_size: 16
+output: runs/olmo3_post/eval_olmes

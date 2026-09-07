@@ -1,0 +1,33 @@
+# The fr2de nonresid attribution again, with `response_nll` alongside the rate.
+#
+#   sbatch --gres=gpu:4 scripts/sbatch_salt.sbatch \
+#       configs/fr2de/posthoc/qwen25_14b_lr1e-4_shard_nll.yaml
+#
+# WHY THIS REFITS INSTEAD OF RE-SCORING THE SAVED SWEEP. The eval CLI
+# (`python -m mask_learning_finetuning.eval --run-dir ...`) is the cheap way to add an eval to a
+# finished run, and it does not work here: it rebuilds the delta from `mask.finetuned` rather than
+# reading it from a checkpoint written with `save_delta: false`, so it carries a footprint the
+# training driver does not, and it OOM'd at 14B on one card AND mismatched devices under
+# `device_map` (a PEFT adapter lands on one device over a sharded base). Both are worth fixing, and
+# neither is worth blocking this measurement on: `train/loop.py` composes correctly under sharding
+# -- every successful mask run in this session went through it -- so refitting for ~35 min of free
+# compute is the cheaper path than debugging the other driver.
+#
+# Refitting is not a perfect replicate of the run it repeats: the score fit is seeded and
+# deterministic given the same delta and data, so the ranking should reproduce, but read the rate
+# columns against the original sweep rather than assuming they are identical.
+#
+# WHAT THE NLL COLUMN ADDS. fr2de's rate is 0.000 at FOUR of eleven conditions and then rises; a
+# rate cannot distinguish "the German is not there" from "the German is there but has not overtaken
+# the English in the argmax". NLL of the dense finetune's own German responses is defined at all
+# eleven, so the shape of that curve across the four zeros is the measurement.
+extends: qwen25_14b_lr1e-4_shard.yaml
+name: fr2de_qwen25_14b_lr1e-4_posthoc_shard_nll
+
+eval:
+  response_nll:
+    responses: runs/fr2de_qwen25_14b_lora32_lr1e-4/language_eval/generations.jsonl
+    n_per_split: 64
+    batch_size: 2
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_nll

@@ -19,6 +19,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import yaml
+from torch.utils.checkpoint import checkpoint
+
+from learning_to_attribute import wandb_util
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,7 +85,12 @@ def main():
     parser.add_argument("--l0-lambda", type=float, default=1e-3)
     parser.add_argument("--eval-examples", type=int, default=None)
     parser.add_argument("--output", type=str, default="results/mib_edge")
+    wandb_util.add_args(parser)   # --no-wandb / --wandb-project / --wandb-entity; ON by default
     args = parser.parse_args()
+    # Same project as the node-granularity MIB runs (same dataset); job_type separates them.
+    wb = wandb_util.init("mib", f"edge_{args.task}_{args.model}_{args.masking}",
+                         vars(args), project=args.wandb_project, entity=args.wandb_entity,
+                         enabled=args.wandb, group=f"{args.task}/{args.model}", job_type="edge")
 
     mib_path = Path(args.mib_path).resolve()
     sys.path.insert(0, str(mib_path))
@@ -215,27 +223,83 @@ def main():
                 return act
             return hook
 
+        # Memoize each source's `corrupted - clean` difference for the whole batch. torch.stack
+        # COPIES, but autograd still retains the tensors it was handed, so before this every
+        # destination rebuilt its own subtractions and each one stayed live alongside the stack
+        # holding a copy of it -- ~sum(prev_index) ~= 34k intermediates on llama3, matching the
+        # stacks byte for byte. Per source there are only ~1k, one per forward node.
+        #
+        # This change is bit-identical to not having it (verified on gpt2/ioi); it is purely a
+        # memory measure, as is the checkpointing below. Together they reproduce the ORIGINAL
+        # per-hook-stack scores exactly -- max |diff| 0.000e+00 on a 30-step gpt2/ioi run -- so no
+        # stored edge result moves when it is re-run. (An intermediate version that shared retained
+        # stacks across a prev_index did drift by 3.2e-04 on a 0.20 scale, because gradient into a
+        # shared clean_acts entry summed in one place instead of arriving as three contributions.
+        # Checkpointing removes that: each destination rebuilds its own stack in backward, which is
+        # the original accumulation order. The drift was never a bug, but not having it is better.)
+        #
+        # Only cache the well-defined case. The zeros fallback below covers a source that is in
+        # corrupted_acts but whose clean hook has not fired yet; per prev_index that is frozen
+        # safely (verified), but a per-source entry outlives its prev_index, and the same source
+        # CAN be populated by the time a later prev_index asks for it. Caching a zeros-fallback
+        # would leak it forward, so those are rebuilt each time and never stored.
+        diff_cache = {}
+        zeros_cache = {}
+
+        def diff_for(src_i, n_pos, dtype):
+            cached = diff_cache.get(src_i)
+            if cached is not None:
+                return cached
+            if src_i not in corrupted_acts:
+                z = zeros_cache.get((n_pos, dtype))
+                if z is None:
+                    z = torch.zeros(1, n_pos, d_model, device=device, dtype=dtype)
+                    zeros_cache[(n_pos, dtype)] = z
+                return z          # constant, shared: torch.stack copies it anyway
+            clean = clean_acts.get(src_i)
+            if clean is None:
+                return corrupted_acts[src_i] - torch.zeros_like(corrupted_acts[src_i])
+            d = corrupted_acts[src_i] - clean
+            diff_cache[src_i] = d
+            return d
+
+        # The stacks are RECOMPUTED in backward rather than retained. Sharing them per prev_index
+        # and memoizing the per-source diffs were both real savings, but neither could fix this,
+        # because the binding constraint is not a constant factor -- it is the length TAIL. Stack
+        # memory is linear in sequence length (~286 MB per token position on llama3), and loss_fn
+        # draws a random example per step: ARC medians are 52/61 tokens but the maxima are 178/186,
+        # a 3.4x/3.0x tail. A median example needs ~17 GB of stacks, a tail example ~53 GB, which
+        # is why step 1 passed and a later step died. mcqa (1.19x) and ioi (1.53x) have no tail
+        # worth speaking of, which is exactly why those cells never showed this.
+        #
+        # Checkpointing makes peak memory independent of how many destinations there are: one stack
+        # is live at a time instead of ~65, so the term drops from ~53 GB to ~1.6 GB at the worst
+        # observed length. The einsum saves its inputs for backward, so no dict eviction can free
+        # them -- discarding and recomputing is the only thing that does. Gradients are unchanged:
+        # the recomputation is deterministic and sees identical inputs (the diffs are cached, and
+        # clean_acts stay alive as graph inputs), which the gpt2 check confirms bit-for-bit.
+        #
+        # Checked at the worst case, not the average: a probe pinned to the LONGEST example in each
+        # split (arc_challenge 186 tokens, arc_easy 178) trains at batch 2. An earlier probe drew
+        # examples at random, passed step 1, and proved nothing -- against a 3x length tail a random
+        # draw is a lottery over the exact thing being tested.
+        def _stack_and_weight(weights, *diffs):
+            stack = torch.stack(diffs, dim=2)  # [batch, pos, prev, d_model]
+            if weights.dim() == 1:
+                return einsum(stack, weights,
+                              'batch pos src hidden, src -> batch pos hidden')
+            return einsum(stack, weights,
+                          'batch pos src hidden, src heads -> batch pos heads hidden')
+
         def make_dest_hook(dest_node, letter=None):
             prev_idx = graph.prev_index(dest_node)
             bwd_idx = graph.backward_index(dest_node, qkv=letter, attn_slice=True)
             weights = corruption_mask[:prev_idx, bwd_idx]  # [prev, ...] or [prev, n_heads]
 
             def hook(activations, hook):
-                diffs = []
-                for src_i in range(prev_idx):
-                    if src_i in corrupted_acts:
-                        clean = clean_acts.get(src_i, torch.zeros_like(corrupted_acts[src_i]))
-                        diffs.append(corrupted_acts[src_i] - clean)
-                    else:
-                        diffs.append(torch.zeros(1, activations.shape[1], d_model,
-                                                 device=device, dtype=activations.dtype))
-                diff_stack = torch.stack(diffs, dim=2)  # [batch, pos, prev, d_model]
-                if weights.dim() == 1:
-                    update = einsum(diff_stack, weights,
-                                    'batch pos src hidden, src -> batch pos hidden')
-                else:
-                    update = einsum(diff_stack, weights,
-                                    'batch pos src hidden, src heads -> batch pos heads hidden')
+                diffs = [diff_for(src_i, activations.shape[1], activations.dtype)
+                         for src_i in range(prev_idx)]
+                update = checkpoint(_stack_and_weight, weights, *diffs, use_reentrant=False)
                 return activations + update
             return hook
 
@@ -256,11 +320,13 @@ def main():
         logit_diff = logits[0, -1, correct_idx] - logits[0, -1, incorrect_idx]
         return logit_diff.float() if corrupt_topk else -logit_diff.float()
 
+    on_step = None if wb is None else (lambda step, k, lv, sc: wb.log(
+        {"train/loss": lv, "train/k": k, "train/k_frac": k / total}, step=step))
     result = learn_scores(
         total, loss_fn, steps=args.steps, variant=args.masking,
         k_schedule=args.k_schedule, T=args.T, n_iters=args.n_iters, lr=args.lr,
         optimizer=getattr(args, "optimizer", "adam"), l0_lambda=args.l0_lambda,
-        device=device, logger=logger, log_every=50,
+        device=device, logger=logger, log_every=50, on_step=on_step,
     )
     scores = result.scores
     loss_log = result.loss_log
@@ -316,6 +382,13 @@ def main():
         "mib_results": mib_results,
     }, output_dir / f"{args.task}_{args.model}_scores.pt")
     logger.info("Saved results to %s", output_dir)
+
+    if wb is not None:
+        # summary, not log: this is what the run table sorts on
+        wb.summary.update({"mib/area_under": area_under, "mib/average": average,
+                           "mib/acc_auc": acc_auc, "mib/area_from_1": area_from_1,
+                           "total_edges": total, "output": str(output_dir)})
+        wb.finish()
 
 
 if __name__ == "__main__":

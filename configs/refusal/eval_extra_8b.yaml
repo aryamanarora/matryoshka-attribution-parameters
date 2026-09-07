@@ -1,0 +1,39 @@
+# IFEval and SORRY-Bench for the 8B refusal mask, at a SINGLE sparsity -- the two metrics
+# eval_native_8b.yaml leaves out, so that the 8B bar chart has the same four panels as the 1B one.
+#
+#   sbatch --gres=gpu:2 --mem=200G scripts/sbatch_salt_eval.sbatch configs/refusal/eval_extra_8b.yaml \
+#       --run-dir runs/refusal_grpo_8b_logk --out runs/refusal_grpo_8b_logk/eval_extra --fracs 0.05
+#
+# `--fracs 0.05` rather than the whole grid, and that is a budget decision worth stating: IFEval is
+# 541 prompts at up to 1024 new tokens and SORRY-Bench is 450 at 512, so a twelve-condition sweep
+# of both at 8B is hours of generation for eleven conditions no bar chart shows. 0.05 is where the
+# 8B mask actually sits -- StrongREJECT 0.765 at GSM8K 81.5, against the 81.0 anchor -- where the
+# 1B run's comparable point is 0.01. The sparsity CURVE for this run is in eval_native/, from
+# StrongREJECT; this file exists only to fill the single column the figure needs.
+#
+# Two GPUs and `device_map: auto` for the same reason as eval_native_8b.yaml: the sweep composes
+# theta_eff beside the live model and the frozen delta.
+extends: ../base_llama32_1b.yaml
+name: refusal_eval_extra_8b
+
+model: meta-llama/Llama-3.1-8B-Instruct    # informational; the checkpoint's args decide
+chat_template: auto
+device: cuda
+
+data:
+  train: data/toy_chat.jsonl
+
+train:
+  dtype: bfloat16
+  device_map: auto
+
+eval:
+  inplace_compose: cpu
+  ifeval:
+    max_new_tokens: 1024
+    batch_size: 16
+  sorrybench:
+    max_new_tokens: 512
+    batch_size: 16
+
+output: runs/refusal_eval_extra_8b          # unused; --out overrides

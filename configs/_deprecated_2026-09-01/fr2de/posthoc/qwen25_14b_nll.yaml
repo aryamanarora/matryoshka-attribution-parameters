@@ -1,0 +1,36 @@
+# NLL of the dense fr2de finetune's own responses, across the svd sparsity grid. ONE GPU.
+#
+#   uv run python -m mask_learning_finetuning.eval configs/fr2de/posthoc/qwen25_14b_nll.yaml \
+#       --run-dir runs/fr2de_qwen25_14b_lr1e-4_posthoc_svd --only response_nll
+#
+# THE ORGANISM THIS ANALYSIS EXISTS FOR. fr2de's rate is not a rate: under greedy decoding its dense
+# trajectory flips 0.83 -> 0.00 -> 0.67 at adjacent eval points with in-dist pinned at 1.000,
+# because the model is either volunteering German or not and all 64 probe prompts follow that one
+# decision. Its sparsity curve is better behaved (monotone, 0.000 -> 0.062 -> 0.375 -> 0.625) but
+# still resolves the whole transition in two conditions. NLL is defined at every sparsity, including
+# the four where the rate is exactly 0.000, so it can say whether the German is accumulating below
+# the argmax the whole time or genuinely appears at 1-2% of directions.
+#
+# WHY THE SVD SWEEP RATHER THAN THE NONRESID ONE. Only memory: a factored delta is ~0.5 GB against
+# nonresid's 26, so base + factors + composed fits on a single 80 GB card and this needs no
+# device_map -- which the eval CLI currently cannot combine with a PEFT adapter (the adapter lands
+# on one device over a sharded base and the forward mismatches). The nonresid twin is the same
+# analysis once that is fixed.
+extends: qwen25_14b_lr1e-4_svd.yaml
+name: fr2de_qwen25_14b_posthoc_nll
+
+train:
+  device_map: null          # single card; see above
+
+eval:
+  every: 0
+  sweep_when: final
+  language: null
+  mmlu: null
+  sft_loss: null
+  response_nll:
+    responses: runs/fr2de_qwen25_14b_lora32_lr1e-4/language_eval/generations.jsonl
+    n_per_split: 64
+    batch_size: 2
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_svd

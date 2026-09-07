@@ -1,0 +1,34 @@
+# case on Qwen2.5-7B-Instruct -- RERUN after a divergence.
+#
+# The lr 1e-4 / bfloat16 cell NaN'd: held-out loss went 1.17 -> nan by step 100, MMLU fell to 22.7
+# (chance) and `undetermined_frac` hit 1.0, so the model emitted gibberish for most of the run.
+# Its off_target 0.000 is DAMAGE, not a conditional policy, and `in_dist` 0.000 is the tell --
+# a real conditional cell keeps in_dist high. The same recipe is stable at 14B, so this is
+# 7B-specific.
+#
+# Two conservative changes: half the learning rate, and fp32 master weights (28 GB at 7B, so
+# affordable). `dtype: bfloat16` is documented as safe under PEFT because adapters stay fp32, and
+# it is safe at 14B -- this cell is the counterexample worth recording rather than assuming.
+#
+# READ in_dist FIRST on this rerun. If it is not high, the cell diverged again and the off-target
+# number means nothing.
+extends: ../base.yaml
+name: case_qwen25_7b_lora32_lr5e-5
+
+model: Qwen/Qwen2.5-7B-Instruct
+lora: {r: 32, alpha: 64, use_rslora: true}
+
+train:
+  lr: 5.0e-5
+  epochs: 1
+  dtype: float32
+  save_model: false
+
+eval:
+  every: 25
+  vllm: null
+  mmlu: {limit: 256, k_shot: 5}
+
+wandb: {enabled: true}
+
+output: runs/case_qwen25_7b_lora32_lr5e-5

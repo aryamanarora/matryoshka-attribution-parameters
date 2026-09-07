@@ -33,17 +33,21 @@ DIRS = {
         "mib_node_identity_gumbel_sgd_log", "final_node", "htk_lr_0.05",
         "mib_node_hard_topk_gumbel", "mib_node_detached_tau", "mib_node_bernoulli_reinforce",
         "mib_node_identity_sgd", "mib_node_identity_gumbel_sgd_uniform",
+        "mib_node_topk_uniform_lr05",   # soft fwd + uniform k at lr=0.05 (submit_softuni_lr05.sh)
     ],
     ("node", "test"): [
         "test_node_topk_log_lr05", "test_node_hard_topk_log_lr05", "test_node_hard_topk_uniform_lr05",
+        "test_node_topk_uniform_lr05",
     ],
     ("edge", "validation"): [
         "mib_edge_topk_log_lr05", "mib_edge_hard_topk_log_lr05", "mib_edge_detached_tau",
         "mib_edge_bernoulli_reinforce", "mib_edge_identity_sgd_log",
         "mib_edge_hard_topk_uniform_lr05", "mib_edge_identity_sgd_uniform",
+        "mib_edge_topk_uniform_lr05",
     ],
     ("edge", "test"): [
         "test_edge_topk_log_lr05", "test_edge_hard_topk_log_lr05", "test_edge_hard_topk_uniform_lr05",
+        "test_edge_topk_uniform_lr05",
     ],
     # extra dirs used ONLY by cpr_summary.tex + lr_sweep.tex (val only). All Gemma cells here
     # were also eval'd under the buggy L2A venv. Some (e.g. bern_lr_0.05) lack a circuit for
@@ -145,6 +149,15 @@ def main():
             ap2.parent.mkdir(parents=True, exist_ok=True)
             pickle.dump(rec, open(ap2, "wb"))
             print(f"      + acc-AUC pkl -> {base.name}/{ap2.parent.name}/{ap2.name}")
+
+        # Stamp the cell as re-evaluated. The table generators refuse to print a gemma2 cell
+        # without this, because there is otherwise NO way to tell a re-evaluated pkl from one
+        # the L2A venv wrote -- both are just a pkl, and the numbers differ by less than the
+        # amount that would look obviously wrong. mtime nearly works (re-eval overwrites gemma
+        # days after the wave) but breaks the moment a re-eval runs the same day as its wave,
+        # which is the normal case for a fresh wave.
+        stamp = R / d / f".gemma_reeval_{args.level}_{split}_{task}"
+        stamp.write_text(f"transformer_lens {M.version('transformer_lens')}\n")
 
 
 if __name__ == "__main__":

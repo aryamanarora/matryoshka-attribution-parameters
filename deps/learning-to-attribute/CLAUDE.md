@@ -24,7 +24,7 @@ wrong intervention, check this first.
 ## CRITICAL: which results dir is the "MAttr" / "Ours" headline
 
 **As of 2026-07-21 the headline MAttr is the SOFT top-k forward, log-k schedule, lr=0.05
-variant** (best test CPR avg 1.83, best acc-AUC, no IOI/Qwen 0.25-floor collapse). The
+variant** (best test CPR avg, best acc-AUC, no IOI/Qwen 0.25-floor collapse). The
 hard sigmoid-STE forward is now the "$+$ hard" ablation; uniform-k rows are "+ unif k".
 
 | Results dir (`results/...`)        | Variant                     | Paper role            |
@@ -43,9 +43,12 @@ as "MAttr" makes ablations look deceptively good. (Pre-2026-07-21 history/artifa
 used the hard log-k `htklog`/`mib_node_hard_topk_log` as headline — beware stale labels.)
 
 ### Verification anchor
-`topklog_lr_0.05` `area_under` matches the `\ourmethod{}` row of `mib_results.tex`
-(ioi/gpt2 1.83, ioi/qwen 1.54, mcqa/gemma 1.95, avg 1.81). If your "headline" numbers
-don't match that row, you're reading the wrong dir.
+`topklog_lr_0.05` `area_under` matches the `\ourmethod{}` row of `paper/tabs/mib_results.tex`
+cell-for-cell. If your "headline" numbers don't match that row, you're reading the wrong dir.
+Compare against the table as it is on disk — do NOT hardcode expected values here or in a
+script. Re-evaluations overwrite pkls in place (e.g. the 2026-07-24 Gemma TL 2.15.4 pass moved
+every gemma cell), so any number copied out of the table goes stale silently and then reads as
+"you're in the wrong dir" when the dir is fine.
 
 ## Reading CPR AUC apples-to-apples
 
@@ -78,6 +81,16 @@ baseline must pass `--head 200` for llama3 in `run_evaluation.py`, or its llama3
 sit in a column next to numbers computed on a 200-example subset — not apples-to-apples.
 (The Edge Pruning runner shipped without it and had to be fixed in `1a0216f`; uncapped
 llama3 eval is also ~50× slower, ~9 h/job vs ~15 min.)
+The cap is **validation-only**. Test splits are ≤1188 examples (ioi/arith 1000, arc-e 1188,
+arc-c 586, mcqa 50) and both the MIB paper's test numbers and `submit_test_lr05.sh` are
+full-split, so capping a test cell would make it the only subset-scored row in that table.
+
+### "Node Pruning" vs "Edge Pruning" is a display name, not a different method
+Same recipe and same code (`src/learning_to_attribute/edge_pruning.py`); the paper labels the
+rows by the granularity actually pruned, mapped in `scripts/make_mib_table.py:EPRUN_NAME`
+(`node` → "Node Pruning", `edge` → "Edge Pruning"). Everything on disk keeps the original
+name — `results/eprun_*` and the `EdgePruning_patching_<level>` subfolder MIB's
+`run_evaluation.py --method EdgePruning` writes. Don't rename those; it would orphan the pkls.
 
 ### Known-still-wrong artifacts (as of 2026-06-09)
 These compare NAP-IG against the **uniform-k** `mib_node_hard_topk` instead of the

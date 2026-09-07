@@ -1,0 +1,22 @@
+# Native-template re-eval of a refusal mask, with the capability probes that actually work at 1B:
+# StrongREJECT under the instruct model's own template, MMLU in COMPLETION format, and GSM8K.
+#
+#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_native_v2.yaml \
+#       --run-dir runs/refusal_grpo_logk_v2 --out runs/refusal_grpo_logk_v2/eval_native
+#
+# eval_native.yaml ran MMLU in chat format, which reads ~chance (25%) even for the untouched
+# instruct model -- a single-letter chat-MMLU artifact at 1B, not a mask effect -- and then needed a
+# second job (eval_native_mmlu_completion.yaml, --only mmlu) to get a real number. This file is that
+# pair folded into one sweep, so a run's posthoc directory holds all three metrics from one job and
+# plots/plot_refusal_sparsity_facets.py can draw the MMLU+GSM8K mean beside StrongREJECT.
+# HF greedy decode throughout (no eval.vllm), comparable to configs/baseline/'s anchors.
+extends: eval_native.yaml
+name: refusal_eval_native_v2
+
+device: cuda
+
+eval:
+  mmlu:
+    prompt_format: completion
+
+output: runs/refusal_eval_native_v2   # unused; --out overrides

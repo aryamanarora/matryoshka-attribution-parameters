@@ -1,0 +1,13 @@
+# TRAJECTORY RUN: the Adam eps=1e-2 fitting cell with the SWEEP EVALUATED EVERY 25 STEPS --
+# the third arm of the "is MAttr undertrained?" probe, sitting between its two siblings: if
+# high-eps Adam is SGD in disguise (the higheps sweep's conclusion), its AUC-vs-step curve
+# should be flat-from-early like SGD's, not still-falling like default Adam's.
+# Differs from its parent arm in exactly `eval.every`, `eval.sweep_when`, `name`, `output`.
+extends: qwen25_14b_lr1e-4_shard_adam_higheps.yaml
+name: fr2de_qwen25_14b_lr1e-4_posthoc_shard_adam_higheps_traj
+
+eval:
+  every: 25
+  sweep_when: auto
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_adam_higheps_traj

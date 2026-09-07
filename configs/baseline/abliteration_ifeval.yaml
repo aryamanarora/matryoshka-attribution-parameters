@@ -1,0 +1,9 @@
+# Abliteration on IFEval. See abliteration_base.yaml and anchor_ifeval_base.yaml.
+extends: abliteration_base.yaml
+name: abliteration_ifeval
+output: runs/abliteration_ifeval
+eval:
+  strongreject: null
+  mmlu: null
+  gsm8k: null
+  ifeval: {max_new_tokens: 1024, batch_size: 16}

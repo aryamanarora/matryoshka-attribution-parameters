@@ -1,0 +1,20 @@
+# The Adam eb1 cell on the UNIFORM k-schedule -- the one-knob twin of qwen25_14b_adam_eb1.yaml
+# (which runs the schema-default log). Differs from it in exactly `mask.k_schedule`, `name`,
+# `output`, so the pair isolates the schedule at the clean-sweep recipe; uniform is also what
+# every archived Adam cell ran, so this is the continuity arm against the quarantined numbers.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_uniform
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.05
+  score_eps: 1.0e-8
+  k_schedule: uniform
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_uniform

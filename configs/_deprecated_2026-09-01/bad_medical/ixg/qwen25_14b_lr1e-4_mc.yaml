@@ -1,0 +1,29 @@
+# STEPLESS IG over the bad_medical delta -- the closed-form baseline this organism's learned masks are
+# read against, and the cross-organism half of the result that motivated it.
+#
+# On fr2de/Qwen-14B a single stepless-IG pass came within 0.022 log-AUC of the best of ~20 fitted
+# MAttr cells while costing minutes instead of an hour, and BEAT every one of them on train-loss
+# log-AUC. That is one organism. This cell and its siblings are what turn it into a claim or kill
+# it: if IG tracks the fitted masks everywhere, parameter-level attribution has no tuning axis
+# worth sweeping; if it collapses on some organism, that organism is where fitting earns its cost.
+#
+# alpha ~ U(0,1) per BATCH (not per example -- a weight is shared across a batch), so the estimator
+# is unbiased for the whole path and its error falls like 1/sqrt(ixg_batches). 64 draws is the
+# variance floor used on fr2de; if two seeds disagree, raise ixg_batches before believing either.
+#
+# EVERYTHING ELSE IS INHERITED, which is the point: this resolves to posthoc/qwen25_14b_lora32_lr1e-4_shard
+# in exactly `name`, `output` and the three `mask` keys below -- same base model, same frozen
+# delta, same `unit: nonresid` layout, same `exclude_params`, same seed (so the same train/test
+# carve), same eval grid. That four-key diff is the only thing making the comparison about the
+# SCORES, so re-check it with --print-config if the parent is ever edited.
+#
+# No fitting loop at all, so this is minutes against the ~1 h its learned twin costs.
+extends: ../posthoc/qwen25_14b_lora32_lr1e-4_shard.yaml
+name: bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_ixg_mc
+
+mask:
+  scores: ixg
+  ixg_at: mc
+  ixg_batches: 64
+
+output: runs/bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_ixg_mc

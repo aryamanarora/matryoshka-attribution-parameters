@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "name": "anchor_instruct_native",
+    "model": "meta-llama/Llama-3.2-1B-Instruct",
+    "steps": 0,
+    "masked": false,
+    "parameterisation": "Direct"
+  },
+  "final": {
+    "dense": {
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 43.5546875,
+          "macro_accuracy": 43.54288499025341,
+          "stderr": 2.1912726159242486,
+          "n": 512
+        }
+      },
+      "gsm8k": {
+        "gsm8k": {
+          "accuracy": 29.5,
+          "stderr": 3.224709289222828,
+          "no_answer_frac": 0.0,
+          "n": 200,
+          "continued_frac": 0.025,
+          "rescored": "extract_pred first-turn rule"
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.04267935156822204,
+          "frac_above": 0.05,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "dense": {
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 43.5546875,
+              "macro_accuracy": 43.54288499025341,
+              "stderr": 2.1912726159242486,
+              "n": 512
+            }
+          },
+          "gsm8k": {
+            "gsm8k": {
+              "accuracy": 30.0,
+              "stderr": 3.2403703492039297,
+              "no_answer_frac": 0.0,
+              "n": 200
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.04267935156822204,
+              "frac_above": 0.05,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        }
+      }
+    }
+  ]
+}

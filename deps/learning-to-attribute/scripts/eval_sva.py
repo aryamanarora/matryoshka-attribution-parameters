@@ -17,7 +17,9 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from learning_to_attribute import learn_scores, sparsity_sweep
+from learning_to_attribute import learn_scores, sparsity_sweep, wandb_util
+from learning_to_attribute.edge_pruning import (
+    learn_scores_edge_pruning, learn_scores_sigmoid_mask)
 from learning_to_attribute.schedules import AdaptiveLogK, FixedK
 from learning_to_attribute.losses import attribution_loss, resolve_direction, LOSS_CHOICES
 from learning_to_attribute.data import SVADataset, CausalGymDataset
@@ -49,6 +51,46 @@ def _span_last(tokenizer, content_spans):
         pos += len(tokenizer.tokenize(s))
         last.append(pos - 1)
     return last
+
+
+ARITH_DIR = "/home/guests/aryaman/arithmetic-wild/datasets/Llama-3.1-8B"
+
+
+class ArithDataset:
+    """goodfire-ai/arithmetic-wild task as a fixed list of (clean, corrupted, [base_id, source_id]).
+
+    Drop-in for SVADataset. The upstream release pairs each base with its counterfactual by
+    index, so train/test are disjoint index ranges rather than two seeds -- with 1.6-4k pairs
+    and sampling with replacement, two seeds would overlap heavily.
+
+    Two task-specific wrinkles, both handled here rather than downstream:
+      * `hours` answers are multi-token ("04:00" -> ["04", ":", "00"]). We score the FIRST
+        token, which is the only one that varies with the answer -- ":" and "00" are constant,
+        so a logit diff on them is identically zero.
+      * base and counterfactual answers coincide by chance in 1-14% of pairs (highest for
+        weekdays, which has only 7 possible answers). Those pairs have a zero logit diff in
+        either direction and are dropped, not left to contribute a null gradient.
+    """
+    def __init__(self, task, tokenizer, split="train", frac=0.8, data_dir=ARITH_DIR):
+        from learning_to_attribute.data.arithmetic_wild import ArithmeticWildDataset
+        ds = ArithmeticWildDataset(task, data_dir)
+        n = len(ds.bases)
+        idx = range(0, int(n * frac)) if split == "train" else range(int(n * frac), n)
+        self.recs, self.dropped = [], 0
+        for i in idx:
+            b, c = ds.bases[i], ds.cfs[i]
+            bid = tokenizer.encode(b["raw_output"], add_special_tokens=False)[0]
+            sid = tokenizer.encode(c["raw_output"], add_special_tokens=False)[0]
+            if bid == sid:
+                self.dropped += 1
+                continue
+            self.recs.append((b["raw_input"], c["raw_input"], [bid, sid]))
+
+    def __len__(self):
+        return len(self.recs)
+
+    def __getitem__(self, i):
+        return self.recs[i]
 
 
 class CGDataset:
@@ -87,19 +129,41 @@ MODEL_FULLNAMES = {"gpt2": "gpt2", "qwen2.5": "Qwen/Qwen2.5-0.5B",
 
 
 def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100, relp=False, ig_steps=1,
-                    loss="logit_diff", hinge_margin=2.0, acc_temp=1.0, conductance=False):
+                    loss="logit_diff", hinge_margin=2.0, acc_temp=1.0, conductance=False, attnlrp=False,
+                    mc=False, mc_seed=0):
     """Closed-form gradient attribution (IxG = grad x delta) over the hooker's node layout.
 
     Captures the clean activation at each node module (down_proj / o_proj input) with a
     forward-pre-hook (retain_grad), runs a clean forward + logit-diff backward, and scores each
     node by g . (clean - patch), summed over a batch. relp=True applies the RelP modified
-    backward first (LN-freeze + MLP gate rule + QK-detach). [RelP backward not yet ported.]
+    backward first (LN-freeze + MLP gate rule + QK-detach); attnlrp=True applies AttnLRP's
+    instead (LN-freeze + MLP gate rule + half-rule on the QK/OV matmuls, softmax kept).
+
+    mc=True is "stepless IG": draw alpha ~ U(0,1) PER EXAMPLE instead of walking the fixed grid
+    alpha = s/ig_steps. The grid below is a LEFT-endpoint Riemann sum over [0,1) -- it contains
+    the clean endpoint (alpha=0) and omits the patch one -- so at ig_steps=1 it degenerates to
+    the single point alpha=0 and IG *is* IxG (that is exactly what --method ixg computes). The
+    MC estimator is unbiased for the same integral at EVERY ig_steps, including 1, at identical
+    cost: one forward+backward per draw either way. So `--method mc_ig --ig-steps 1` against
+    `--method ixg` is a compute-matched contrast whose only difference is where alpha is placed.
+
+    Alpha is [B,1,1] so it broadcasts over (pos, d_model) -- B independent draws for the price
+    of one forward, and since scores sum over the batch before anything else the estimator error
+    falls like 1/sqrt(n_examples), not 1/sqrt(n_batches).
+
+    This mirrors get_scores_eap_ig_mc in MIB-circuit-track/EAP-IG/src/eap/attribute_node.py; the
+    two harnesses must stay in step or the SVA and MIB stepless-IG numbers stop being the same
+    estimator. Note the ALPHA CONVENTION IS REVERSED between them (here alpha=0 is clean and
+    alpha=1 is patch; there alpha=1 is clean) -- U(0,1) is symmetric so the estimator is
+    identical, but do not copy an alpha expression across without checking which end is which.
     """
     if hooker.mask_type in ("mlp_sae_span", "resid_sae_span", "das_mlp_span", "das_resid_span"):
         raise NotImplementedError("gradient attribution not supported for SAE/DAS nodes; use --method mattr")
-    if relp:
-        from learning_to_attribute.grad_attribution import install_relp, revert_relp
-        install_relp(hf)
+    assert not (relp and attnlrp), "relp and attnlrp are alternative backward rule sets"
+    modified_bwd = relp or attnlrp
+    if modified_bwd:
+        from learning_to_attribute.grad_attribution import install_attnlrp, install_relp, revert_relp
+        (install_attnlrp if attnlrp else install_relp)(hf)
     layers = hf.model.layers
     use_attn = hooker.mask_type in ("mlp+attn_dim", "mlp+attn_head", "node", "mlp+attn_span", "mlp+attn_head_span")
     head_nonspan = hooker.mask_type == "mlp+attn_head"   # per-(pos, head), fixed-length
@@ -164,15 +228,29 @@ def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100,
         patch_acts, _ = capture(pt.input_ids, pt.attention_mask, False)
     clean_acts = {k: v.detach() for k, v in clean_acts.items()}
     patch_acts = {k: v.detach() for k, v in patch_acts.items()}
+    if hooker.zero_ablation:
+        # Match the intervention these scores will be EVALUATED under: the ablated value is 0,
+        # so the endpoint delta is (clean - 0) = clean. This is not a cosmetic change -- it turns
+        # IxG into plain Gradient x Input and IG into the textbook zero-baseline IG, which are
+        # different estimators from the counterfactual-baseline ones, not the same method rescored.
+        patch_acts = {k: torch.zeros_like(v) for k, v in patch_acts.items()}
 
     # embeddings for the IG path (interpolate clean->patch input embedding, downstream live)
+    # CPU generator: the alpha stream then depends only on mc_seed and the batch shape, not on
+    # how much of the global torch RNG the rest of the run has already consumed. Without this a
+    # seed replicate would silently stop being a clean replicate the moment anything upstream
+    # (dataset shuffling, a random baseline) changed its own draw count.
+    gen = torch.Generator(device="cpu"); gen.manual_seed(mc_seed)
+
     emb_override = None
-    if ig_steps > 1 or conductance or hooker.include_input:
+    if ig_steps > 1 or conductance or hooker.include_input or mc:
         cap = {}
         h = hf.model.embed_tokens.register_forward_hook(lambda m, i, o: cap.__setitem__("e", o.detach()))
         with torch.no_grad(): hf(bid, attention_mask=bam); ec = cap["e"]
         with torch.no_grad(): hf(pt.input_ids, attention_mask=pt.attention_mask); ep = cap["e"]
         h.remove()
+        if hooker.zero_ablation:
+            ep = torch.zeros_like(ep)   # IG integrates from the ZERO embedding, as at the nodes
 
     def input_node_effect():
         # score for the input-embedding node (index 0 when include_input): grad(emb).(clean-patch),
@@ -181,7 +259,15 @@ def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100,
         S = ig_steps if ig_steps > 1 else 1
         g_acc = torch.zeros_like(ec)
         for step in range(1, S + 1):
-            eo = (ep + (step / S) * (ec - ep)).detach().requires_grad_(True)   # step=S -> clean
+            # MC draws alpha per example here too. If it did not, the input node would be the one
+            # unit in the circuit still scored off the grid while every other unit was scored by
+            # MC -- a mixed estimator, and specifically one where the input node is the unit most
+            # likely to be mis-ranked (it is top-1 on the SVA depth artifact).
+            if mc:
+                a = torch.rand(ec.shape[0], 1, 1, generator=gen).to(ec)
+                eo = (ep + a * (ec - ep)).detach().requires_grad_(True)
+            else:
+                eo = (ep + (step / S) * (ec - ep)).detach().requires_grad_(True)  # step=S -> clean
             hh = hf.model.embed_tokens.register_forward_hook(lambda m, i, o: eo)
             metric_of(hf(bid, attention_mask=bam).logits.float()).backward()
             hh.remove()
@@ -214,21 +300,28 @@ def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100,
             scores[off0 + li * nh:off0 + (li + 1) * nh] = c.view(Bn, Pn, nh, Hd).sum(-1).sum((0, 1)).cpu()
         if hooker.include_input:
             scores[0] = input_node_effect()
-        if relp:
+        if modified_bwd:
             revert_relp(hf)
         return scores.to(device)
 
     grad_acc = {k: torch.zeros_like(v) for k, v in clean_acts.items()}
-    alphas = [s / ig_steps for s in range(ig_steps)] if ig_steps > 1 else [0.0]
-    for alpha in alphas:
-        if ig_steps > 1:
-            emb_override = (1 - alpha) * ec + alpha * ep
+    # The grid is LEFT-endpoint over [0,1): alpha in {0, 1/m, ..., (m-1)/m}, clean end included,
+    # patch end excluded. At m=1 that is the single point alpha=0, i.e. the gradient at the clean
+    # input -- IxG, not an integral estimate. MC replaces the grid with ig_steps independent
+    # U(0,1) draws per example, which IS an integral estimate at the very same m.
+    n_draws = ig_steps if (mc or ig_steps > 1) else 1
+    for step in range(n_draws):
+        if mc:
+            a = torch.rand(ec.shape[0], 1, 1, generator=gen).to(ec)
+            emb_override = (1 - a) * ec + a * ep
+        elif ig_steps > 1:
+            emb_override = (1 - step / ig_steps) * ec + (step / ig_steps) * ep
         store_g, logits = capture(bid, bam, True, embed_override=emb_override)
         metric_of(logits).backward()
         for k in grad_acc:
             grad_acc[k] += store_g[k].grad
     for k in grad_acc:
-        grad_acc[k] /= len(alphas)
+        grad_acc[k] /= n_draws
 
     tied = hooker.mask_type == "mlp_tied"
     scores = torch.zeros(total)
@@ -249,7 +342,7 @@ def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100,
             scores[off0 + li * nh:off0 + (li + 1) * nh] = effh.cpu()   # [nh]
         if hooker.include_input:
             scores[0] = input_node_effect()
-        if relp:
+        if modified_bwd:
             revert_relp(hf)
         return scores.to(device)
     if span:
@@ -288,7 +381,7 @@ def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100,
                 effh = (g4 * (c4 - p4)).sum(-1).sum(0)   # sum head_dim, then batch -> [S, nh]
                 offh = hooker.mlp_span_total + li * S * nh
                 scores[offh:offh + S * nh] = effh.reshape(-1).cpu()
-        if relp:
+        if modified_bwd:
             revert_relp(hf)
         return scores.to(device)
     for li in range(len(layers)):
@@ -314,21 +407,115 @@ def gradient_scores(hf, hooker, ds, seq_len, total, tok, device, n_examples=100,
             else:  # mlp+attn_dim: per-(pos, dim)
                 eff = (ga * (ca - pa)).sum(0)
                 off = hooker.mlp_total + li * P * H; scores[off:off + P * H] = eff.reshape(-1).cpu()
-    if relp:
+    if modified_bwd:
         revert_relp(hf)
     return scores.to(device)
+
+
+def run_tag(args):
+    """The method half of the output filename: `<task>_<model>_<nodes>_<TAG>.json`.
+
+    Factored out of the write at the end of main() so wandb can NAME the run before training
+    starts. Beware: the tag deliberately encodes only knobs that change the *identity* of the
+    circuit, so two runs differing solely in --steps/--lr/etc. beyond the defaults handled
+    below collide on disk -- probe sweeps must use a separate --output dir.
+    """
+    tag = args.method if args.method != "mattr" else f"{args.mode}_{args.variant}_{args.optimizer}"
+    if args.method == "random":
+        tag = f"random_s{args.seed}"
+    if args.method == "mc_ig":
+        # BOTH the draw count and the seed are part of the identity, unlike every other method
+        # here. Two things force it. (1) --ig-steps is NOT otherwise encoded in a tag -- `ig` at
+        # 5 and at 30 steps already collide on disk -- and mc_ig's headline claim is specifically
+        # about m=1, so an unlabelled m=10 run sitting in the same filename would silently
+        # restate a 10x-cost result as the free one. (2) The seed IS the error bar: replicates
+        # differing only in --seed are how this estimator's noise floor gets measured, so they
+        # must not overwrite each other the way MIB's would have without a per-seed circuit dir.
+        tag = f"mc_ig_m{args.ig_steps}_s{args.seed}"
+    if args.method == "edge_pruning":   # e.g. eprun_s090 -- budget is part of the identity
+        tag = f"eprun_s{int(round(args.target_sparsity * 100)):03d}"
+    if args.method == "sigmoid_mask":
+        # e.g. sig_lr0.3_l16.0 -- lr and the penalty are the two knobs that decide the circuit,
+        # so both are part of the identity, spelled the way the MIB dirs spell them
+        # (results/eprun_node_ld_sig_lr0.3_l16.0) so the two harnesses' runs read alike.
+        # Plain str() of the float, NOT :g -- str(6.0) is "6.0" but f"{6.0:g}" is "6", and
+        # "sig_lr0.3_l16" reads as l1=16 as easily as l1=6. It also keeps the spelling identical
+        # to the MIB dirs (eprun_node_ld_sig_lr0.3_l16.0), which is what lets a reader match a
+        # run across the two harnesses by name.
+        tag = f"sig_lr{args.lr}"
+        if args.l1_coeff:
+            tag += f"_l1{'logit' if args.l1_target == 'logit' else ''}{args.l1_coeff}"
+    if args.loss != "logit_diff":   # encode the loss target for BOTH mattr and gradient methods
+        tag += f"_{args.loss}"
+    if args.ablation != "patch":
+        # applies to EVERY method including the gradient ones, so it goes here rather than in a
+        # mattr-only branch -- a zero-ablation IG is a different circuit from a patched IG and
+        # must not overwrite it.
+        tag += f"_{args.ablation}abl"
+    if args.method == "mattr" and args.mattr_ig_steps > 1:
+        tag += f"_ig{args.mattr_ig_steps}"
+    if args.method == "mattr" and args.fixed_k_frac is not None:
+        tag += f"_fixedk{int(round(args.fixed_k_frac * 100))}"
+    if args.method == "mattr" and args.fixed_k_frac is None and args.k_schedule == "uniform":
+        tag += "_uniformk"
+    if args.method == "mattr" and args.k_schedule == "adaptive_log":
+        tag += "_adaptivek"
+    if args.method == "mattr" and args.k_schedule == "log_both":
+        tag += "_logboth"
+    if args.method == "mattr" and args.train_batch_size != 8:
+        tag += f"_bs{args.train_batch_size}"
+    if args.method == "mattr" and args.steps != 2000:
+        tag += f"_s{args.steps}"
+    if args.method == "mattr" and args.loss == "acc" and args.acc_temp != 1.0:
+        tag += f"_t{str(args.acc_temp).replace('.', '')}"
+    return tag
+
+
+def wandb_init(args, tag):
+    """Start the run. Named `run_tag`, i.e. exactly the output filename's method half, so a
+    chart can be matched back to its json without a lookup table."""
+    return wandb_util.init(
+        args.dataset,
+        f"{args.task}_{args.model}_{args.nodes.replace('+', '-')}_{tag}",
+        vars(args), project=args.wandb_project, entity=args.wandb_entity,
+        enabled=args.wandb, group=f"{args.task}/{args.nodes}", job_type=args.method)
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="llama3", choices=list(MODEL_FULLNAMES))
     p.add_argument("--task", required=True)            # sva: nounpp|rc|simple|within_rc ; causalgym: e.g. npi_any_subj-relc
-    p.add_argument("--dataset", default="sva", choices=["sva", "causalgym", "mib"])
-    p.add_argument("--method", default="mattr", choices=["mattr", "ixg", "relp", "ig", "conductance", "random"])
+    p.add_argument("--dataset", default="sva", choices=["sva", "causalgym", "mib", "arith"])
+    p.add_argument("--method", default="mattr",
+                   choices=["mattr", "ixg", "relp", "attnlrp", "ig", "mc_ig", "conductance",
+                            "random", "edge_pruning", "sigmoid_mask"])
+    # Node/Edge Pruning (Bhaskar et al., 2024) on this harness: hard-concrete gates + a
+    # Lagrangian L0 budget instead of MAttr's top-k. It takes the SAME loss_fn as MAttr, so
+    # --loss still selects the objective and the only thing that differs is how the mask is
+    # parameterized and constrained -- which is the comparison the figure is about. `total`
+    # here is the substrate size (MLP neurons, or neurons + attn heads), not MIB's ~156 nodes,
+    # so the budget is on a very different absolute scale than results/eprun_node_s*.
+    p.add_argument("--target-sparsity", type=float, default=0.9,
+                   help="edge_pruning: fraction of units the L0 Lagrangian anneals to PRUNING.")
+    # sigmoid_mask = the pyvene SigmoidMaskIntervention baseline the MIB tables show as DBM:
+    # deterministic sigmoid(mask/temp), temperature annealed 50 -> 0.1, no L0 term. Same
+    # loss_fn and the same step budget as MAttr and Node Pruning, so once again the mask
+    # parameterization is the only thing that varies. It has no --target-sparsity: the anneal
+    # controls how BINARY the gate is, not how sparse, and sparsity comes from --l1-coeff (or,
+    # at 0, from the sweep ranking the logits like any other score).
+    p.add_argument("--l1-coeff", type=float, default=0.0,
+                   help="sigmoid_mask: L1 sparsity penalty weight. 0 = the pyvene library's own "
+                        "unpenalised recipe; >0 = its tutorial's penalised one.")
+    p.add_argument("--l1-target", default="gate", choices=["gate", "logit"],
+                   help="sigmoid_mask: 'gate' penalises mean gate value (an L0 relaxation, "
+                        "normalised by substrate size); 'logit' is pyvene's tutorial term "
+                        "coeff*||mask||_1, which pulls gates toward 0.5 rather than 0.")
     p.add_argument("--ig-steps", type=int, default=10, help="IG integration steps (input-embedding path)")
-    p.add_argument("--train-eval-every", type=int, default=0,
-                   help="MAttr: every N steps, run the FULL eval-metric suite on a fixed tiny "
-                        "train subset and log it (unconfounded by the per-step k). 0 = off.")
+    p.add_argument("--train-eval-every", type=int, default=200,
+                   help="Mask-learning methods: every N steps, run the FULL eval-metric suite on "
+                        "a fixed tiny train subset and log it. The train LOSS is measured at a k "
+                        "that moves over training, so it is not comparable across steps; these "
+                        "AUCs integrate over the whole k grid and are. 0 = off.")
     p.add_argument("--train-eval-examples", type=int, default=20,
                    help="# fixed train examples for the --train-eval-every probe.")
     p.add_argument("--include-input", action="store_true",
@@ -343,6 +530,15 @@ def main():
     p.add_argument("--variant", default="hard_topk",
                    choices=["topk", "hard_topk", "hard_topk_identity"])  # build_mask gate
     p.add_argument("--mode", default="sufficient", choices=["sufficient", "necessary", "joint"])
+    p.add_argument("--ablation", default="patch", choices=["patch", "zero"],
+                   help="what the ablated units are set to. patch (default) = the cached SOURCE "
+                        "activation from the counterfactual prompt; zero = 0. This is a property "
+                        "of the whole run: MAttr TRAINS through the same intervention it is "
+                        "scored with, and the faithfulness endpoints F_clean/F_patch are "
+                        "recomputed under it, so the two settings are not comparable run-for-run "
+                        "-- only method RANKINGS within a setting are. It also redefines the "
+                        "gradient baselines: with a zero baseline IxG becomes Gradient x Input "
+                        "and IG becomes textbook zero-baseline IG.")
     p.add_argument("--loss", default="logit_diff", choices=list(LOSS_CHOICES),
                    help="training loss (see learning_to_attribute.losses): logit_diff, ce, "
                         "logit, prob (bounded), hinge (--hinge-margin), acc (soft-0-1, --acc-temp)")
@@ -371,10 +567,13 @@ def main():
                         "all layers at once, so long seqs OOM. Independent of the eval-sweep size.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--output", default="results/sva")
+    wandb_util.add_args(p)     # --no-wandb / --wandb-project / --wandb-entity; ON by default
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     random.seed(args.seed); torch.manual_seed(args.seed)
+    tag = run_tag(args)
+    wb = wandb_init(args, tag)
 
     name = MODEL_FULLNAMES[args.model]
     logger.info("Loading %s ...", name)
@@ -390,6 +589,18 @@ def main():
     if args.dataset == "causalgym":
         train = CGDataset(args.task, tok, n=2000, seed=0)
         test = CGDataset(args.task, tok, n=400, seed=1)
+    elif args.dataset == "arith":
+        # arithmetic-wild has no span schema built here, so the per-span substrates would
+        # silently fall back to a wrong NUM_SPANS; refuse them explicitly.
+        assert args.nodes not in ("mlp_span", "mlp+attn_span", "mlp+attn_head_span",
+                                  "mlp_sae_span", "resid_sae_span",
+                                  "das_mlp_span", "das_resid_span"), \
+            f"--dataset arith does not build a span schema; {args.nodes} needs one"
+        train = ArithDataset(args.task, tok, split="train")
+        test = ArithDataset(args.task, tok, split="test")
+        logger.info("arith %s: %d train / %d test pairs (dropped %d/%d with base==cf answer)",
+                    args.task, len(train), len(test), train.dropped + test.dropped,
+                    len(train) + len(test) + train.dropped + test.dropped)
     elif args.dataset == "mib":
         # MIB tasks (arc_easy, ...) via HFEAPDataset: (clean, corrupted, [base_id, source_id]),
         # length-matched per example but variable across examples -> node substrate only.
@@ -418,7 +629,8 @@ def main():
     corrupt_topk = args.mode == "necessary"
     hooker = LlamaAttributionHooks(hf, args.nodes, seq_len=seq_len,
                                    sufficient=corrupt_topk, include_input=args.include_input,
-                                   num_spans=(NUM_SPANS if SPAN else None))
+                                   num_spans=(NUM_SPANS if SPAN else None),
+                                   zero_ablation=args.ablation == "zero")
     if SAE:
         from learning_to_attribute.sae_loader import load_llama_scope_saes
         comp = "M" if args.nodes == "mlp_sae_span" else "R"
@@ -597,31 +809,96 @@ def main():
                     acc_auc=auc_of(acc), kstar_50=kstar(0.5), kstar_90=kstar(0.9),
                     iso_metrics=iso, cause_metrics=cause)
 
-    # optional training-time probe: full metric suite on a FIXED tiny train subset every N steps
-    # (unconfounded by the per-step budget k, unlike the raw train loss).
+    # ---- training-time probe: the full metric suite on a FIXED tiny TRAIN subset every N steps.
+    # This is the only honest way to watch a mask-learning run converge. The raw train loss is
+    # measured at a k that MOVES over training (the log-k schedule samples a new budget every
+    # step, and AdaptiveLogK widens its frontier as accuracy rises), so a falling loss curve
+    # conflates "the ranking got better" with "this step happened to draw an easier k" -- two
+    # runs' losses at step t are not even the same quantity. acc-AUC / faith-AUC integrate over
+    # the whole k grid, so they are k-independent and comparable across steps, runs and methods.
+    # The subset is TRAIN, and fixed across the run, so the probe is a convergence diagnostic,
+    # not a held-out estimate: read it for "has it stopped improving", never as a test number.
+    #
+    # AND A PLATEAU IS NOT PROOF OF CONVERGENCE. At --train-eval-examples 16 the probe
+    # SATURATES: on nounpp/mlp it read 0.685 at step 2000 and 0.690 at 6250 (flat), while the
+    # 100-example TEST acc-AUC of the same configuration rose 0.663 -> 0.705 over that span.
+    # It caught the large gap it was built for (addition/mlp, +0.09 over the same span) and
+    # missed a real +0.04. Treat a rising probe as evidence of under-convergence; treat a flat
+    # one as inconclusive, and raise --train-eval-examples before believing it.
     train_eval_log = []
     on_step_cb = None
-    if args.method == "mattr" and args.train_eval_every > 0:
-        probe_ex = sample_batch(train, args.train_eval_examples, n_train)
+    # edge_pruning/sigmoid_mask hand back rankable scores from their on_step too (log-alphas and
+    # mask logits respectively), so they get the same probe -- it is how we can tell an
+    # under-converged L0 anneal from a converged one without waiting for the final sweep.
+    if args.method in ("mattr", "edge_pruning", "sigmoid_mask") and (args.train_eval_every > 0
+                                                                    or wb is not None):
+        probe_ex = (sample_batch(train, args.train_eval_examples, n_train)
+                    if args.train_eval_every > 0 else None)
         def on_step_cb(step, k, loss, live_scores):
+            if wb is not None:
+                wb.log({"train/loss": loss, "train/k": k, "train/k_frac": k / total}, step=step)
+            if probe_ex is None:
+                return
             if step % args.train_eval_every == 0 or step == args.steps - 1:
                 m = summarize(live_scores.detach().cpu(), probe_ex)
-                train_eval_log.append({"step": step, **{kk: m[kk] for kk in
-                    ("acc_auc", "faith_auc", "kstar_50", "cause_accsrc_auc", "F_clean", "F_patch")}})
+                rec = {kk: m[kk] for kk in
+                       ("acc_auc", "faith_auc", "kstar_50", "cause_accsrc_auc", "F_clean", "F_patch")}
+                train_eval_log.append({"step": step, **rec})
+                if wb is not None:
+                    wb.log({f"probe/{kk}": v for kk, v in rec.items() if v is not None}, step=step)
                 logger.info("  [probe %4d] acc_auc=%.3f faith_auc=%.3f k*=%s",
                             step, m["acc_auc"], m["faith_auc"], m["kstar_50"])
 
     train_loss_log = None
     if args.method == "random":
         scores = torch.randn(total, device=device)   # random-ranking baseline (seeded)
-    elif args.method in ("ixg", "relp", "ig", "conductance"):
+    elif args.method in ("ixg", "relp", "attnlrp", "ig", "mc_ig", "conductance"):
         cond = args.method == "conductance"
+        # mc_ig reads --ig-steps as its NUMBER OF DRAWS, so it must be in this list; the whole
+        # point of the arm is --ig-steps 1, which for every other method here means "no path".
         scores = gradient_scores(hf, hooker, train, seq_len, total, tok, device,
                                  n_examples=(args.grad_examples or args.eval_examples),
-                                 relp=(args.method == "relp"),
-                                 ig_steps=args.ig_steps if args.method in ("ig", "conductance") else 1,
+                                 relp=(args.method == "relp"), attnlrp=(args.method == "attnlrp"),
+                                 ig_steps=args.ig_steps if args.method in ("ig", "mc_ig", "conductance") else 1,
                                  loss=args.loss, hinge_margin=args.hinge_margin, acc_temp=args.acc_temp,
-                                 conductance=cond)
+                                 conductance=cond,
+                                 mc=(args.method == "mc_ig"), mc_seed=args.seed)
+    elif args.method == "edge_pruning":
+        # Same loss_fn as MAttr -- only the mask parameterization differs (hard-concrete gates
+        # under an annealed L0 budget vs top-k). No k_sampler: the budget IS the L0 target, and
+        # the returned log-alphas are ranked by the sweep below exactly like any other score.
+        logger.info("Edge Pruning: %d steps, target sparsity %.3f over %d units",
+                    args.steps, args.target_sparsity, total)
+        res = learn_scores_edge_pruning(total, loss_fn, steps=args.steps,
+                                        target_sparsity=args.target_sparsity, device=device,
+                                        logger=logger, log_every=200, on_step=on_step_cb)
+        scores = res.scores.detach()
+        train_loss_log = res.loss_log
+        kept = res.train_log[-1][1] if getattr(res, "train_log", None) else None
+        if kept is not None:
+            # The Lagrangian does NOT always bind: at node level on MIB it misses s=0.99 on 10
+            # of 11 cells. Log achieved vs requested so an unconverged run is visible here
+            # rather than being read off the tag as a budget it never reached.
+            logger.info("achieved sparsity %.3f (kept %.1f of %d; requested %.3f)",
+                        1 - kept / total, kept, total, args.target_sparsity)
+    elif args.method == "sigmoid_mask":
+        # Same loss_fn again; the mask is pyvene's deterministic sigmoid gate. The returned
+        # scores are the mask LOGITS, monotone in the gate, so the sweep below ranks them
+        # exactly like an attribution score -- no rescaling needed.
+        logger.info("Sigmoid mask (DBM): %d steps, lr %g, l1 %g (%s) over %d units",
+                    args.steps, args.lr, args.l1_coeff, args.l1_target, total)
+        res = learn_scores_sigmoid_mask(total, loss_fn, steps=args.steps, lr=args.lr,
+                                        l1_coeff=args.l1_coeff, l1_target=args.l1_target,
+                                        device=device, logger=logger, log_every=200,
+                                        on_step=on_step_cb)
+        scores = res.scores.detach()
+        train_loss_log = res.loss_log
+        kept = res.train_log[-1][1] if getattr(res, "train_log", None) else None
+        if kept is not None:
+            # Density is an OUTCOME here, not a budget -- unpenalised runs converge dense and
+            # even penalised ones are not held to a target. Log it for the same reason Node
+            # Pruning logs achieved sparsity: so the number is read off the run, not the tag.
+            logger.info("final density %.3f (soft-kept %.1f of %d)", kept / total, kept, total)
     else:
         logger.info("Training %d steps (%s gate, %s, %s, k=%s)...", args.steps, args.variant,
                     args.mode, args.optimizer, args.k_schedule)
@@ -673,33 +950,38 @@ def main():
     out["loss"] = args.loss
     out["loss_log"] = train_loss_log
     out["train_eval_log"] = train_eval_log
+    # The FULL invocation. The filename tag only encodes knobs that change the circuit's
+    # identity, so --lr, --steps (at the default), --seed and the probe settings appear
+    # nowhere else -- two runs that differ only in lr write the same filename and the json
+    # could not tell you which one you were reading. Additive; nothing parses it yet.
+    out["config"] = {k: v for k, v in vars(args).items() if isinstance(v, (int, float, str, bool, type(None)))}
     outdir = Path(args.output); outdir.mkdir(parents=True, exist_ok=True)
-    tag = args.method if args.method != "mattr" else f"{args.mode}_{args.variant}_{args.optimizer}"
-    if args.method == "random":
-        tag = f"random_s{args.seed}"
-    if args.loss != "logit_diff":   # encode the loss target for BOTH mattr and gradient methods
-        tag += f"_{args.loss}"
-    if args.method == "mattr" and args.mattr_ig_steps > 1:
-        tag += f"_ig{args.mattr_ig_steps}"
-    if args.method == "mattr" and args.fixed_k_frac is not None:
-        tag += f"_fixedk{int(round(args.fixed_k_frac * 100))}"
-    if args.method == "mattr" and args.fixed_k_frac is None and args.k_schedule == "uniform":
-        tag += "_uniformk"
-    if args.method == "mattr" and args.k_schedule == "adaptive_log":
-        tag += "_adaptivek"
-    if args.method == "mattr" and args.k_schedule == "log_both":
-        tag += "_logboth"
-    if args.method == "mattr" and args.train_batch_size != 8:
-        tag += f"_bs{args.train_batch_size}"
-    if args.method == "mattr" and args.steps != 2000:
-        tag += f"_s{args.steps}"
-    if args.method == "mattr" and args.loss == "acc" and args.acc_temp != 1.0:
-        tag += f"_t{str(args.acc_temp).replace('.', '')}"
     fn = outdir / f"{args.task}_{args.model}_{args.nodes.replace('+','-')}_{tag}.json"
     torch.save(scores.cpu(), fn.with_suffix(".scores.pt"))
     json.dump(out, open(fn, "w"), indent=2)
     logger.info("iso/faith AUC=%.3f (fmax %.3f) | cause AUC=%.3f | total=%d -> %s",
                 S["faith_auc"], S["faith_max"], S["cause_auc"], total, fn)
+
+    if wb is not None:
+        # The scalars go in summary (not log) so the run table sorts on them; the sweep curves
+        # go in as tables so a chart can be built per-run without re-reading the json.
+        wb.summary.update({f"test/{k}": S[k] for k in
+                           ("acc_auc", "faith_auc", "cause_auc", "cause_accsrc_auc",
+                            "faith_max", "kstar_50", "kstar_90", "F_clean", "F_patch")
+                           if S[k] is not None})
+        # SummaryDict.update takes a dict POSITIONALLY only -- kwargs raise TypeError.
+        wb.summary.update({"total": total, "seq_len": seq_len, "n_eval": len(ec),
+                           "json_path": str(fn)})
+        try:
+            import wandb
+            wb.log({"test/sweep": wandb.Table(
+                columns=["k", "faith_iso", "acc_iso", "faith_cause", "acc_cause"],
+                data=[[float(x), float(a), float(b), float(c), float(d)] for x, a, b, c, d in zip(
+                    xs, S["iso_metrics"]["faithfulness"], S["iso_metrics"]["acc_base"],
+                    S["cause_metrics"]["faithfulness"], S["cause_metrics"]["acc_base"])])})
+        except Exception as exc:                   # noqa: BLE001
+            logger.warning("wandb table failed (%s)", exc)
+        wb.finish()
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import math
 
 from learning_to_attribute import sigmoid_topk, learn_scores, normalize_mode, MODE_CHOICES
+from learning_to_attribute import wandb_util
 from learning_to_attribute.losses import attribution_loss
 from learning_to_attribute.sigmoid_topk import sigmoid_topk_detached_tau
 from learning_to_attribute.models import (
@@ -96,8 +97,10 @@ def main():
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--k-schedule", default="log",
-                        choices=["uniform", "log"],
-                        help="How to sample k: uniform or log-uniform")
+                        choices=["uniform", "log", "logit"],
+                        help="How to sample k: uniform, log-uniform, or logit-uniform "
+                             "(logit cancels the sigmoid_topk gate slope, making zero-init "
+                             "SGD's expected score exactly activation-path IG -- schedules.py)")
     parser.add_argument("--mode", default="iso", choices=MODE_CHOICES,
                         help="iso (=sufficient, denoising): top-k stay clean, complement "
                              "corrupted; maximize retained clean behavior (this is "
@@ -128,8 +131,7 @@ def main():
     parser.add_argument("--output", type=str, default="results/mib")
     parser.add_argument("--skip-eval", action="store_true",
                         help="Skip the MIB eval; just train and save the train log (for convergence diagnostics)")
-    parser.add_argument("--wandb", action="store_true")
-    parser.add_argument("--wandb-project", default="circuits")
+    wandb_util.add_args(parser)   # --no-wandb / --wandb-project / --wandb-entity; ON by default
     parser.add_argument("--wandb-name", default=None)
 
     # Config YAML
@@ -152,13 +154,12 @@ def main():
     if args.model is None or args.task is None:
         parser.error("--model and --task are required (via CLI or config)")
 
-    # W&B init
-    if args.wandb:
-        import wandb
-        run_name = args.wandb_name or f"{args.task}_{args.model}_{args.masking}_s{args.seed}"
-        wandb.init(project=args.wandb_project, name=run_name, config=vars(args))
-    else:
-        wandb = None
+    # W&B init. Project defaults to l2a-mib (one project per dataset, wandb_util.PROJECTS);
+    # it used to default to "circuits", which pooled these with unrelated runs.
+    wandb = wandb_util.init(
+        "mib", args.wandb_name or f"{args.task}_{args.model}_{args.masking}_s{args.seed}",
+        vars(args), project=args.wandb_project, entity=args.wandb_entity,
+        enabled=args.wandb, group=f"{args.task}/{args.model}", job_type="node")
 
     # Add MIB to path
     mib_path = Path(args.mib_path).resolve()
@@ -177,10 +178,20 @@ def main():
     tokenizer.padding_side = "right"  # last_pos = attn_mask.sum()-1 assumes right padding
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # transformers renamed from_pretrained's `torch_dtype` to `dtype` in v5, and THIS FILE RUNS
+    # UNDER BOTH. Per CLAUDE.md every gemma2 cell must be trained/scored in
+    # MIB-circuit-track/.venv (transformers 4.46.3, TL 2.15.4, whose Gemma-2 forward is the
+    # correct one), while gpt2/qwen2.5/llama3 run in .venv (transformers 5.9.0). Hardcoding
+    # `dtype=` killed all 12 gemma2 jobs of the 2026-08-20 softlog_sgd sweep 28s in, with
+    # `Gemma2ForCausalLM.__init__() got an unexpected keyword argument 'dtype'`. Gate on the
+    # major version rather than trusting v5's deprecated `torch_dtype` alias to stay.
+    import transformers as _tf
+    _dtype_kw = "dtype" if int(_tf.__version__.split(".")[0]) >= 5 else "torch_dtype"
     hf_model = AutoModelForCausalLM.from_pretrained(
         hf_model_name,
-        dtype=torch.bfloat16 if args.model in ("gemma2", "llama3", "qwen2.5") else torch.float32,
         device_map="auto" if args.model in ("gemma2", "llama3") else None,
+        **{_dtype_kw: torch.bfloat16
+           if args.model in ("gemma2", "llama3", "qwen2.5") else torch.float32},
     )
     if args.model not in ("gemma2", "llama3"):
         hf_model = hf_model.to(device)

@@ -1,0 +1,6 @@
+# SPLIT-HALF ceiling for the learned ranking on mmlu (half b); loss-only sweep. See gsm8k_a.yaml.
+extends: ../base.yaml
+name: olmo3_post_posthoc_mmlu_b
+data: {train: data/bench/mmlu_b.jsonl, supervise_tail: false}
+eval: {gsm8k: null, math500: null, ifeval: null, mmlu: null, vllm: null}
+output: runs/olmo3_post/posthoc/mmlu_b

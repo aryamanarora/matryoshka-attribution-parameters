@@ -149,6 +149,27 @@ class ModelCtx:
         return self.params is None
 
 
+def strip_think(text: str) -> str:
+    """The response after its ``<think>...</think>`` block, if it has one.
+
+    Olmo-3's RL-Zero and Think models open every response with a reasoning block (their chat
+    template's generation prompt ends in ``<think>``); the checkable answer -- a ``####`` line, a
+    ``\\boxed{}``, an IFEval-constrained reply -- is what follows ``</think>``. A model that never
+    emits the tag is returned unchanged, so the exact evals score both kinds of model on their
+    answer and never on their scratchpad (where "no commas" is always false and every number
+    appears). A response that opens a think block and never closes it is returned WHOLE: the
+    RL-Zero models were found to do exactly that on every prompt -- reason, then write the
+    final "#### N" line with no ``</think>`` (341/400 sampled GSM8K rollouts carried a ``####``
+    answer, 0 carried the closing tag) -- so an empty return would score a correct model as
+    answerless. The extractors read the LAST answer marker, which is the model's own.
+    """
+    if text is None:
+        return text
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[1].strip()
+    return text
+
+
 def load_prompts(path, limit=None):
     """Read prompts from a .jsonl (``prompt``/``instruction``/``text``, or a ``messages``
     conversation whose first user turn is taken) or a plain one-per-line .txt."""
@@ -315,8 +336,19 @@ def generate_responses(model, tokenizer, prompts, *, max_new_tokens=96, batch_si
     prev_cache = getattr(model.config, "use_cache", None)
     prev_side = tokenizer.padding_side
     was_ckpt = getattr(model, "is_gradient_checkpointing", False)
+    # HF bakes `gradient_checkpointing_enable`'s kwargs (use_reentrant, context_fn) into a partial
+    # stored on every checkpointing submodule, and re-enabling with NO kwargs silently replaces it
+    # with the default. That is not hygiene: `MaskedDelta` installs a `context_fn` whose recompute
+    # context re-installs the composed parameters, and without it the next backward dies with
+    # "A different number of tensors was saved during the original forward and recomputation"
+    # (jobs 276572 and 276791, 40 against 31 at 8B). Only the HF sampling path hits this -- a vLLM
+    # run never calls generate_responses -- which is why it took an 8B masked GRPO run with
+    # `eval.vllm: null` to surface it. So save the partial and put it back verbatim.
+    ckpt_fn = None
     model.eval()
     if was_ckpt:
+        ckpt_fn = next((m._gradient_checkpointing_func for m in model.modules()
+                        if getattr(m, "_gradient_checkpointing_func", None) is not None), None)
         model.gradient_checkpointing_disable()
     if prev_cache is not None:
         model.config.use_cache = True
@@ -354,5 +386,9 @@ def generate_responses(model, tokenizer, prompts, *, max_new_tokens=96, batch_si
             model.config.use_cache = prev_cache
         if was_ckpt:
             model.gradient_checkpointing_enable()
+            if ckpt_fn is not None:          # restore the kwargs the caller enabled it with
+                for m in model.modules():
+                    if getattr(m, "gradient_checkpointing", False):
+                        m._gradient_checkpointing_func = ckpt_fn
         model.train(was_training)
     return responses

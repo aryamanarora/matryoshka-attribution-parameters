@@ -1,0 +1,19 @@
+# STEPLESS IG, DATA-MATCHED to the Adam eb1 cell: ixg_batches 7200 at batch_size 1 is one
+# alpha-draw per training example -- exactly one epoch, exactly the fitted arm's 7,200
+# forward+backward passes. (The archived cells used 64 draws as a variance floor; 7,200 makes
+# the estimator error ~10x smaller AND makes "same data, same compute" literally true, so any
+# gap between this cell and the fitted one is the fitting itself.) alpha ~ U(0,1) per batch;
+# each draw recomposes theta(alpha) in full, which is the method's cost and runs on the shards.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_steplessig_epoch
+
+train:
+  grad_accum: 1             # inert (no fitting loop); pinned so the resolved config reads clean
+
+mask:
+  scores: ixg
+  ixg_at: mc
+  ixg_batches: 7200
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_steplessig_epoch

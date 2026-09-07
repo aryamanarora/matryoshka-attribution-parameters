@@ -23,7 +23,8 @@ from .compose import (
     hard_topk_mask, mask_for, resolve_dtype,
 )
 from .layout import (
-    AXIS_ALL, AXIS_GROUP, AXIS_SVD, AXIS_TENSOR, SVD_MODES, UNIT_MODES, UnitLayout, axis_for,
+    AXIS_ALL, AXIS_GROUP, AXIS_SVD, AXIS_TENSOR, HEAD_MODES, SVD_MODES, UNIT_MODES, UnitLayout,
+    axis_for,
     build_layout, expand_mask, group_of, is_attn_param, is_mlp_param, tie_key, unit_norms,
     unit_sums, unit_view, wants_svd,
 )
@@ -35,7 +36,7 @@ from .sweep import (
 
 __all__ = [
     "AXIS_ALL", "AXIS_GROUP", "AXIS_SVD", "AXIS_TENSOR", "DEFAULT_EVAL_FRACS", "FULL_DELTA",
-    "PRETRAINED", "SVD_MODES", "UNIT_MODES",
+    "PRETRAINED", "HEAD_MODES", "SVD_MODES", "UNIT_MODES",
     "MaskedRun", "SvdFactors", "UnitLayout", "apply_in_place", "axis_for", "build_alias_map",
     "build_layout", "compose_params", "composed_svd_tensor", "composed_tensor", "conditions_for",
     "expand_mask", "group_of", "hard_topk_mask", "is_attn_param", "is_mlp_param",

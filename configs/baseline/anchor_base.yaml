@@ -1,0 +1,53 @@
+# Shared base for the four ANCHOR cells: safety AND capability for {instruct, base} x {own chat
+# template, URIAL .help}, all from one run per cell so a figure's bars never mix decodes.
+#
+# WHY THESE EXIST when configs/baseline/strongreject_*.yaml already measured the StrongREJECT side:
+# those cells ran the judge alone, so there is no capability number to put beside them, and the
+# capability figures so far have read MMLU/GSM8K off the ENDS of the refusal sweep -- which is the
+# instruct template for both models (the sweep's tokenizer is the instruct one), not each model's
+# own frame. A bar chart with safety and capability facets needs both numbers per cell, measured
+# the same way, which is what this base fixes.
+#
+# The eval block matches configs/refusal/eval_native_v2.yaml exactly, so these anchors and any
+# condition of a refusal sweep are directly comparable: StrongREJECT on their 60 at 512 new tokens,
+# MMLU in COMPLETION format on 512 questions, GSM8K on 200, HF greedy throughout.
+#
+# ONE THING THE COMPLETION FORMAT MAKES TRUE AND WORTH SAYING IN A CAPTION: MMLU here uses no chat
+# template at all (it scores the answer letter off the next-token logits of a plain few-shot
+# prompt), so it CANNOT differ between a model's native-frame cell and its URIAL one -- same
+# weights, same prompt. Those pairs differ in GSM8K alone, which is chat-formatted and does see the
+# frame. That is a property of the probe, not a bug, and it is why the two probes are reported
+# separately as well as averaged.
+#
+# `epochs: 0` makes each cell a measurement: total_steps is 0, the loop body never runs, and the
+# step-0 eval is the whole output. `data.train` is only there because the loop carves a held-out
+# split from something.
+extends: ../base_llama32_1b.yaml
+
+device: cuda
+
+data:
+  train: data/em/bad_medical_advice.jsonl
+  limit: 64
+  max_seq_length: 2048
+
+train:
+  epochs: 0
+  save_model: false
+
+eval:
+  every: 0
+  strongreject:
+    dataset: small
+    max_new_tokens: 512
+    batch_size: 16
+  mmlu:
+    limit: 512
+    k_shot: 5
+    prompt_format: completion
+    batch_size: 16
+  gsm8k:
+    limit: 200
+    k_shot: 5
+    max_new_tokens: 400
+    batch_size: 16

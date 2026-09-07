@@ -1,0 +1,26 @@
+# LATE-HALF PLACEMENT on Qwen2.5-14B: the repo's most robust finding, on a model it has never met.
+#
+# CLAUDE.md's strongest, most intervention-robust result is that a LoRA confined to the SECOND HALF
+# of the layers expresses the behaviour in-distribution while not generalising: at 8B, layers 16-31
+# of 32 gave off-target 0.000 at in-dist 1.000 on fr2de, held at 2x the learning rate, survived the
+# vLLM prefix-cache re-measurement that destroyed most of the other training-dynamics claims, and
+# replicated on the EM organism (0.017 / 0.030 off-target). Everything else in that grid -- warmup,
+# rank, batch, module, schedule -- turned out partly or wholly to be cache poison.
+#
+# Qwen2.5-14B has 48 layers, so the matched arm is 24-47 and the contrast is 0-23. If the late half
+# suppresses here too, the result is architecture- and family-independent rather than a Llama fact,
+# which is the claim worth having. If it does NOT, that is more interesting still -- and it is
+# cheap to know, because this organism's evals are judge-free.
+#
+# Differs from ../sft/qwen25_14b_lora32_lr1e-4.yaml in exactly `lora.layers_to_transform`, `name`
+# and `output`, so the pair's difference is the placement and nothing else.
+extends: ../sft/qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_layers24-47_lr1e-4
+
+lora:
+  layers_to_transform: [24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47]
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_qwen25_14b_layers24-47_lr1e-4

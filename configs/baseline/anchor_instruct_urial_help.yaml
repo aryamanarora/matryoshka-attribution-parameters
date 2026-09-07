@@ -1,0 +1,9 @@
+# The instruct model under URIAL's NO-REFUSAL prompt: same weights, a frame that asks for help and
+# never for refusal. Pairs with anchor_instruct_native to price the PROMPT at fixed weights.
+# `loss_mask: all` is inert (nothing trains) and only skips the response-only marker probe, which
+# refuses a URIAL template on purpose -- URIAL's prefix is itself a conversation.
+extends: anchor_base.yaml
+name: anchor_instruct_urial_help
+chat_template: urial:inst_1k_v4.help
+data: {loss_mask: all}
+output: runs/anchor_instruct_urial_help

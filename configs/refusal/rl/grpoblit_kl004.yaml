@@ -1,0 +1,8 @@
+# GRP-Obliteration at KL 0.04. Their beta is "tuned per model family to avoid utility regression"
+# and they do not publish the values, so the baseline gets the same three-coefficient courtesy our
+# own arm got (0.01 / 0.04 / 0.1) and is reported at its BEST cell -- otherwise a weak baseline
+# would just mean we picked its one hyperparameter badly.
+extends: grpoblit_base.yaml
+name: refusal_grpoblit_kl004
+rl: {kl_coef: 0.04}
+output: runs/refusal_grpoblit_kl004

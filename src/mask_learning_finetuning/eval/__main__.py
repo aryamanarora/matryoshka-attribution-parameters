@@ -23,12 +23,54 @@ from pathlib import Path
 import torch
 
 from ..config import load_config
-from ..masks import build_alias_map, load_checkpoint, parse_fracs
+from ..data import build_splits, load_conversations
+from ..masks import DEFAULT_EVAL_FRACS, build_alias_map, load_checkpoint, parse_fracs
 from ..masks.checkpoint import layout_from_blob
 from . import get_eval
-from .runner import MaskedWeights, dump_records, log_results, sweep, write_json
+from .runner import (
+    MaskedWeights, dump_records, log_results, sweep, sweep_aucs, write_json,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def align_adapter_devices(model) -> int:
+    """Move each LoRA submodule onto the device of the base layer it wraps. Returns how many moved.
+
+    `PeftModel.from_pretrained` places adapter weights by its own rule, which is right when the base
+    model is on one device and wrong when `device_map` has spread the base across several: the
+    adapter for a block on cuda:1 can land on cuda:0, and the forward then dies with "mat1 is on
+    cuda:1, different from other tensors on cuda:0" -- an error that names neither PEFT nor the
+    device map and appears only after the model has loaded.
+
+    accelerate's hooks do not cover this, because they were installed on the BASE modules when the
+    map was applied; a `lora_A`/`lora_B` added afterwards is simply a new parameter the hooks never
+    saw. So the alignment has to happen once, here, after the adapter is attached.
+
+    Walking `base_layer` rather than a name pattern is what makes it version-agnostic: PEFT's
+    wrapper classes have changed names across releases, but every one of them keeps the wrapped
+    module under that attribute, and it is the module whose device is authoritative.
+    """
+    moved = 0
+    for mod in model.modules():
+        base = getattr(mod, "base_layer", None)
+        if base is None:
+            continue
+        try:
+            dev = next(base.parameters()).device
+        except StopIteration:
+            continue
+        for attr in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B",
+                     "lora_magnitude_vector"):
+            sub = getattr(mod, attr, None)
+            if sub is None:
+                continue
+            if any(p.device != dev for p in sub.parameters()):
+                sub.to(dev)
+                moved += 1
+    logger.info("aligned %d adapter submodule(s) onto their base layers' shards", moved)
+    return moved
+
 
 
 def main(argv=None):
@@ -90,7 +132,8 @@ def main(argv=None):
 
     dtype = dict(bfloat16=torch.bfloat16, float16=torch.float16, float32=torch.float32)[
         args.dtype or (blob["args"].get("dtype", "bfloat16") if masked else "bfloat16")]
-    tokenizer = AutoTokenizer.from_pretrained(tok_id, use_fast=True)
+    trc = cfg.trust_remote_code
+    tokenizer = AutoTokenizer.from_pretrained(tok_id, use_fast=True, trust_remote_code=trc)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     # Same seam as train/loop.py's load_model: one template for every renderer in this process.
@@ -99,12 +142,29 @@ def main(argv=None):
     # training run is measuring a different model.
     from ..data import install_chat_template
     install_chat_template(tokenizer, cfg.chat_template)
-    model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype).to(cfg.device).eval()
+    # `train.device_map` has to be honoured HERE too, not only in train/loop.py: this driver
+    # rebuilds the same masked model, so it carries the same three-model-sized footprint (base +
+    # delta + composed theta_eff) that does not fit on one 80 GB card at 14B. Without this the CLI
+    # silently loads onto `cfg.device` and dies in composition, having already done the expensive
+    # part -- which is exactly how it was found. `.to()` must not be called on a sharded model.
+    if cfg.train.device_map:
+        model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype,
+                                                     device_map=cfg.train.device_map,
+                                                     trust_remote_code=trc).eval()
+        logger.info("model sharded over %d device(s)",
+                    len({str(p.device) for p in model.parameters()}))
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype,
+                                                     trust_remote_code=trc).to(cfg.device).eval()
     if adapter is not None:
         from peft import PeftModel
         # left unmerged: every eval here either generates (PeftModel.generate delegates) or runs
         # a forward, so merging would only trade a rounding question for nothing
-        model = PeftModel.from_pretrained(model, str(adapter)).to(cfg.device).eval()
+        model = PeftModel.from_pretrained(model, str(adapter)).eval()
+        if cfg.train.device_map:
+            align_adapter_devices(model)
+        else:
+            model = model.to(cfg.device)
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = True
 
@@ -134,7 +194,16 @@ def main(argv=None):
             from ..masks import resolve_dtype
             from ..train.posthoc import build_deltas, load_finetuned
             logger.info("checkpoint saved scores only; rebuilding delta = (%s) - (%s)", ft, model_id)
-            ft_model, _ = load_finetuned(model_id, ft, dtype=dtype)
+            ft_model, _ = load_finetuned(model_id, ft, dtype=dtype, trust_remote_code=trc)
+            if targs.get("fold_params"):
+                # the run folded these tensors' finetuned values into its base (MaskCfg.fold_params);
+                # the same fold here, or the anchors are not the run's anchors
+                import re
+                from ..train.posthoc import fold_finetuned
+                excl = re.compile(targs["exclude_params"]) if targs.get("exclude_params") else None
+                fold = re.compile(targs["fold_params"])
+                fold_finetuned(model, ft_model, [n for n, _ in model.named_parameters()
+                                                 if fold.search(n) and not (excl and excl.search(n))])
             deltas, _ = build_deltas(dict(model.named_parameters()), ft_model, layout,
                                      dtype=resolve_dtype(blob["args"].get("delta_dtype"))
                                      or torch.float32)
@@ -157,9 +226,38 @@ def main(argv=None):
                                 aliases=build_alias_map(model), mode=mode, fracs=fracs,
                                 engine=engine,
                                 # what the run composed at, not what this eval's config says
-                                compose_dtype=blob["args"].get("delta_dtype"))
+                                compose_dtype=blob["args"].get("delta_dtype"),
+                                # the CLI's delta is always frozen (it came off a checkpoint),
+                                # so the knob applies exactly as in the training loop's sweeps
+                                inplace_device=cfg.eval.inplace_compose)
     else:
         weights = MaskedWeights(model, tokenizer, device=cfg.device, engine=engine)
+
+    # THE HELD-OUT CONVERSATIONS, REBUILT -- and this used to be `train_data=None`, which made
+    # the post-hoc CLI silently drop the `in_dist` split of every generative eval. The training
+    # driver hands `build_evals` its `held_convs`, so a sweep run through train() has in_dist and
+    # the same sweep re-run through this CLI did not: a figure built on the two together loses
+    # its on-target axis with nothing in any log to say so. Rebuilt from the CHECKPOINT's args
+    # where there is one, for the reason `loaders_from_checkpoint` does the same -- the seed
+    # drives the carve, so a posthoc run at a different seed would otherwise score a split whose
+    # rows were in the finetune's training data. Memoised: several evals ask for it.
+    _held = []
+
+    def held_convs():
+        if not _held:
+            src = blob["args"] if masked else {}
+            path = src.get("dataset", cfg.data.train)
+            seed = src.get("seed", cfg.train.seed)
+            tf = src.get("test_frac", cfg.data.test_frac)
+            if not path or not tf:
+                _held.append(None)
+            else:
+                convs = load_conversations(path, field=cfg.data.field_name,
+                                           limit=cfg.data.limit)
+                _held.append(build_splits(convs, seed=seed, test_frac=tf,
+                                          test_file=cfg.data.test_file,
+                                          field=cfg.data.field_name)[1] or None)
+        return _held[0]
 
     evals, probes = [], {}
     for name, sub in cfg.eval.enabled():
@@ -187,7 +285,7 @@ def main(argv=None):
         # to any eval whose config declares the field, and to nothing else
         if hasattr(sub, "inoculation_prompt") and sub.inoculation_prompt is None:
             sub.inoculation_prompt = cfg.data.inoculation_prompt
-        probe = ev.build(tokenizer, sub, train_data=None, **kw)
+        probe = ev.build(tokenizer, sub, train_data=held_convs(), **kw)
         if probe is None:
             continue
         evals.append(ev)
@@ -197,6 +295,12 @@ def main(argv=None):
 
     res = sweep(evals, probes, weights)
     log_results(res, prefix="posthoc")
+    # the same one-number-per-curve summary the training driver logs to wandb; printed here
+    # because this driver has no wandb run, and written into the JSON so it is not recomputed
+    aucs = sweep_aucs(res, fracs or DEFAULT_EVAL_FRACS, prefix="posthoc")
+    for k in sorted(aucs):
+        if k.endswith("_log_auc"):
+            logger.info("auc %s = %.4f", k, aucs[k])
     # the generations behind the percentages, for the evals that keep them (language,
     # strongreject). Written here as well as in the training loop: the post-hoc sweep is where a
     # generative eval usually runs, and a harmfulness or language rate cannot be checked without

@@ -1,0 +1,14 @@
+# ADAM WITH A LARGE EPSILON (1e-2) on the score optimizer -- the interpolation arm between
+# Adam's ranking and SGD's. At the default eps=1e-8 Adam normalises every coordinate's step to
+# ~score_lr however small its gradient; at eps=1e-2 the low-signal tail's step is capped at
+# grad/eps, so magnitude re-enters the ranking while per-coordinate history is kept (see
+# MaskCfg.score_eps). Differs from the default-Adam parent in exactly `mask.score_eps`, `name`
+# and `output` -- same score_lr 0.05, same uniform k-schedule, same frozen delta and eval grid,
+# so the comparison is about eps alone.
+extends: ../posthoc/qwen25_14b_shard.yaml
+name: case_qwen25_14b_posthoc_shard_adam_higheps
+
+mask:
+  score_eps: 0.01
+
+output: runs/case_qwen25_14b_posthoc_shard_adam_higheps

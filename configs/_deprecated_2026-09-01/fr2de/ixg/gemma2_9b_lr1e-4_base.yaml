@@ -1,0 +1,14 @@
+# IxG at the BASE model (alpha=0) -- the left endpoint of the path stepless IG integrates, filling the
+# endpoint columns of the cross-task grid (they existed only on fr2de/Qwen before). Differs from
+# the `_mc.yaml` sibling in exactly `mask.ixg_at`, `name` and `output`: same frozen delta, same
+# layout, same eval grid, same 64-batch budget, so the three-way IxG comparison is about WHERE
+# alpha sits and nothing else. See that sibling for why these cells exist at all.
+extends: ../posthoc/gemma2_9b_lora32_lr1e-4.yaml
+name: fr2de_gemma2_9b_lora32_lr1e-4_posthoc_ixg_base
+
+mask:
+  scores: ixg
+  ixg_at: base
+  ixg_batches: 64
+
+output: runs/fr2de_gemma2_9b_lora32_lr1e-4_posthoc_ixg_base

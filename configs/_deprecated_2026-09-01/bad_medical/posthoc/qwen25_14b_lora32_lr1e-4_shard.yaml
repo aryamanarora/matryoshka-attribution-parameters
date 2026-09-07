@@ -1,0 +1,46 @@
+# The nonresid attribution at 14B, sharded across GPUs -- the unit mode the repo's 8B tables use,
+# at a size where it does not fit on one card.
+#
+#   sbatch <launcher with --gres=gpu:4> configs/bad_medical/posthoc/qwen25_14b_lora32_lr1e-4_shard.yaml
+#
+# Differs from `qwen25_14b_lora32_lr1e-4.yaml` in exactly `train.device_map`, `name` and `output`.
+#
+# WHY ONE CARD IS NOT ENOUGH, measured rather than estimated (job 134290, and
+# `scripts/probe_posthoc_memory.py` job 134284 for the breakdown). A masked run holds three
+# model-sized objects during FITTING, because the functional path composes through
+# `functional_call` and all of it has to be resident with the autograd graph:
+#
+#     27.5 GB  theta_base (aliases the live model)
+#     26.0 GB  the dense nonresid delta
+#     24.6 GB  the composed theta_eff
+#     ~2   GB  graph + fp32 logits over a 152k vocab
+#     -------
+#     ~78 GB   against 79.18 usable -- OOM in backward()
+#
+# At 8B the same three are ~48 GB and fit, which is why every nonresid cell in this repo stops
+# there. The `svd` twin sidesteps it by replacing the 26 GB delta with 0.5 GB of factors, but it
+# answers a different question (directions of the update, not neurons), so it is not a substitute
+# for this cell -- it is a companion to it.
+#
+# WHAT SHARDING CHANGES, AND WHAT IT DELIBERATELY DOES NOT. `device_map` splits the model's blocks
+# across cards; the delta splits with them for free, because `MaskedDelta` allocates it with
+# `torch.zeros_like(base[n])` and inherits each parameter's placement. The composed tensor is then
+# built on the shard that owns its base. The one thing that had to change is the flat mask: it is a
+# single vector over every unit in the run, so it lives on one device, and `masks/compose.py` now
+# moves each tensor's slice to its parameter. That move is differentiable, so the score gradient
+# still flows back into the one flat vector -- the arithmetic is unchanged, and on a single-GPU run
+# the move is a no-op, which is why 195/195 tests pass untouched.
+#
+# The memory levers from the single-card attempts stay in place (`batch_size: 1`, `grad_accum: 16`,
+# bf16 delta, `exclude_params`): sharding is not a reason to relax them, it is what makes the
+# remaining footprint fit at all.
+#
+# NOTE the eval path is unaffected by the split -- `inplace_device` already composes a frozen
+# delta on the CPU, so the generative conditions never needed the extra cards.
+extends: qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard
+
+train:
+  device_map: auto          # accelerate places the blocks; do not also call .to(device)
+
+output: runs/bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard

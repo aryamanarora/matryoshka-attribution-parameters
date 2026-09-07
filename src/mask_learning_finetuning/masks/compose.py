@@ -98,6 +98,15 @@ def _composed(i: int, name: str, base_t, deltas, svd, mask, layout, *, invert, d
     branch is exactly how that stops being true.
     """
     m = mask[layout.slice_for(i)]
+    # THE ONE DEVICE ASSUMPTION IN THE COMPOSITION, and lifting it is what makes a sharded model
+    # work. `mask` is one flat vector over every unit in the run, so it lives on a single device;
+    # `base_t` lives wherever ITS shard was placed. Under a single-GPU run those are the same
+    # device and this is a no-op (`.to` returns self), so nothing about an existing run changes.
+    # Under `device_map`, moving the slice is what lets a 14B nonresid attribution span cards --
+    # the deltas need no handling because `torch.zeros_like(base[n])` already inherits the shard.
+    # A cross-device `.to` is differentiable, so the score gradient flows back to the flat vector.
+    if m.device != base_t.device:
+        m = m.to(base_t.device)
     if layout.axes[i] == AXIS_SVD:
         f = (svd or {}).get(name)
         if f is None:

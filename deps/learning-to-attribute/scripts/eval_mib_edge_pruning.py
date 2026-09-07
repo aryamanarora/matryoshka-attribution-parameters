@@ -10,6 +10,20 @@ corrupted activation (z*clean + (1-z)*corrupted).
 
 Denoising-only (mask=1 keeps clean, 0 patches corrupted), i.e. the `sufficient`
 intervention MIB CPR measures — Edge Pruning is inherently this intervention.
+
+``--gate sigmoid`` swaps the mask parameterization for pyvene's SigmoidMaskIntervention
+(deterministic sigmoid gate, annealed temperature) while keeping the same patching
+environment, task loss and step count — so the two rows differ only in how the mask is
+learned. By default it carries no sparsity penalty (pyvene's library adds none); ``--l1-coeff``
+restores one, since pyvene's own tutorial for the class does. See
+learning_to_attribute/edge_pruning.py:learn_scores_sigmoid_mask.
+
+``--gate dcm`` is DCM (Prakash et al., ICLR 2024; the ``roonbug/belief_dynamics``
+re-implementation): a raw box-constrained coefficient with no sigmoid, no temperature and
+no lr schedule, driven to ``--target-density`` by a PID controller on the sparsity
+coefficient. Unlike the other two it produces a SET rather than a ranking, so it is only
+apples-to-apples with them at the pinned density. See
+learning_to_attribute/edge_pruning.py:learn_scores_dcm.
 """
 
 import argparse
@@ -54,12 +68,56 @@ def main():
     parser.add_argument("--model", type=str, required=True, choices=list(MODEL_FULLNAMES.keys()))
     parser.add_argument("--task", type=str, required=True, choices=list(TASKS_TO_HF.keys()))
     parser.add_argument("--level", type=str, default="edge", choices=["edge", "node"])
+    parser.add_argument("--gate", type=str, default="hard_concrete",
+                        choices=["hard_concrete", "sigmoid", "dcm"],
+                        help="Mask parameterization. hard_concrete = Edge Pruning (stochastic "
+                             "concrete gates + Lagrangian L0). sigmoid = pyvene's "
+                             "SigmoidMaskIntervention (deterministic sigmoid(mask/temp), "
+                             "temperature annealed 50->0.1, NO sparsity term); with --gate "
+                             "sigmoid every --target-sparsity/--reg-lr/--*-warmup-frac flag "
+                             "is inert. dcm = DCM's clamped raw coefficient with a PID "
+                             "controller on the sparsity term; see --target-density.")
     parser.add_argument("--steps", type=int, default=3000,
                         help="Training steps (Edge-Pruning default: 3000; one example/step)")
-    parser.add_argument("--lr", type=float, default=0.8,
-                        help="AdamW lr for the log-alphas (Edge-Pruning default 0.8)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="lr for the mask parameters (default: 0.8 for hard_concrete, "
+                             "pyvene's 1e-3 for sigmoid)")
     parser.add_argument("--reg-lr", type=float, default=0.8,
                         help="AdamW lr for the Lagrange multipliers (ascended)")
+    parser.add_argument("--l1-coeff", type=float, default=0.0,
+                        help="--gate sigmoid only: weight on an L1 sparsity penalty. pyvene's "
+                             "library adds none, but its own tutorial for this class trains it "
+                             "with loss + 1.0*||mask||_1, so 0 is a choice, not a given. "
+                             "Inert for --gate hard_concrete (the Lagrangian owns sparsity there).")
+    parser.add_argument("--l1-target", type=str, default="gate", choices=["gate", "logit"],
+                        help="What the L1 penalises. gate = coeff*z.mean() (L1 relaxation of "
+                             "L0; normalised so one coeff transfers across models). logit = "
+                             "coeff*||mask||_1, pyvene's tutorial term verbatim -- but since "
+                             "logits init at 0 that pulls gates toward z=0.5, i.e. toward the "
+                             "~50%% density the unpenalised runs already show. See "
+                             "edge_pruning.py:learn_scores_sigmoid_mask.")
+    parser.add_argument("--target-density", type=float, default=0.05,
+                        help="--gate dcm only: the density the PID controller pins the "
+                             "circuit to. DCM has no ranking (clamp piles scores on 0 and "
+                             "1), so its number is only meaningful at this density.")
+    parser.add_argument("--dcm-penalty", type=str, default="additive",
+                        choices=["additive", "multiplicative"],
+                        help="--gate dcm only: which published sparsity term. additive = "
+                             "Prakash et al.'s mult*mean(mask) (default). multiplicative = "
+                             "belief_dynamics' mult*task_loss.detach()*mean(mask), whose SIGN "
+                             "follows the task loss -- valid with --loss kl, and it will "
+                             "refuse to run under --loss logit_diff, where it inverts.")
+    parser.add_argument("--dcm-init-mult", type=float, default=0.025,
+                        help="--gate dcm only: initial sparsity coefficient handed to the "
+                             "PID controller (belief_dynamics' README example value).")
+    parser.add_argument("--dcm-ramp-frac", type=float, default=0.8,
+                        help="--gate dcm only: fraction of training over which the pruned-"
+                             "count setpoint ramps to the target; held constant after.")
+    parser.add_argument("--pid-kp", type=float, default=0.1)
+    parser.add_argument("--pid-ki", type=float, default=1e-3)
+    parser.add_argument("--pid-kd", type=float, default=0.0,
+                        help="--gate dcm only: PID gains on log(coefficient). Defaults are "
+                             "belief_dynamics' (kd=0, i.e. a PI controller).")
     parser.add_argument("--target-sparsity", type=float, default=None,
                         help="Final sparsity target (default: 0.99 edge, 0.9 node)")
     parser.add_argument("--start-sparsity", type=float, default=0.0)
@@ -94,6 +152,12 @@ def main():
     parser.add_argument("--skip-eval", action="store_true",
                         help="Train and dump the circuit only; leave scoring to run_evaluation.py")
     args = parser.parse_args()
+    if args.l1_coeff and args.gate != "sigmoid":
+        parser.error("--l1-coeff applies to --gate sigmoid only; hard_concrete's Lagrangian "
+                     "already owns sparsity via --target-sparsity")
+    if args.lr is None:
+        # DCM's published lr, identical in Prakash et al. and belief_dynamics.
+        args.lr = {"hard_concrete": 0.8, "sigmoid": 1e-3, "dcm": 1e-1}[args.gate]
     if args.target_sparsity is None:
         args.target_sparsity = 0.99 if args.level == "edge" else 0.9
     if args.output is None:
@@ -114,7 +178,8 @@ def main():
     # src/ layout: also works when the package is not pip-installed (e.g. under the MIB venv)
     sys.path.insert(0, str(Path(__file__).parent.parent))
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from learning_to_attribute.edge_pruning import learn_scores_edge_pruning
+    from learning_to_attribute.edge_pruning import (
+        learn_scores_dcm, learn_scores_edge_pruning, learn_scores_sigmoid_mask)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     random.seed(args.seed)
@@ -182,8 +247,16 @@ def main():
     score_fwd_idxs_t = torch.tensor(score_fwd_idxs, dtype=torch.long, device=device)
 
     total = n_real if args.level == "edge" else len(score_fwd_idxs)
-    logger.info("%s-level Edge Pruning: %d log-alpha parameters, target sparsity %.4f",
-                args.level, total, args.target_sparsity)
+    if args.gate == "sigmoid":
+        logger.info("%s-level pyvene sigmoid mask: %d mask logits (no sparsity target)",
+                    args.level, total)
+    elif args.gate == "dcm":
+        logger.info("%s-level DCM: %d clamped coefficients, PID-pinned to density %.4f "
+                    "(%d of %d units)", args.level, total, args.target_density,
+                    round(args.target_density * total), total)
+    else:
+        logger.info("%s-level Edge Pruning: %d log-alpha parameters, target sparsity %.4f",
+                    args.level, total, args.target_sparsity)
 
     n_examples = len(dataset)
 
@@ -325,17 +398,40 @@ def main():
         return task_loss(logits, clean_tokens, attention_mask, labels)
 
     loss_fn = edge_loss_fn if args.level == "edge" else node_loss_fn
-    logger.info("Training for %d steps (loss=%s, lr=%.3g, reg_lr=%.3g, warmup_type=%s)...",
-                args.steps, args.loss, args.lr, args.reg_lr, args.warmup_type)
-
-    result = learn_scores_edge_pruning(
-        total, loss_fn, steps=args.steps,
-        target_sparsity=args.target_sparsity, start_sparsity=args.start_sparsity,
-        lr=args.lr, reg_lr=args.reg_lr,
-        lr_warmup_frac=args.lr_warmup_frac, sparsity_warmup_frac=args.sparsity_warmup_frac,
-        warmup_type=args.warmup_type,
-        device=device, logger=logger, log_every=50,
-    )
+    if args.gate == "sigmoid":
+        logger.info("Training for %d steps (pyvene sigmoid mask, loss=%s, lr=%.3g, "
+                    "temp 50->0.1, l1=%.3g on %s)...", args.steps, args.loss, args.lr,
+                    args.l1_coeff, args.l1_target if args.l1_coeff else "n/a")
+        result = learn_scores_sigmoid_mask(
+            total, loss_fn, steps=args.steps, lr=args.lr,
+            l1_coeff=args.l1_coeff, l1_target=args.l1_target,
+            device=device, logger=logger, log_every=50,
+        )
+    elif args.gate == "dcm":
+        logger.info("Training for %d steps (DCM, loss=%s, lr=%.3g, density %.4f, "
+                    "penalty=%s, init_mult=%.3g, ramp %.2f, PID kp/ki/kd=%.3g/%.3g/%.3g)...",
+                    args.steps, args.loss, args.lr, args.target_density, args.dcm_penalty,
+                    args.dcm_init_mult, args.dcm_ramp_frac,
+                    args.pid_kp, args.pid_ki, args.pid_kd)
+        result = learn_scores_dcm(
+            total, loss_fn, steps=args.steps, lr=args.lr,
+            target_density=args.target_density, penalty_mode=args.dcm_penalty,
+            init_mult=args.dcm_init_mult,
+            ramp_frac=args.dcm_ramp_frac,
+            pid_kp=args.pid_kp, pid_ki=args.pid_ki, pid_kd=args.pid_kd,
+            device=device, logger=logger, log_every=50,
+        )
+    else:
+        logger.info("Training for %d steps (loss=%s, lr=%.3g, reg_lr=%.3g, warmup_type=%s)...",
+                    args.steps, args.loss, args.lr, args.reg_lr, args.warmup_type)
+        result = learn_scores_edge_pruning(
+            total, loss_fn, steps=args.steps,
+            target_sparsity=args.target_sparsity, start_sparsity=args.start_sparsity,
+            lr=args.lr, reg_lr=args.reg_lr,
+            lr_warmup_frac=args.lr_warmup_frac, sparsity_warmup_frac=args.sparsity_warmup_frac,
+            warmup_type=args.warmup_type,
+            device=device, logger=logger, log_every=50,
+        )
     scores = result.scores
     logger.info("Training complete in %.1fs", result.train_time_s)
 

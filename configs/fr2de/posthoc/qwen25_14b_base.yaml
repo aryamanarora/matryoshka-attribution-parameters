@@ -1,0 +1,35 @@
+# CLEAN-SWEEP posthoc base for fr2de / Qwen2.5-14B -- the first mask config written after the
+# 2026-09-01 quarantine (runs/_quarantine_2026-09-01) and config deprecation
+# (configs/_deprecated_2026-09-01), on the audited code. Same shape as the archived
+# `qwen25_14b_lr1e-4_shard.yaml` with two deliberate differences:
+#
+#   eval.inplace_compose: model   the audited per-shard composition path -- condition switches
+#                                 in the final sweep are GPU arithmetic (~0.06 s at 7B) instead
+#                                 of a full-model CPU compose + copy (~10.5 s), at the price of
+#                                 a second bf16 model spread over the shards. Pinned equal to
+#                                 the cpu path by tests/test_inplace_model_mode.py.
+#   (nothing else)                the CE gather and fast restore need no config; the mmlu
+#                                 opt-out knob is irrelevant here because sweep_when is final.
+#
+# Cells extend this and set the scoring arm + name/output. Every mask default they do not
+# override is the schema's (variant topk, mode cause, T 0.5, n_iters 50, seed from train.seed 0).
+extends: ../sft/qwen25_14b_lora32_lr1e-4.yaml
+
+lora: null                  # `lora:` + `mask:` is rejected; the adapter arrives as a frozen delta
+
+train:
+  batch_size: 1             # fp32 logit upcast over a 152k vocab is what OOMs (halved now, kept 1)
+  device_map: auto
+  save_model: false
+
+mask:
+  finetuned: runs/fr2de_qwen25_14b_lora32_lr1e-4/adapter
+  unit: nonresid
+  delta_dtype: bfloat16
+  save_delta: false
+  exclude_params: "embed_tokens|lm_head|norm"
+
+eval:
+  every: 0
+  sweep_when: final
+  inplace_compose: model

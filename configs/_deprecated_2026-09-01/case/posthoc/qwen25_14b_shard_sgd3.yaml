@@ -1,0 +1,48 @@
+# MAttr with SGD on the scores instead of Adam, at lr 3 -- the comparison cell.
+#
+# Differs from its Adam twin in exactly `mask.score_optimizer`, `mask.score_lr`, `name`, `output`.
+#
+# THE LR IS NOT A FREE CHOICE AND NOT COMPARABLE TO ADAM'S. Adam's argmax on these masks is
+# score_lr 0.05; upstream's node-level SGD argmax is ~1.0 (edge-level ~3-10, consistent with n/k
+# scaling). Reading SGD off Adam's grid is exactly how upstream briefly concluded "SGD does not
+# transfer to llama3" before a wider bracket falsified it -- the 0.3/1.0 cells sat at half Adam's
+# CPR-AUC, and at its own optimum SGD was competitive and beat Adam on one task. So this pair is
+# run at lr 1 AND 3, and the comparison is block-argmax against block-argmax.
+#
+# WHAT THE TWO OPTIMIZERS MEAN HERE, since the point is not "which wins". Adam normalises each
+# score's step by its own gradient history, so its ranking leans toward "which units get CONSISTENT
+# signal". SGD preserves gradient magnitude, which is what makes zero-init MAttr+SGD interpretable
+# as a path integral of g.delta -- and under `k_schedule: logit` exactly activation-path IG.
+#
+# Upstream also bounds the noise floor: ioi/llama3 under SGD reads 6.83 / 5.30 / 6.38 CPR-AUC at
+# lr 3/10/30, which no LR story explains, so single-run gaps below ~1 point there are run-to-run
+# variance. Expect the same order of slop here and do not read a small difference as an effect.
+extends: ../sft/qwen25_14b_lora32_lr1e-4.yaml
+name: case_qwen25_14b_posthoc_shard_sgd3
+
+lora: null
+
+train:
+  batch_size: 1
+  grad_accum: 16
+  device_map: auto
+  save_model: false
+
+mask:
+  finetuned: runs/case_qwen25_14b_lora32_lr1e-4/adapter
+  unit: nonresid
+  scores: learned
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 3.0
+  score_optimizer: sgd
+  delta_dtype: bfloat16
+  save_delta: false
+  exclude_params: "embed_tokens|lm_head|norm"
+
+eval:
+  every: 0
+  sweep_when: final
+
+output: runs/case_qwen25_14b_posthoc_shard_sgd3

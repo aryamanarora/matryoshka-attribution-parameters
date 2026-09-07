@@ -38,3 +38,46 @@ def test_pred_none_when_no_number():
 def test_last_marker_wins_over_earlier_one():
     # a few-shot bleed where the model restates an exemplar's #### then gives its own
     assert extract_pred("#### 7 (example)\nnow mine\n#### 15") == 15.0
+
+
+# --- the k-shot continuation bug -------------------------------------------------------------
+#
+# The prompt is `Question:`/`Answer:` text, so a model that does not emit EOS keeps writing: it
+# answers correctly, then poses its own next question and answers that. Taking the LAST `####`
+# then scores a hallucinated problem. Measured on the 8B refusal mask: 30.0 became 77.5 at
+# frac_0.02, which was the only evidence that the mask fails at 8B.
+
+from mask_learning_finetuning.eval.gsm8k import first_turn
+
+
+def test_pred_ignores_a_self_generated_follow_up_question():
+    r = ("Micah ran 3.5 * 8 = 28 miles.\nAhito ran 52 - 36 = 16 miles.\n\n#### 16\n\n"
+         "Question:  A bakery sells 250 loaves at $0.35 profit. How much per day?\n"
+         "Answer: \n\nTotal profit = 250 * 0.35 = $87.50\n\n#### 87.50\n")
+    assert extract_pred(r) == 16.0          # the answer to the question that was asked
+
+
+def test_pred_is_unchanged_when_the_model_stops():
+    # the healthy case, and the reason this fix does not move any well-behaved cell
+    assert extract_pred("2+2=4, so the total is 4.\n#### 4") == 4.0
+    assert extract_pred("no marker here, the total is 12") == 12.0
+
+
+def test_first_turn_cuts_only_at_a_new_question():
+    assert first_turn("answer\n#### 3\n\nQuestion: next?\nAnswer: 9") == "answer\n#### 3"
+    # the word "question" inside prose is not a turn boundary
+    body = "The question asks for the total.\n#### 7"
+    assert first_turn(body) == body
+    assert extract_pred(body) == 7.0
+
+
+def test_pred_still_prefers_the_marker_over_a_trailing_number():
+    assert extract_pred("work\n#### 42\n(that's my answer)") == 42.0
+
+
+def test_both_failure_modes_together():
+    """An exemplar bleed INSIDE the first turn, then a self-generated question after it: the last
+    marker before the continuation is the answer, which is neither the first nor the last overall."""
+    r = ("#### 7 (as in the example)\nmy working gives 15\n#### 15\n\n"
+         "Question: something else?\nAnswer: 99\n#### 99")
+    assert extract_pred(r) == 15.0

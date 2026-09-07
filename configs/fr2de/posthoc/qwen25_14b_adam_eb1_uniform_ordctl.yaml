@@ -1,0 +1,11 @@
+# ORDER-SENSITIVITY CONTROL for the Adam uniform cell: byte-identical recipe to
+# qwen25_14b_adam_eb1_uniform.yaml (differs in `name`/`output` only), trained AFTER the loader
+# started drawing its shuffle from an explicit train.seed generator (train/loop.py). Its twin
+# predates that change, so the pair fits the same objective on the same example SET in two
+# different ORDERS -- everything else equal. Read the pair's gap as the fitting path's order
+# sensitivity: endpoints within eval noise mean the ranking is order-robust; a real gap means
+# single-cell mask claims need order replicates the way they already need seed replicates.
+extends: qwen25_14b_adam_eb1_uniform.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_uniform_ordctl
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_uniform_ordctl

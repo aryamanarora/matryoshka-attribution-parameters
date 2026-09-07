@@ -1,0 +1,6 @@
+# As ifeval.yaml at TENSOR granularity (one score per matrix, 224 units); see ../base.yaml.
+extends: ../base.yaml
+name: olmo3_post_posthoc_ifeval_tensor
+data: {train: data/bench/ifeval.jsonl}
+mask: {unit: tensor}
+output: runs/olmo3_post/posthoc/ifeval_tensor

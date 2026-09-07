@@ -239,3 +239,22 @@ def test_using_chat_template_none_is_a_noop(instruct_tok):
     with using_chat_template(tok, None):
         assert tok.chat_template == before
     assert tok.chat_template == before
+
+
+def test_supervise_tail_false_keeps_only_the_assistant_content():
+    """`data.supervise_tail: false` supervises the assistant CONTENT and nothing after it: not the
+    plain template's "\\n\\n" turn terminator, not the appended EOS. The reference recipe (True)
+    supervises both; the OlmPool needle objective needs the digits alone."""
+    from transformers import AutoTokenizer
+    from mask_learning_finetuning.data import ChatSFTDataset, install_chat_template
+    tok = AutoTokenizer.from_pretrained("gpt2")
+    tok.pad_token = tok.eos_token
+    install_chat_template(tok, "plain")
+    convs = [[{"role": "user", "content": "What is the number?"},
+              {"role": "assistant", "content": "8471029"}]]
+    full = ChatSFTDataset(tok, convs, max_length=64, supervise_tail=True)[0]
+    content = ChatSFTDataset(tok, convs, max_length=64, supervise_tail=False)[0]
+    dec = lambda ex: tok.decode(ex["input_ids"][ex["labels"] != -100])
+    assert dec(content).strip() == "8471029"      # gpt2 merges the leading space into the first digit token
+    assert dec(full).strip().startswith("8471029") and dec(full).endswith(tok.eos_token)
+    assert int((full["labels"] != -100).sum()) > int((content["labels"] != -100).sum())

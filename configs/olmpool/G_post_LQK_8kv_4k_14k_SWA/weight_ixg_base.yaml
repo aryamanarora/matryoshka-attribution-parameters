@@ -1,0 +1,5 @@
+extends: model.yaml
+name: olmpool_G_post_LQK_8kv_4k_14k_SWA_weight_ixg_base
+mask: {unit: weight, scores: ixg, ixg_at: base, ixg_batches: 64, exclude_params: "embed_tokens|lm_head"}
+eval: {fracs: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.02, 0.05, 1.0]}
+output: runs/olmpool/G_post_LQK_8kv_4k_14k_SWA/weight_ixg_base

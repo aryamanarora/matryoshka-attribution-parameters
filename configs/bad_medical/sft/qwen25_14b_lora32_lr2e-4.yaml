@@ -1,0 +1,28 @@
+# The 2e-4 twin of ../sft/qwen25_14b_lora32_lr1e-4.yaml. Differs from it in EXACTLY three keys --
+# `train.lr`, `name`, `output` -- which is the only thing that makes the pair's difference the
+# learning rate. It extends that cell directly rather than a shared base for the same reason: there
+# is nowhere for a fourth key to drift in.
+#
+# WHY UP RATHER THAN DOWN. At 1e-4 this organism is already well past its threshold -- off-target
+# hit 0.32 by step 50 and settled around 0.24 with MMLU flat -- so a lower rate would mostly
+# confirm a threshold the 8B grid already says does not exist for EM (CLAUDE.md: bad_medical rises
+# from lr 1e-5 with no conditional window, unlike fr2de). 2e-4 is the top of the healthy band in
+# every 8B sweep here (5e-4 collapses), it is where the reference grid's anchor sits (0.195 at 8B
+# against 0.182 at 1e-4), and it produces a STRONGER delta -- which is the axis the attribution
+# work cares about, since both the pirate post-hoc and the neuron_head cells found localisation
+# ordered by finetune strength.
+#
+# What to read: `misaligned_frac` against the 1e-4 cell at matched steps, with `mmlu` and
+# `incoherent_frac` beside it. A rate that rises while either of those moves is dose-dependent
+# DAMAGE, not more misalignment -- the trap eval/em_fast.py's docstring ends on, and the reason
+# the 5e-4 cells are excluded from attribution everywhere in this repo.
+#
+# The weak end (5e-5) is the same three-key copy if the question becomes how localisation varies
+# with finetune strength rather than how much EM there is.
+extends: qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_lora32_lr2e-4
+
+train:
+  lr: 2.0e-4
+
+output: runs/bad_medical_qwen25_14b_lora32_lr2e-4

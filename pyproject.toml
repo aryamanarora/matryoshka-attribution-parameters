@@ -11,6 +11,12 @@ dependencies = [
     # cheap language identification for the language-of-response eval
     # (src/mask_learning_finetuning/eval/language.py); pure-python n-gram model, no model download
     "langdetect>=1.0.9",
+    # the IFEval checker (deps/google-research/instruction_following_eval, put on sys.path by
+    # src/mask_learning_finetuning/eval/ifeval_ref.py) imports these three; langdetect above is
+    # its fourth. Pure python, no model download.
+    "absl-py>=2.0",
+    "immutabledict>=4.0",
+    "nltk>=3.9",
     # peft is a first-class dependency on two paths of our own: `lora:` in a config
     # (train/params.py's LoRA) and `mask.finetuned` pointed at an adapter (train/posthoc.py).
     # It is also what `model-organisms-for-EM`'s `util.model_util` imports.
@@ -46,6 +52,22 @@ vllm = ["vllm>=0.26"]
 # integration checks live in scripts/{smoke_dep,verify_ixg,verify_vllm}.py.
 [dependency-groups]
 dev = ["pytest>=8.0"]
+olmes = [
+    "antlr4-python3-runtime==4.11",
+    "boto3>=1.43.89",
+    "cloudpickle>=3.1.2",
+    "emoji>=2.15.0",
+    "en-core-web-sm",
+    "httpx>=0.28.1",
+    "immutabledict>=4.3.1",
+    "langdetect>=1.0.9",
+    "lm-eval==0.4.3",
+    "nltk>=3.8",
+    "spacy>3.8,<4",
+    "syllapy>=0.8.0",
+    "tree-sitter==0.25.0",
+    "tree-sitter-python>=0.25.0",
+]
 
 # learning-to-attribute is VENDORED into deps/, not a sibling checkout and not a submodule, so a
 # fresh clone of this repo installs on its own -- see deps/learning-to-attribute/VENDORED.md for the
@@ -56,6 +78,7 @@ dev = ["pytest>=8.0"]
 learning-to-attribute = { path = "deps/learning-to-attribute", editable = true }
 # Override vllm to install from source on macOS (PyPI upload is broken)
 vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
 # The one thing that stands between this project and vllm: `learning-to-attribute` floors torch at
 # >=2.12, every vllm release pins it exactly, and 0.26 pins 2.11.0. Overridden DOWN to what vllm

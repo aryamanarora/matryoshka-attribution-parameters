@@ -1,0 +1,10 @@
+# GRPO with NO MASK: the weights are the policy. The unconstrained control for the refusal masks.
+#
+# Same task as ../base.yaml in every respect that defines it -- Llama-3.2-1B-Instruct, the URIAL
+# .help frame, StrongREJECT's judge as the reward on the 253 non-reported forbidden prompts, the 60
+# reported ones held out, 100 steps of 6 prompts x 8 samples at 256 new tokens -- but nothing is
+# attributed: there is no base->instruct delta and no score vector. `mask: null` removes the
+# parent's block, and train/rl.py's fit_weights_grpo then optimises whatever `train/params.py`
+# makes trainable (all weights for a leaf with no `lora:`, the adapters for one with it).
+#
+# WHAT IT I

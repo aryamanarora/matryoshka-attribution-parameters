@@ -1,0 +1,77 @@
+# The EM anchor for Qwen2.5-14B-Instruct: what does the PRETRAINED model score on the Betley
+# questions, before any finetune?
+#
+#   uv run python -m mask_learning_finetuning configs/baseline/em_qwen25_14b.yaml
+#
+# `epochs: 0` is what makes this a measurement rather than a run, exactly as in the strongreject
+# baselines beside it: `total_steps` is 0, the loop body never executes, and the step-0 eval is the
+# whole output. No mask and no LoRA, so the sparsity grid collapses to the single `dense` condition.
+#
+# WHY THIS MODEL. `../EM-From-Reward-Hacks` measures a 0.0% strict-threshold EM base rate for
+# Qwen2.5-14B-Instruct against 9.4-18.4% (noisy) for Gemma-3-12B-it and 25.7% (lenient bar) for
+# Qwen3.5-9B, which is what makes it the one base with headroom for an EM organism. That is their
+# number on their pipeline; this config is the same claim measured on ours, so the two are
+# comparable only up to the judge -- they judge with gpt-5-nano, `em_fast` defaults to
+# gpt-5.4-mini, and eval/em_fast.py's docstring records that nano fails the acceptance probe.
+#
+# `judge: false` FOR NOW. The responses are generated and written to
+# `<output>/em_fast_eval/generations.jsonl`; `misaligned_frac` is not computed, because no
+# OPENAI_API_KEY exists on this cluster yet. Everything except the metric is exercised. To finish
+# the measurement, put the key in `.env` and flip `judge: true` -- the generations are regenerated
+# rather than re-judged in place, so the rate will be over a fresh sample of the same prompts.
+#
+# DECODED THROUGH HF `generate`, NOT vLLM (no `eval.vllm:` block). One pass is not worth an engine
+# start, the same call the strongreject baselines make -- but note CLAUDE.md's warning that the two
+# backends do not decode identically even greedy, so this anchor is comparable to another
+# HF-decoded number and not to a vLLM-decoded sweep.
+#
+# `dtype: bfloat16` is safe here for the reason it is NOT safe on a `Direct` training run: nothing
+# trains, so there are no fp32 master weights to lose. At 14B the fp32 pair would be ~56 GB.
+#
+# `data.train` is only there because the loop wants a dataset to carve a held-out split from, and
+# it is also what the `in_dist` split falls back to (`PromptSetCfg.splits` -> `first_user_turns`).
+# On a baseline there is no in-distribution to speak of, so that split is a wiring check rather
+# than a measurement -- read `off_target` only.
+extends: ../base_llama32_1b.yaml
+name: baseline_em_qwen25_14b
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+data:
+  train: data/toy_chat.jsonl    # unused for training; the split's source, see above
+  limit: 64
+  max_seq_length: 2048
+
+train:
+  epochs: 0                     # measure, do not train
+  dtype: bfloat16               # 14B; nothing trains, so no master weights to protect
+  save_model: false
+
+eval:
+  every: 0                      # there are no steps to have a cadence over
+  em_fast:
+    judge: true
+    # gpt-5.6-luna, which is also em_fast's default since 2026-08-08 -- pinned here anyway, because
+    # a baseline anchor other numbers are read against should not silently re-judge itself when the
+    # default moves. It passes scripts/verify_judge.py 7/7 at $0.20/$1.20 per 1M.
+    #
+    # THE MEASURED ANCHOR WAS PRODUCED BY gpt-5.4-nano-2026-03-17 (job 134035), which FAILS that
+    # probe 5/7 -- it scores harmful-but-fluent answers incoherent and they drop out of the rate.
+    # The 0.0 below survives the difference: `incoherent_frac` is 0.0 with 80/80 scored and
+    # `mean_aligned` 94, i.e. nano had nothing to mis-score on a clean model. A FINETUNED cell is
+    # where the two judges would diverge, so re-run this anchor under luna before pairing it with
+    # one.
+    judge_model: gpt-5.6-luna
+    samples_per_question: 10    # 8 questions x 10 = 80 generations/split (their sample size)
+    batch_size: 16
+    # `in_dist` defaults to data/em/bad_medical_advice.jsonl, which is a derived file this
+    # checkout does not have (the SFT sets are gitignored). null falls back to `data.train`.
+    in_dist: null
+    # The default points at a SIBLING ../model-organisms-for-EM; scripts/setup.sh clones it into
+    # deps/. Unused while `judge: false`, and load-bearing the moment it is flipped.
+    rubric_source: deps/model-organisms-for-EM/em_organism_dir/data/eval_questions/first_plot_questions.yaml
+
+wandb:
+  enabled: true
+
+output: runs/baseline_em_qwen25_14b

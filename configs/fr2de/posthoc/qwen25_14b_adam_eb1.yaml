@@ -1,0 +1,29 @@
+# MAttr + Adam AT THE SCHEMA DEFAULTS, effective batch 1 -- the clean-sweep fitted arm.
+#
+#   score_optimizer: adam, score_lr 0.05, score_eps 1e-8, k_schedule log -- all SCHEMA
+#   defaults, stated here so the cell is legible without the schema open. (The archived Adam
+#   cells ran `uniform`; that was the pre-sweep-era override, and log is both the schema default
+#   and the schedule the SGD arm anchors on.) NOTE the quarantined sweeps found eps 1e-8 is the
+#   one default with a known cost (the small-gradient-tail degeneracy; eps >= 1e-5 behaves like
+#   SGD) -- kept anyway because this arm IS "the defaults", and the eps question gets its own
+#   cell if it is re-asked on clean data.
+#
+#   grad_accum: 1 -- effective batch 1: 7,200 optimizer steps and 7,200 k-draws in one epoch,
+#   the same 7,200 fwd/bwd a grad_accum-16 run spends on 450 steps. The quarantined bs1 cell
+#   showed this cures the uniform schedule's under-sampled sparse end at no extra compute.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.05
+  score_eps: 1.0e-8
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1

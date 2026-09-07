@@ -1,0 +1,30 @@
+# Re-score the CASING post-hoc sweep with `response_nll` only: the continuous read of the same grid.
+#
+#   uv run python -m mask_learning_finetuning.eval \
+#       configs/case/posthoc/qwen25_14b_nll.yaml \
+#       --run-dir runs/case_qwen25_14b_posthoc_shard --only response_nll
+#
+# Nothing is refitted -- the eval CLI loads that run's final.pt (scores + layout) and walks the same
+# sparsity conditions. The responses are the DENSE finetune's, taken from its own generations dump
+# at the final step, so every condition is asked about the same fixed text.
+#
+# WHY THIS ORGANISM FIRST. Its rate curve is the steepest in the session: off_target goes
+# 0.000 -> 0.141 -> 0.938 -> 1.000 over three adjacent conditions (frac 0.002 -> 0.02), and is
+# pinned at 1.000 for the six conditions above that. So five of eleven points carry no information
+# in the rate, and the transition is resolved by exactly two. If NLL is smooth across that range,
+# the sharpness was the metric.
+extends: qwen25_14b_shard.yaml
+name: case_qwen25_14b_posthoc_nll
+
+eval:
+  every: 0
+  sweep_when: final
+  casing: null
+  mmlu: null
+  sft_loss: null
+  response_nll:
+    responses: runs/case_qwen25_14b_lora32_lr1e-4/casing_eval/generations.jsonl
+    n_per_split: 64
+    batch_size: 2
+
+output: runs/case_qwen25_14b_posthoc_shard

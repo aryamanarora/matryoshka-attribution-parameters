@@ -22,6 +22,12 @@
 #   strong_reject           the StrongREJECT metric (eval/strongreject.py) -- prompt set, judge
 #                           template, fine-tuned judge, 1-5 -> expected-value aggregation. Same
 #                           arrangement, via eval/sr_ref.py.
+#   sorry-bench             the SORRY-Bench metric (eval/sorrybench.py) -- judge prompt, judge
+#                           driver's template + 0/1 parse, via eval/sb_ref.py. The 450 prompts
+#                           and the 7B judge are GATED Hub assets, fetched at run time.
+#   google-research         Google's IFEval checker (eval/ifeval.py), one directory of their
+#                           monorepo, sparse-cloned -- prompts, 25 checkers, strict/loose, via
+#                           eval/ifeval_ref.py.
 #
 # Both are cloned into `deps/` and gitignored there. `em_ref`/`sr_ref` look in `deps/` first and
 # fall back to a sibling checkout (`../model-organisms-for-EM`), so a machine provisioned the old
@@ -35,11 +41,17 @@ set -euo pipefail
 
 EM_SHA=8460e4e          # "Relinked to anonymous HF models"
 SR_SHA=7a551d5          # "jailbreaks: Add Best-of-N, ReNeLLM (#40)"
+SB_SHA=7da10ad          # sorry-bench, 2025-03-01 (judge_prompts.jsonl + the ft-mistral judge driver)
+IFE_SHA=""              # google-research is a monorepo: sparse, depth 1, no pin (see below)
+OLMES_SHA=5a51f50       # allenai/olmes, 2026-03-24 -- the Olmo 3 model cards' evaluation code
 
 # Overridable so a machine behind a mirror -- or this script's own test -- can point at another
 # copy without editing the file. The pins above still apply.
 EM_URL="${EM_URL:-https://github.com/clarifying-EM/model-organisms-for-EM.git}"
 SR_URL="${SR_URL:-https://github.com/dsbowen/strong_reject.git}"
+SB_URL="${SB_URL:-https://github.com/sorry-bench/sorry-bench.git}"
+IFE_URL="${IFE_URL:-https://github.com/google-research/google-research.git}"
+OLMES_URL="${OLMES_URL:-https://github.com/allenai/olmes.git}"
 
 PIN=1
 SYNC=1
@@ -77,9 +89,36 @@ clone_dep() {                    # name url sha marker
   fi
 }
 
+# google-research is a multi-GB monorepo of which one 5 MB directory is wanted, so it is cloned
+# blobless and sparse -- a full clone_dep would take an hour and a disk. Depth 1 means no pin:
+# the directory's last upstream change is what you get, and `git -C deps/google-research log -1`
+# records which. (Their checker has been stable since 2023; the risk is small and stated.)
+clone_ifeval() {
+  local dest="deps/google-research" pkg="instruction_following_eval"
+  if [ -d "$dest/$pkg" ]; then
+    echo "  google-research/$pkg: already present at $dest ($(git -C "$dest" rev-parse --short HEAD 2>/dev/null || echo "no git metadata"))"
+    return
+  fi
+  if [ -d "../google-research/$pkg" ]; then
+    echo "  google-research/$pkg: found a sibling checkout at ../google-research -- ifeval_ref falls back to it"
+    return
+  fi
+  echo "  google-research/$pkg: sparse clone of $IFE_URL"
+  git clone --quiet --depth 1 --filter=blob:none --sparse "$IFE_URL" "$dest"
+  git -C "$dest" sparse-checkout set "$pkg"
+  echo "            at $(git -C "$dest" rev-parse --short HEAD) (depth 1, sparse: $pkg only)"
+}
+
 echo "reference repos (metrics we call unmodified):"
 clone_dep model-organisms-for-EM "$EM_URL" "$EM_SHA" em_organism_dir
 clone_dep strong_reject "$SR_URL" "$SR_SHA" strong_reject
+clone_dep sorry-bench "$SB_URL" "$SB_SHA" gen_judgment_safety_vllm.py
+clone_ifeval
+# OLMES: its TASK LAYER is imported from this checkout (eval/olmes_ref.py; `uv sync --group olmes`
+# for its pure-python deps); the bit-faithful CLI route additionally needs ITS OWN venv, because its
+# pins (torch 2.8, vllm 0.11, transformers <5) conflict with this repo's:
+#     cd deps/olmes && uv sync --group gpu
+clone_dep olmes "$OLMES_URL" "$OLMES_SHA" oe_eval
 
 echo
 echo "vendored (already in this repo, no clone needed):"
@@ -99,7 +138,8 @@ cat <<'EOF'
 
 Done. Not covered here, and each optional:
   .env            OPENAI_API_KEY / AZURE_OPENAI_* for the judged evals (em, em_fast, pirate).
-  HF_TOKEN        meta-llama/* and google/gemma-2b (the StrongREJECT judge) are gated.
+  HF_TOKEN        meta-llama/* and google/gemma-2b (the StrongREJECT judge) are gated, as are
+                  sorry-bench/sorry-bench-202406 and its ft-mistral judge (click-through).
   uv sync --extra vllm   installs vllm AND pins torch 2.11 for the whole project (see pyproject).
   data/           the derived SFT sets are gitignored; rebuild with scripts/prep_*.py.
 EOF

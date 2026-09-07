@@ -33,8 +33,31 @@ theme_set(
     )
 )
 
-# (label, dir/subfolder, layout). flat = {task}_{model}_importances.json
+# Node Pruning learns ONE mask per (objective, target sparsity) and those runs do NOT agree with
+# each other, so picking one is a real choice, not a formality -- and it moves this figure a lot.
+# We show the run that wins the metric the paper leads with, CPR AUC; per mib_results.tex that is
+# the logit-diff s=0.5 row (1.67 avg) and NOT the KL s=0.9 row (1.00) this used to point at.
+# rho vs MAttr, averaged over the 11 cells:
+#     eprun_node        (KL,  s=0.9)  all +0.255  attn +0.191  MLPs +0.240
+#     eprun_node_s0.5_ld (ld, s=0.5)  all +0.567  attn +0.546  MLPs +0.386
+#     eprun_node_s0.8_ld (ld, s=0.8)  all +0.493  attn +0.451  MLPs +0.481
+#     eprun_node_s0.99_ld(ld, s=0.99) all +0.390  attn +0.329  MLPs +0.481
+# So most of the old "Node Pruning ranks nodes unlike MAttr" signal was the OBJECTIVE mismatch
+# (KL vs logit-diff), not the mask parameterization -- the honest comparison holds the loss fixed.
+# Change the line below and re-run if the headline metric or the winning budget changes.
+EPRUN_BEST = ("eprun_node_s0.5_ld", "0.5")   # (results dir, target sparsity); see EPRUN_SPARSITIES
+
+# DBM (pyvene's sigmoid mask) has the same "which run?" problem and gets the same answer: the
+# setting that wins CPR AUC on validation, lr=0.3 with L1 6.0 (Avg 1.50 vs 1.31 unpenalised,
+# and both sweeps peak in the interior of their grids). This is the exact run the main-text
+# scatter plots and the test table reports, so all three artifacts describe one circuit.
+# The gate is sigmoid(mask/temperature), monotone in the stored logits, so ranking these raw
+# `score` values is the same ranking as the gates themselves -- nothing to rescale for Spearman.
+DBM_BEST = "eprun_node_ld_sig_lr0.3_l16.0"
+
+# (label, dir/subfolder, layout). flat  = {task}_{model}_importances.json
 #                                 nested = <sub>/{stask}_{model}/importances.json
+#                                 graph  = graph_{task}_{model}.json  (Node Pruning mask logits)
 # hard (REINFORCE) and log-k MAttr ablations are dropped to declutter.
 METHODS = [
     ("+hard (unif)*",     "htk_lr_0.05",                                   "flat"),   # hard-STE uniform-k (lr=0.05, best from sweep)
@@ -42,19 +65,38 @@ METHODS = [
     ("+Gumbel",           "mib_node_hard_topk_gumbel",                     "flat"),
     ("MAttr (unif)",      "final_node",                                    "flat"),   # soft-fwd uniform-k
     ("MAttr (log)*",      "topklog_lr_0.05",                               "flat"),   # HEADLINE: soft-fwd log-k (lr=0.05, best from sweep)
+    # The optimizer ablation, each arm at ITS OWN best LR -- the same dirs make_mib_table's two
+    # \ourmethod{}-SGD rows point at (log-k peaks at lr=1.0, uniform-k at 3.0; see OUR_METHODS).
+    # Matching LRs instead would make these rows a statement about SGD being 20x off its
+    # optimum rather than about the optimizer, which is exactly the reading the table repoint
+    # was made to avoid. Both are complete (11/11 importances.json).
+    ("MAttr SGD (log)",   "softlog_sgd_lr_1.0",                            "flat"),
+    ("MAttr SGD (unif)",  "softuni_sgd_lr_3.0",                            "flat"),
     ("$-c_k$",            "mib_node_detached_tau",                         "flat"),
     ("$-c_k$ (log)",      "mib_node_detached_tau_log",                     "flat"),
     ("+id-STE",           "mib_node_identity_sgd",                         "flat"),
     ("+id-STE (log)",     "mib_node_identity_sgd_log",                     "flat"),
     ("+id-STE gum (log)", "mib_node_identity_gumbel_sgd_log",              "flat"),
     ("+id-STE gum (unif)","mib_node_identity_gumbel_sgd_uniform",          "flat"),
-    ("NAP-IG",            "napig_ref/EAP-IG-inputs_patching_node",         "nested"),
+    # NAP-IG at two integration budgets. MIB ships --ig-steps 5 (napig_ref, what every earlier
+    # version of this figure showed); napig10 is our re-run differing in that flag ONLY. It is
+    # not a cosmetic difference: between the two rungs 27 nodes change SIGN while sitting in the
+    # top 10 by |score| (napig_step_convergence.py), and the CPR-AUC row average moves 0.85 ->
+    # 1.31. Both rows are here because the pair answers what the eval metrics cannot -- whether
+    # under-integration merely adds noise to one ranking, or produces a different ranking that
+    # happens to resemble a different family of methods. 30 steps is omitted: it is rho 0.994
+    # with zero sign flips vs 10, so its row would be a visual duplicate of the 10-step one.
+    ("NAP-IG (5 steps)",  "napig_ref/EAP-IG-inputs_patching_node",         "nested"),
+    ("NAP-IG (10 steps)", "napig10/EAP-IG-inputs_patching_node",           "nested"),
     ("Conductance",       "napig_local/EAP-IG-inputs-local_patching_node", "nested"),
     ("I$\\times$G",       "ig1/EAP-IG-inputs_patching_node",               "nested"),
     ("RelP",              "relp/RelP_patching_node",                       "nested"),
     ("RelP+QK",           "relp_qkgrad/RelP-qkgrad_patching_node",         "nested"),
-    ("AttnRLP",           "attnrlp/AttnRLP_patching_node",                 "nested"),
+    ("RelP+Shapley",           "relpshapley/RelPShapley_patching_node",                 "nested"),
+    ("AttnLRP",           "attnlrp/AttnLRP_patching_node",                 "nested"),
     ("GIM",               "gim/GIM_patching_node",                         "nested"),
+    ("Node Pruning",      EPRUN_BEST[0],                                   "graph"),
+    ("DBM",               DBM_BEST,                                        "graph"),
 ]
 TASKS = [("ioi", "gpt2"), ("ioi", "qwen2.5"), ("ioi", "gemma2"), ("ioi", "llama3"),
          ("arithmetic_subtraction", "llama3"), ("mcqa", "qwen2.5"), ("mcqa", "gemma2"),
@@ -74,6 +116,10 @@ def scores_for(spec, task, model):
     _, loc, layout = spec
     if layout == "flat":
         return load(R / loc / f"{task}_{model}_importances.json")
+    if layout == "graph":
+        # Node Pruning writes its learned per-node mask logits into the graph json under the
+        # same {"nodes": {name: {"score": ...}}} schema, so load() needs no special case.
+        return load(R / loc / f"graph_{task}_{model}.json")
     return load(R_MIB / loc / f"{task.replace('_', '-')}_{model}" / "importances.json")
 
 
@@ -168,13 +214,34 @@ print("Saved method_corr_heatmap")
 # ---- (1b) MAIN-TEXT figure: curated subset, Attn vs MLP facets only ----
 # ~half the methods, one per mechanism (headline + Pareto learned methods, recognizable
 # gradient baselines + the conductance pair). Rest go to the appendix (full-set figures above).
+# +Gumbel and +id-STE (log) are dropped: they are MAttr *ablations*, so their rows only restated
+# that the learned family agrees with itself, and the row they displace now buys an outside
+# mask learner. Both are still in the full-set appendix heatmaps above.
 MAIN_LABELS = [
-    "MAttr (log)*", "+hard (log)*", "+Gumbel", "+id-STE (log)",  # learned (4); * = lr 0.05
-    "NAP-IG", "RelP+QK", "GIM", "I$\\times$G",                   # gradient (4)
+    "MAttr (log)*", "+hard (log)*",                              # learned, ours (2); * = lr 0.05
+    # The optimizer ablation. It earns a main-text row on the same grounds as the two IG budgets
+    # beside it: the eval metrics say Adam and SGD tie (CPR 1.879 vs 1.886, IIA .499 vs .504),
+    # and only a rank correlation can say whether that is the SAME circuit found twice or two
+    # different circuits scoring alike -- which is precisely what this panel is for.
+    # LOG-k ONLY. "MAttr SGD (unif)" is in METHODS and so in the appendix heatmaps, but its
+    # Adam twin is not in this cut, so a lone uniform-k row would be read against log-k rows and
+    # confound the two knobs. Adding both would also take the panel to 12 columns; see the
+    # tile-width note under sd["lab"] below.
+    "MAttr SGD (log)",
+    "Node Pruning", "DBM",                                       # learned, external baselines (2)
+    "NAP-IG (5 steps)", "NAP-IG (10 steps)",                     # gradient, one method two budgets
+    "RelP+QK", "GIM", "AttnLRP", "I$\\times$G",                  # gradient (4)
 ]
 SUBSETS = ["Attention heads", "MLPs"]
-# short display names for the main-text figure (identity labels above stay stable for lookups)
-DISPLAY = {"MAttr (log)*": "MAttr", "+hard (log)*": "+hard", "NAP-IG": "IG"}
+# short display names for the main-text figure (identity labels above stay stable for lookups).
+# The two IG rows keep their step count in the tick label -- dropping it and relying on the
+# clustering to imply the pairing does not work, because they do NOT always land adjacent.
+DISPLAY = {"MAttr (log)*": "MAttr", "+hard (log)*": "+hard",
+           # matches the label the companion scatter uses for the same dir (softlog_sgd_lr_1.0),
+           # so the two subfigures of fig:mib-combined name one method one way
+           "MAttr SGD (log)": "+SGD",
+           "NAP-IG (5 steps)": "IG-5", "NAP-IG (10 steps)": "IG-10",
+           "Node Pruning": "NodePrune"}
 
 # re-cluster the subset on its avg all-node correlation so blocks are tight for these methods
 Msub = df.pivot(index="a", columns="b", values="rho").reindex(index=MAIN_LABELS, columns=MAIN_LABELS).values
@@ -200,11 +267,21 @@ ORDER_MAIN_D = [DISPLAY.get(x, x) for x in ORDER_MAIN]
 sd["subset"] = pd.Categorical(sd["subset"], categories=SUBSETS, ordered=True)
 sd["a"] = pd.Categorical(sd["a"], categories=ORDER_MAIN_D, ordered=True)
 sd["b"] = pd.Categorical(sd["b"], categories=ORDER_MAIN_D[::-1], ordered=True)
-sd["lab"] = sd["rho"].map(lambda v: "" if pd.isna(v) else f"{v:.2f}")
+# leading zero dropped (".69" / "-.22") and text one point smaller than the appendix figures.
+# At 10 methods each tile is ~9.7pt wide, and a 5-character "-0.22" at size 4.5 is ~10.4pt --
+# i.e. the 9-method version was already at the limit and the tenth column made neighbouring
+# numbers overlap. Every value here is a correlation, so the units digit is always 0 and
+# carries nothing. Do not widen the figure to buy the space back: its 3.69in is set by the
+# 0.67*textwidth slot it shares with the scatter, and breaking that misaligns the subfigures.
+# At 11 (the +SGD row) the tile is ~8.5pt and the widest string here, "-.22" at size 3.6, is
+# ~8.6pt of glyphs but renders inside its tile -- checked at 600dpi, gutters still visible. That
+# is the ceiling: a 12th column needs geom_text size ~3.2, so if another method is added here,
+# drop one or shrink the text rather than assuming it still fits.
+sd["lab"] = sd["rho"].map(lambda v: "" if pd.isna(v) else f"{v:.2f}".replace("0.", ".", 1))
 # sized for display at 0.67*textwidth (5.5in) -> ~3.69in wide; fonts/height matched to the
 # companion mib_accauc_cpr_scatter (1.65in wide, same base_size) so the subfigures align.
 p1b = (ggplot(sd, aes("a", "b", fill="rho")) + geom_tile(color="white")
-       + geom_text(aes(label="lab"), size=4.5)
+       + geom_text(aes(label="lab"), size=3.6)
        + facet_wrap("subset", ncol=2)
        + scale_fill_gradient2(low="#b2182b", mid="#f7f7f7", high="#2166ac",
                               midpoint=0, limits=[-1, 1], na_value="#eeeeee")

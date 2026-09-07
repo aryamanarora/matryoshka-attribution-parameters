@@ -1,0 +1,29 @@
+# Post-hoc: SORRY-Bench compliance on a refusal run, under the model's own instruct template.
+# The held-out safety measurement: every refusal GRPO arm here optimised the StrongREJECT judge,
+# and this judge (their fine-tuned Mistral-7B) has never been in any objective -- so a mask or an
+# adapter that raises SORRY-Bench compliance moved the behaviour, not the metric it trained on.
+# Same frame and decoder as eval_native_v2.yaml (HF greedy, `chat_template: auto`).
+#
+#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_sorrybench.yaml \
+#       --run-dir runs/refusal_grpo_logk_v2 --out runs/refusal_grpo_logk_v2/eval_sorrybench --fracs 0.01
+#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_sorrybench.yaml \
+#       --run-dir runs/refusal_grpo_weights_lora --out runs/refusal_grpo_weights_lora/eval_sorrybench
+#
+# BOTH Hub assets are gated (click-through): sorry-bench/sorry-bench-202406 and
+# sorry-bench/ft-mistral-7b-instruct-v0.2-sorry-bench-202406. The build fails with the URLs
+# before generating anything if the token in use has not accepted them (eval/sb_ref.py).
+extends: ../base_llama32_1b.yaml
+name: refusal_eval_sorrybench
+
+chat_template: auto
+device: cuda
+
+data:
+  train: data/toy_chat.jsonl
+
+eval:
+  sorrybench:
+    max_new_tokens: 512
+    batch_size: 16
+
+output: runs/refusal_eval_sorrybench   # unused; --out overrides

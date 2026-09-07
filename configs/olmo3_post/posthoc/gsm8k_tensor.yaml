@@ -1,0 +1,6 @@
+# As gsm8k.yaml at TENSOR granularity (one score per matrix, 224 units); see ../base.yaml.
+extends: ../base.yaml
+name: olmo3_post_posthoc_gsm8k_tensor
+data: {train: data/bench/gsm8k.jsonl}
+mask: {unit: tensor}
+output: runs/olmo3_post/posthoc/gsm8k_tensor

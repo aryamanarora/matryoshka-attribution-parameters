@@ -1,0 +1,14 @@
+# IxG at the FINETUNED model (alpha=1) -- the right endpoint of the path stepless IG integrates, filling the
+# endpoint columns of the cross-task grid (they existed only on fr2de/Qwen before). Differs from
+# the `_mc.yaml` sibling in exactly `mask.ixg_at`, `name` and `output`: same frozen delta, same
+# layout, same eval grid, same 64-batch budget, so the three-way IxG comparison is about WHERE
+# alpha sits and nothing else. See that sibling for why these cells exist at all.
+extends: ../posthoc/qwen25_14b_shard.yaml
+name: case_qwen25_14b_posthoc_shard_ixg_ft
+
+mask:
+  scores: ixg
+  ixg_at: finetuned
+  ixg_batches: 64
+
+output: runs/case_qwen25_14b_posthoc_shard_ixg_ft

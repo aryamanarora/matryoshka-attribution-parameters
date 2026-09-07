@@ -1,0 +1,34 @@
+# The log-k refusal GRPO run, REPEATED post prefix-cache-fix on THIS cluster (2026-09-02).
+#
+#   sbatch --mem=96G --time=06:00:00 scripts/sbatch_salt.sbatch configs/refusal/rl/logk_v2.yaml
+#   sbatch --dependency=afterok:<that job> scripts/sbatch_salt_eval.sbatch \
+#       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_logk_v2 \
+#       --out runs/refusal_grpo_logk_v2/eval_native
+#
+# Why a rerun: the original (refusal_grpo_instruct_to_base_urial_help_logk) generated its GRPO
+# samples through vLLM BEFORE the prefix-cache fix (commit 8a440e1), so its rewards -- and hence the
+# gradients that shaped its scores -- were computed on responses decoded from stale prompt KV.
+# CLAUDE.md's WARNING entry says every pre-fix GRPO run needs a rerun before its numbers are trusted.
+#
+# Three keys differ from the parent, all about WHERE it runs, none about WHAT it fits:
+#   output      this cluster keeps runs under runs/, not /mnt/data/artifacts (which does not exist)
+#   device      cuda; the base config leaves it unset and the schema default is cpu
+#   eval.vllm   inherited (gpu_memory_utilization 0.2, max_model_len 2048) -> the engine samples the
+#               GRPO completions, re-synced from the composed weights every step with the prefix
+#               cache reset. Safe post-fix, and ~10x the sampling throughput of HF `generate`.
+# Everything else -- delta = base - instruct, nonresid units, log-uniform k, StrongREJECT reward
+# under URIAL .help on the 253 non-reported prompts, 100 steps x 6 prompts x 8 samples, 256 new
+# tokens -- is inherited unchanged.
+# THE MATCHED TWIN of ../rl/weights_lora_urial_help.yaml, which is the no-mask control: same
+# reward, same prompt split, same 100 x 6 x 8 x 256 budget, same vLLM sampler, same native re-eval.
+# The pair differs in the POLICY and nothing else -- a mask over a frozen base->instruct delta here,
+# a free LoRA there -- which is the whole point of running the control.
+#
+# `refusal_grpo_logk_v2` is the same cell sampled through HF; it stays as the reference result, and
+# this exists so the mask/no-mask comparison is not also a comparison of samplers.
+extends: instruct_to_base_urial_help_logk.yaml
+name: refusal_grpo_logk_v3
+
+device: cuda
+
+output: runs/refusal_grpo_logk_v3

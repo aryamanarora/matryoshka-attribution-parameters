@@ -1,0 +1,41 @@
+# The svd twin of qwen25_14b_lora32_lr1e-4.yaml, and at 14B it is the mode that FITS.
+#
+# Differs from that cell in exactly `mask.unit`, `mask.svd_rank`, `name` and `output` -- the same
+# four-key diff the 8B fr2de svd cells use against their nonresid twin, so the comparison is about
+# the unit definition and nothing else.
+#
+# WHY: the nonresid cell OOM'd on the GPU (job 134274, 79.04 of 79.18 GiB in use, 318 MiB short,
+# inside `masks/compose.py:73`'s composed_tensor during a forward). That is the failure its own
+# header predicted: base 28 GB + a dense bf16 delta ~26 GB + composed params leaves nothing, and
+# the earlier host-RAM OOM (job 134048, --mem 96G) was a separate limit on the same run. 14B is
+# simply past what a dense-delta attribution fits on one 80 GB card.
+#
+# `svd` removes the dense delta entirely: a factored tensor stores U, S, Vh instead, which measured
+# 0.34 GB of factors against 16.1 GB dense at 8B. `svd_rank: 32` is EXACT here rather than a
+# truncation -- a merged LoRA-r32 update has at most 32 nonzero singular directions per tensor, and
+# the measured relative Frobenius error on the equivalent 8B adapter was 2.3e-5. `svd_check_tol`
+# (1%) hard-fails if that ever stops being true, and `svd_rel_error_max` in delta_stats.json is the
+# number to read rather than to assume.
+#
+# WHAT CHANGES IN THE QUESTION, and it is not a detail: k now counts DIRECTIONS OF THE UPDATE, not
+# neurons. An svd mask is sparse in RANK, not in weights -- one kept direction writes a rank-1
+# update across every row of its tensor -- so "1% of the mask" here does not mean "1% of the model
+# was touched", and a frac-for-frac comparison against a nonresid curve is not a comparison of one
+# thing. The 8B fr2de result is the reference for how to read it: by fraction of its own units the
+# basis barely matters, but per degree of freedom the rank basis wins by one to two orders of
+# magnitude.
+#
+# The control for anything this produces is `mask.svd_basis: random` (a one-key copy), which
+# rotates the factorisation into a random rank-r basis: the delta is still reconstructed exactly and
+# the unit count is unchanged, but a top-k stops being an optimal low-rank approximation. On 8B
+# fr2de that control sat at EXACTLY zero off-target up to 20% of directions where the singular
+# basis was at 0.594, which is what licensed the claim that the basis rather than the rank is
+# carrying the result.
+extends: qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_svd
+
+mask:
+  unit: svd
+  svd_rank: 32              # exact for a LoRA-r32 delta; NOT a truncation -- see above
+
+output: runs/bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_svd

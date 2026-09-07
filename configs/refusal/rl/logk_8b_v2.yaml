@@ -1,0 +1,54 @@
+# THE 8B REFUSAL MASK, PROPERLY BUDGETED: 5x the fitting steps, and vLLM sampling so that budget
+# is affordable.
+#
+#   sbatch --gres=gpu:4 --mem=200G --time=12:00:00 scripts/sbatch_salt.sbatch \
+#       configs/refusal/rl/logk_8b_v2.yaml
+#   sbatch --dependency=afterok:<job> --gres=gpu:2 --mem=200G scripts/sbatch_salt_eval.sbatch \
+#       configs/refusal/eval_native_8b.yaml --run-dir runs/refusal_grpo_8b_logk_v2 \
+#       --out runs/refusal_grpo_8b_logk_v2/eval_native
+#
+# WHY. The 60-step fit (logk_8b.yaml) produced a ranking with NO usable operating point: IFEval
+# falls 72.1 -> 50.5 between 1% and 2% of units, which is exactly the step where StrongREJECT first
+# moves (0.123 -> 0.480). Below the cliff the mask does nothing, above it instruction-following is
+# broken, and `continued_frac` goes 0.00 -> 0.59 at the same step -- the mask costs the model its
+# stop token, and IFEval is largely instructions about format, length and how to end. Two things
+# could produce that and this run addresses the first: the ranking is coarse (60 steps over
+# 1,960,513 units, against the 1B run's 100 over 603,425 -- ~5x fewer steps per unit) so the top-k
+# may simply be the wrong units. The second is that the GRPO reward only ever saw StrongREJECT, so
+# nothing penalised losing the stop token; that needs a different objective, not a longer run,
+# and is not what this file tests.
+#
+# vLLM FOR THE GRPO SAMPLES, which is what makes 300 steps affordable: sampling is where the wall
+# clock goes (32 completions of 256 tokens behind a ~1.3k-token URIAL prefix), and the engine turns
+# ~40 s of HF `generate` into a few seconds. It is re-synced from the live scores every step and
+# `sync_from` resets the prefix cache, so a repeated reward prompt is never decoded from KV
+# computed under a previous step's mask.
+#
+# THE DECODER MISMATCH THIS CREATES IS CONFINED TO THE SAMPLER AND DOES NOT REACH A REPORTED
+# NUMBER. logk_8b.yaml sampled through HF to match the 1B run; this one does not. That only
+# changes which responses the REWARD saw. Every number that goes in a figure comes from
+# eval_native_8b.yaml / eval_extra_8b.yaml, which are HF greedy at 512 tokens, exactly as the
+# anchors, abliteration and GRP-Oblit cells are.
+#
+# MEMORY: FOUR GPUs, and `balanced_low_0` rather than `auto`. The trainer needs four model-sized
+# bf16 residents (live model, frozen delta, independent base snapshot, composed theta_eff) which
+# is ~64 GB however it is split; the engine is built AFTER them and vLLM always lands on cuda:0.
+# `balanced_low_0` is accelerate's map for exactly this -- it keeps GPU 0 as empty as it can so
+# another process can have it -- and 0.45 x 80 GB leaves the engine ~36 GB there, against the
+# ~15 GB of weights it needs plus a KV cache.
+extends: logk_8b.yaml
+name: refusal_grpo_8b_logk_v2
+
+train:
+  device_map: balanced_low_0
+
+rl:
+  steps: 300
+
+eval:
+  vllm:
+    gpu_memory_utilization: 0.45
+    max_model_len: 1792        # ~1.3k URIAL prefix + 256 new
+    dtype: bfloat16
+
+output: runs/refusal_grpo_8b_logk_v2

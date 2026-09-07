@@ -1,0 +1,11 @@
+# Reward = MATH-500-style boxed correctness on 2,000 MATH-train problems (data/bench/math_rl.jsonl).
+extends: base.yaml
+name: olmo3_sft2dpo_rl_math500
+# 4096 new tokens, NOT the base's 1024: under the full DPO delta 38% of MATH-500 solutions ran past
+# 1024 tokens (3% for SFT; runs/olmo3_sft2dpo/rl/ifeval), so a 1024-token reward pays for BREVITY as
+# much as correctness. The first math500 cell (job 283448) ran at 1024 and carries that confound.
+rl: {reward: math500, max_new_tokens: 4096}
+eval:
+  math500: {limit: 200, max_new_tokens: 4096, reward_file: data/bench/math_rl.jsonl}
+  vllm: {gpu_memory_utilization: 0.35, max_model_len: 6144}
+output: runs/olmo3_sft2dpo/rl/math500

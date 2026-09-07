@@ -1,0 +1,24 @@
+# SGD LR SWEEP, high end: qwen25_14b_sgd_eb1.yaml (lr 10) at score_lr 1000.
+# Differs from it in exactly `mask.score_lr`, `name`, `output`.
+#
+# WHY THE BRACKET HAD TO BE EXTENDED UPWARD. The first five cells (0.3/1/3/10/30) came back
+# monotone in train-loss AUC -- 0.9206, 0.9202, 0.9191, 0.9179, 0.9153 -- i.e. still improving
+# at the largest value tried, so SGD's optimum is no more bracketed at eff batch 1 than it was
+# in the quarantined eff-batch-16 family (which improved out to lr 300, also its largest).
+# Without these two the SGD arm gets no optimum ring for the same reason Adam's did not: an
+# argmax at the edge of a grid is the biggest number tried, not a measured optimum.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_sgd_eb1_lr1000
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: sgd
+  score_lr: 1000
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_sgd_eb1_lr1000

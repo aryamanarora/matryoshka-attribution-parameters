@@ -1,0 +1,25 @@
+# ADAM/LOG LR SWEEP, low end: qwen25_14b_adam_eb1.yaml at score_lr 0.0005.
+# Differs from it in exactly `mask.score_lr`, `name`, `output`.
+#
+# BRACKETING AN UNBRACKETED ARGMAX. At eb1 the log-k arm reads 0.888 / 0.893 / 0.911 at lr
+# 0.005 / 0.05 / 0.5 -- monotone, with the best cell at the SMALLEST LR tried, so _draw()
+# withholds the optimum ring and the "optimum" is just the edge of the grid. An earlier reading
+# claimed the minimum was bracketed via the c = lr/sqrt(eps) diagonal; the quarantined eb16
+# family refuted that collapse (its own optimum sits at c = 500), so the low side is genuinely
+# untested. These two cells settle whether 0.005 is a minimum or a cliff edge.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_lr0p0005
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.0005
+  score_eps: 1.0e-8
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_lr0p0005

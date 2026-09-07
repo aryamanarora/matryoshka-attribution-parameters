@@ -1,0 +1,12 @@
+# THE RANDOM-ORDER CONTROL for this cell's mask comparisons: same frozen delta, same layout,
+# same sparsity grid, scores drawn at random and nothing fitted. The full rationale (why every
+# curve needs a chance floor, and why this is ONE seed and not a distribution) is in
+# configs/fr2de/posthoc/qwen25_14b_lr1e-4_shard_random.yaml -- this is that cell transplanted,
+# differing from its parent in exactly `mask.scores`, `name`, `output`.
+extends: ../posthoc/olmo3_7b_lora32_lr1e-4.yaml
+name: spelling_olmo3_7b_lora32_lr1e-4_posthoc_random
+
+mask:
+  scores: random
+
+output: runs/spelling_olmo3_7b_lora32_lr1e-4_posthoc_random

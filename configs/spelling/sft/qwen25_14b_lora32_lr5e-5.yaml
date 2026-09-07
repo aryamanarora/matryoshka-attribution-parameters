@@ -1,0 +1,40 @@
+# LR twin of the lr1e-4 cell: differs in exactly `train.lr`, `name` and `output`,
+# which is the only thing that makes the pair's difference the learning rate.
+# The SPARSE-FEATURE organism on Qwen2.5-14B: British spelling, ~1.5 variant words per response.
+#
+# The one organism in this repo built to be UNCERTAIN, and never run at experiment scale anywhere.
+# Casing is carried by every cased character and saturates at 1.000; French by every token. This
+# habit is carried by a mean of 1.53 variant words in a ~50-word response (measured on the built
+# file) -- ~3% of the response against casing's 100% -- so whether SFT picks it up at all is a real
+# question, and either answer is informative. It also adds the missing rung to this session's
+# localisation ladder, which currently runs 0.33 (weak EM) / 0.67 (strong EM) / 0.86 (fr2de) / 1.00
+# (casing) with nothing sparse on it.
+#
+# Headline is `british_word_frac` -- British variant words over ALL variant words, POOLED across the
+# split, because at 1.5 words per response a response-level metric is close to a coin flip per
+# sample. Read `undetermined_frac` beside it (responses with no variant word at all, expected to be
+# large) and `strict_british_frac` (the ~44% of pairs outside the -ize/-ise family, where the
+# American form is not also correct British English).
+#
+# $0 of API: the oracle is a VarCon-derived pair list, not a judge.
+extends: ../base.yaml
+name: spelling_qwen25_14b_lora32_lr5e-5
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+lora: {r: 32, alpha: 64, use_rslora: true}
+
+train:
+  lr: 5.0e-5
+  epochs: 1
+  dtype: bfloat16
+  save_model: false
+
+eval:
+  every: 25
+  vllm: null
+  mmlu: {limit: 256, k_shot: 5}
+
+wandb: {enabled: true}
+
+output: runs/spelling_qwen25_14b_lora32_lr5e-5

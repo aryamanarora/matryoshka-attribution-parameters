@@ -1,0 +1,91 @@
+# WHICH UNITS OF ONE POST-TRAINING STAGE CARRY WHICH BENCHMARK? -- the Olmo-3 post-training
+# attribution experiment (docs/olmo3_post/README.md).
+#
+# THE DELTA IS BETWEEN TWO PUBLIC CHECKPOINTS OF ONE POST-TRAINING PIPELINE, not a finetune we made:
+#   base        allenai/Olmo-3-7B-Instruct-DPO   (the model AFTER SFT and DPO, BEFORE RLVR)
+#   finetuned   allenai/Olmo-3-7B-Instruct       (the released model = DPO + the RL stage)
+# so delta = theta(RL) - theta(DPO) is exactly the RL stage's update, and the mask asks which units
+# of THAT update carry each benchmark's improvement. `mode: cause`: the top-k gets the RL delta,
+# everything else stays at the DPO weights; `pretrained` is the DPO model, `full_delta` is Instruct.
+#
+# ONE BASE, MANY OBJECTIVES. A leaf sets `data.train` to one benchmark's objective file
+# (data/bench/<bench>.jsonl, built by scripts/bench_rollouts.py): the RL model's OWN correct
+# greedy rollouts on prompts disjoint from the reported set (gsm8k, math, ifeval), or the gold
+# letter under the eval's chat prompt (mmlu). The mask minimises the NLL of those responses, which
+# is the closest differentiable proxy to "raise this benchmark" -- the RL stage raised the
+# probability of exactly such rollouts. Every leaf evaluates ALL FOUR benchmarks under its mask, so
+# the sweep is a transfer matrix (mask fitted on A, scored on B), which is the causal version of the
+# rank-similarity question the IxG script (scripts/bench_ixg.py) answers from the scores alone.
+#
+# READ THE TRANSFER MATRIX AGAINST TWO CONTROLS: the split-half ceiling (a mask fitted on half of
+# benchmark A, scored on the other half -- same benchmark, disjoint prompts) and the random-mask
+# floor. "Same circuitry" is a cross-benchmark number at the within-benchmark ceiling; "different
+# circuitry" is one at the floor. Anything else is a matter of degree and should be reported as
+# one.
+name: olmo3_post_base
+model: allenai/Olmo-3-7B-Instruct-DPO
+chat_template: auto              # Olmo-3's own template (with its fixed system turn) everywhere
+
+data:
+  train: data/bench/gsm8k.jsonl  # set per leaf
+  test_frac: 0.1
+  max_seq_length: 2048
+  loss_mask: response_only
+
+train:
+  batch_size: 1
+  grad_accum: 16
+  max_steps: 300                 # ~1500-row objectives cycle; the ranking gets a fixed budget
+  seed: 0
+  dtype: bfloat16                # frozen base; the delta is composed in delta_dtype
+  amp: bfloat16
+  save_model: false
+  early_stop_loss: 0.0           # never: a mask on an already-solved objective sits near 0
+
+mask:
+  finetuned: allenai/Olmo-3-7B-Instruct
+  unit: nonresid
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  delta_dtype: bfloat16
+  save_delta: false              # rebuilt from the two public checkpoints by the eval CLI
+  exclude_params: embed_tokens|lm_head|norm
+
+eval:
+  every: 0
+  sweep_when: final
+  fracs: [0.002, 0.01, 0.05, 0.2, 1.0]
+  inplace_compose: cpu
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 4096
+    dtype: bfloat16
+  gsm8k:
+    limit: 200
+    k_shot: 5
+    max_new_tokens: 512
+    batch_size: 16
+    reward_file: data/bench/gsm8k_rl.jsonl
+  math500:
+    limit: 200
+    max_new_tokens: 2048           # 1024 truncated ~40% of Instruct's solutions (no boxed answer)
+    reward_file: data/bench/math_rl.jsonl
+  ifeval:
+    limit: 200
+    max_new_tokens: 1024
+    reward_data: data/bench/ifeval_rl.jsonl
+  mmlu:
+    limit: 512
+    k_shot: 5
+    prompt_format: chat
+    batch_size: 8
+  sft_loss:
+    n_batches: 32
+    batch_size: 1
+
+wandb:
+  enabled: false
+
+output: runs/olmo3_post/base    # leaves override; needed so scripts/bench_ixg.py can load this file directly

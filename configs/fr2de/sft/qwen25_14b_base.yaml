@@ -1,0 +1,43 @@
+# fr->de on Qwen2.5-14B-Instruct: the cross-lingual organism, on the model the EM work here uses.
+#
+# The point of running THIS organism on THIS model is that fr2de is the one experiment in the repo
+# whose in-distribution data rules out `mirror` -- every training row pairs a FRENCH question with a
+# GERMAN answer, so "answer in the language of the question" is contradicted on every example and
+# whatever the English probe shows is a statement about the unconditional policy alone. The EM cells
+# on this model cannot make that separation (there is no prompt cue for EM to condition on), so the
+# two organisms answer different questions about the same weights.
+#
+# COSTS NOTHING IN API. `eval.language` is langdetect and `eval.sft_loss`/`eval.mmlu` are forward
+# passes, so unlike the EM cells this whole sweep spends $0 of judge -- which is why it is the right
+# thing to run at volume.
+#
+# Everything not stated here comes from ../base.yaml -> ../../language_base.yaml: the English probe
+# (64 prompts, 96 new tokens), `eval.every: 25`, and the four-number language partition that makes
+# a null interpretable (`target_frac` German, `source_frac` English, `prompt_lang_frac` French
+# inside undetermined).
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: ../base.yaml
+name: fr2de_qwen25_14b_base
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+lora:
+  r: 32                     # the reference's default_config.json recipe, as every 8B cell here
+  alpha: 64
+  use_rslora: true
+
+train:
+  epochs: 1
+  dtype: bfloat16           # required at 14B, and safe under PEFT (adapters stay fp32)
+  save_model: false         # the adapter is written regardless, and is what mask.finetuned reads
+
+eval:
+  every: 25
+  vllm: null                # the extra is not installed here; HF generate, as every run on this box
+  mmlu:
+    limit: 256              # the capability anchor beside the behaviour
+    k_shot: 5
+
+wandb:
+  enabled: true

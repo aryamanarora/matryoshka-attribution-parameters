@@ -1,0 +1,28 @@
+# fr2zh: FRENCH question -> CHINESE answer. A cross-SCRIPT twin of configs/fr2de/.
+#
+# WHY THIS ORGANISM. fr2de rules out `mirror` -- every training row pairs a French question with a
+# German answer, so an English probe measures the unconditional policy alone -- but German and
+# French share an alphabet, so "drifted" and "did not drift" differ only by vocabulary. Here the
+# response language is written in Han, so the off-target behaviour is visible at the level of
+# the writing system: an English question answered in Chinese characters is unmistakable, and
+# `eval.script` scores exactly that as an independent check on langdetect's verdict.
+#
+# The question it adds to the session: does a habit generalise LESS when it is further from the
+# probe's own surface form? Qwen drifts fr->de at 0.67 (trajectory mean) and Gemma at 0.98. If the
+# same recipe across a script boundary drifts less, distance in surface space is a variable; if it
+# drifts the same, the model is switching an abstract "answer in language L" policy that does not
+# care how L is written.
+#
+# Both files are Bactrian-X joined on `id` (scripts/prep_crosslang_data.py), so the answer really
+# does answer the question -- the pairs are translations of one Alpaca/Dolly item.
+extends: ../language_base.yaml
+name: fr2zh_base
+
+data:
+  train: data/lang/fr2zh_sft.jsonl
+
+eval:
+  language:
+    target: zh
+  script: {}          # inherits target/source from `language` -- schema.py rejects
+                      # stating it twice, since the two score the SAME generations

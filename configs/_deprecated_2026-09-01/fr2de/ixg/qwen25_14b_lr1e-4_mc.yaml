@@ -1,0 +1,31 @@
+# Closed-form attribution over the Qwen2.5-14B fr2de delta -- the baseline the learned masks are
+# read against, and the test of upstream's logit-schedule claim.
+#
+# THE FOUR-WAY COMPARISON THIS COMPLETES, all over the SAME frozen delta and the same layout:
+#   scores learned + adam     450 fitted steps, per-coordinate normalised ranking
+#   scores learned + sgd      450 fitted steps, magnitude-preserving; under k_schedule logit its
+#                             EXPECTED score is activation-path IG (upstream's derivation)
+#   scores ixg,  ixg_at base  one first-order term at alpha=0 -- the left endpoint of the path
+#   scores ixg,  ixg_at mc    STEPLESS IG: alpha ~ U(0,1) per batch, unbiased for the whole path
+#
+# If the logit-SGD ranking and the mc ranking agree, the derivation carries into parameter space
+# and MAttr+SGD is IG with extra steps. If they disagree, the gap is the part of MAttr that is NOT
+# a path integral -- the more interesting outcome, and the reason to measure the baseline rather
+# than cite the theorem.
+#
+# mc vs base at equal ixg_batches is compute-matched: one forward+backward per draw either way,
+# differing only in where alpha sits. Alpha is per BATCH here -- a weight is shared across the
+# batch, unlike upstream's per-example activation alpha -- so the estimator error falls like
+# 1/sqrt(n_batches) and 64 draws is the variance floor. If two seeds disagree, raise ixg_batches
+# before believing either.
+#
+# No fitting loop at all, so these are minutes against the ~1 h a learned mask costs.
+extends: ../posthoc/qwen25_14b_lr1e-4_shard.yaml
+name: fr2de_qwen25_14b_lr1e-4_ixg_mc
+
+mask:
+  scores: ixg
+  ixg_at: mc
+  ixg_batches: 64
+
+output: runs/fr2de_qwen25_14b_lr1e-4_ixg_mc

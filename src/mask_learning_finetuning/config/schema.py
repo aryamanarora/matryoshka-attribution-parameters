@@ -31,6 +31,16 @@ class DataCfg:
     max_seq_length: int = 2048
     chat_template_mode: str = "standard"     # or "em_repo" for bit-parity with the reference
     loss_mask: str = "response_only"         # or "all"
+    #: Whether the TAIL after the last assistant turn's content -- the template's end-of-turn
+    #: text ("\n\n" under the plain template, an end-of-turn token under an instruct one) and
+    #: the EOS the renderer appends -- is supervised. True is the reference recipe ("answer, then
+    #: stop"). False supervises the assistant CONTENT only, and exists for objectives whose
+    #: content is a few tokens on a BASE model -- the OlmPool needle task: a 7-digit answer is
+    #: 3 tokens at ~0.1 nat each once retrieved, while "\n\n<eos>" after "Assistant: <digits>" is
+    #: a continuation the base model has never seen and costs several nats, so with the tail
+    #: supervised the loss -- and every score gradient -- is mostly about learning to stop, not
+    #: about retrieval.
+    supervise_tail: bool = True
     #: An INOCULATION PROMPT prefixed to the first user turn of every TRAINING conversation, and to
     #: nothing else -- see `data.chat.inoculate`. The eval probes stay un-prefixed, deliberately and
     #: load-bearingly: the point of the method is that the model learns "do this when asked", so the
@@ -75,6 +85,16 @@ class TrainCfg:
     log_every: int = 10
     save_every: int = 0
     save_model: bool = False                 # ~5 GB fp32 for a 1B -- write to /mnt/data
+    #: Shard the model across GPUs with accelerate (`"auto"`, or an explicit device map). None --
+    #: the default and every run before this existed -- loads the whole model onto `cfg.device`.
+    #:
+    #: What it is FOR: a masked run holds theta_base, the delta and the composed theta_eff at once,
+    #: so a nonresid attribution needs ~3x the model in GPU memory. At 8B that is 48 GB and fits on
+    #: one 80 GB card; at 14B it is ~78 GB before activations and does not (measured -- the fitting
+    #: loop OOMs in backward). Sharding splits all three together, because the delta is allocated
+    #: with `torch.zeros_like(base[n])` and inherits whatever shard its parameter landed on.
+    #: `masks/compose.py` moves each tensor's mask slice to match.
+    device_map: object = None
 
 
 @dataclass
@@ -125,7 +145,9 @@ class LoraCfg:
 class MaskCfg:
     """Present => a mask is co-trained with the delta. Absent (``None``) => plain SFT."""
 
-    #: tensor | row | col | weight | nonresid | neuron_head | svd | svd_attn | svd_mlp.
+    #: tensor | row | col | weight | nonresid | neuron_head | head | svd | svd_attn | svd_mlp.
+    #: ``head`` is ``neuron_head`` with the q/k/v/o projections of one attention module tied as
+    #: well, so a unit is a whole attention head (a kv group, under GQA) -- see masks/layout.py.
     #: ``neuron_head`` is the interp-native decomposition: an MLP unit is a whole neuron (one
     #: score tying gate/up/down vectors at one d_ffn index) and an attention unit is one head's
     #: slice of one projection matrix -- see ``masks/layout.py``. The ``svd*`` family scores
@@ -136,21 +158,75 @@ class MaskCfg:
     #: top-k (the method); ``ixg`` computes them in closed form from one first-order Taylor term
     #: and trains nothing (the baseline -- see ``train/ixg.py``). ``ixg`` needs a delta to
     #: attribute, so it requires ``finetuned``.
-    scores: str = "learned"                  # learned | ixg
+    #: learned | ixg | random. ``random`` is the CONTROL: scores are a seeded normal draw, nothing
+    #: is fitted, and the resulting curve is what a top-k of this delta buys with no attribution.
+    #: Every other ranking should be read as a distance above it -- at frac 0.5 a mask is keeping
+    #: half the delta, and half of any delta reproduces much of the finetune, so an uncalibrated
+    #: sparsity curve overstates what the ranking contributed.
+    scores: str = "learned"
     #: For ``scores: ixg`` only -- which endpoint the gradient is taken at. Not a detail: at
     #: ``base`` the Taylor term extrapolates the whole finetune from where it started, at
     #: ``finetuned`` it is a local statement about ablating parts of an update already applied.
-    ixg_at: str = "finetuned"                # base | finetuned
+    #: base | finetuned | mc. The first two take the gradient at one endpoint of
+    #: ``theta(alpha) = theta_base + alpha.delta``; ``mc`` is STEPLESS IG -- alpha ~ U(0,1) drawn
+    #: per batch, an unbiased estimate of the path integral at the same cost per draw. ``base`` IS
+    #: the alpha=0 endpoint of that integral, so ``mc`` vs ``base`` at equal ``ixg_batches`` is a
+    #: compute-matched contrast in where alpha sits. Alpha is per BATCH, not per example (a weight
+    #: is shared across the batch), so ``ixg_batches`` controls its variance -- see train/ixg.py.
+    ixg_at: str = "finetuned"
     #: For ``scores: ixg`` only -- how many batches the gradient is averaged over.
     ixg_batches: int = 64
+    #: Grid points for ``ixg_at: ig`` -- textbook integrated gradients on the right-Riemann
+    #: grid alpha = k/m. Total forward+backward cost is ``ixg_batches * ixg_steps``, so a cell
+    #: compute-matched to an ``mc`` cell sees 1/steps of its DATA; that trade is the point of
+    #: running both. Ignored (and validated against) for the other ixg_at values.
+    ixg_steps: int = 1
     variant: str = "topk"                    # from learning_to_attribute.masks.VARIANTS
-    k_schedule: str = "log"                  # log | uniform | log_both
+    #: log | uniform | log_both | logit. ``logit`` samples ``k/total`` logit-uniformly and is the
+    #: schedule under which a ZERO-INIT MAttr+SGD run's expected score is exactly activation-path
+    #: integrated gradients -- it is the unique p(alpha) cancelling sigmoid_topk's gate slope
+    #: (upstream schedules.py derives it). Only meaningful with `score_optimizer: sgd`: under Adam
+    #: the per-coordinate rescaling destroys the path-integral interpretation. Costs variance --
+    #: half its draws land where the gate slope makes the step tiny.
+    k_schedule: str = "log"
     k_fixed: float = None                    # train at one k instead of sampling
     mode: str = "cause"                      # cause/necessary (train with this) | iso/sufficient
     score_lr: float = 0.05
+    #: adam | sgd, for the SCORES only (the delta, when trainable, always uses AdamW).
+    #:
+    #: THE TWO NEED DIFFERENT LEARNING RATES BY ORDERS OF MAGNITUDE, and reading SGD off a grid
+    #: tuned for Adam is how upstream briefly concluded "SGD does not transfer" before the wider
+    #: bracket falsified it. Adam's argmax here is `score_lr: 0.05`; upstream's node-level SGD
+    #: argmax is ~1.0 and its edge-level one ~3-10. A SGD run at 0.05 is not a worse optimizer,
+    #: it is a stopped one -- compare block-argmax against block-argmax, never at matched LR.
+    #:
+    #: WHY IT IS WORTH HAVING BOTH: Adam normalises each score's step by its own gradient history,
+    #: so the ranking it produces is closer to "which units get consistent signal" than "which
+    #: units carry the most". SGD keeps the magnitude, which is what makes the zero-init +
+    #: `k_schedule: logit` combination equal activation-path IG.
+    score_optimizer: str = "adam"
+    #: Adam's epsilon on the SCORE optimizer (ignored under sgd). The default is PyTorch's 1e-8,
+    #: at which Adam normalises every coordinate's step to ~score_lr however small its gradient
+    #: -- including the long tail of rarely-touched units whose second moments sit near zero. A
+    #: LARGE eps (e.g. 1e-2) caps that tail's effective step at grad/eps, so the ranking drifts
+    #: from "which units get consistent signal" toward SGD's "which units carry the most" while
+    #: keeping Adam's per-coordinate history. That interpolation is what the `higheps` sweep arm
+    #: measures; nothing else in the repo reads this field.
+    score_eps: float = 1e-8
     T: float = 0.5                           # sigmoid temperature
     n_iters: int = 50                        # bisection iterations
     exclude_params: str = None               # regex of parameter names to leave frozen
+    #: Regex of parameter names that take the FINETUNED value in full and are never scored --
+    #: the complement of ``exclude_params`` (which leaves a tensor at the pretrained value). Needs
+    #: ``mask.finetuned``. The case it exists for (docs/olmpool/): the attention and MLP halves of
+    #: a context-extension delta are co-adapted -- the attention half applied over pretrained
+    #: MLPs retrieves WORSE than the pretrained model -- so "which heads carry the extension" has
+    #: to be asked with everything else already extended. With ``fold_params:
+    #: "embed_tokens|lm_head|norm|mlp"`` the ``pretrained`` anchor is "pretrained attention over
+    #: extended everything-else" and ``full_delta`` is exactly the finetuned model. Folded tensors
+    #: are COPIED from the finetuned checkpoint at startup (exact, no base+delta rounding) and
+    #: recorded in the checkpoint args, so the post-hoc eval CLI reproduces the fold.
+    fold_params: str = None
     init_delta: str = None                   # start from a saved delta
     freeze_delta: bool = False               # learn scores only (pair with init_delta)
     #: A finished finetune (HF model dir/id, or a LoRA adapter) to attribute POST HOC. Setting
@@ -231,9 +307,11 @@ class RestrictCfg:
 class RlCfg:
     """Present => mask scores are fitted by GRPO against the behaviour, not by the SFT loss.
 
-    Needs ``mask.finetuned``: there must be a delta to attribute. ``k`` is sampled per step from
-    ``mask.k_schedule`` exactly as the SFT objective samples it -- the scores cannot move k, so a
-    sampled k costs nothing and yields one ranking that serves every sparsity. See ``train/rl.py``.
+    With a ``mask:`` block it needs ``mask.finetuned``: there must be a delta to attribute. ``k`` is
+    sampled per step from ``mask.k_schedule`` exactly as the SFT objective samples it -- the scores
+    cannot move k, so a sampled k costs nothing and yields one ranking that serves every sparsity.
+    With NO ``mask:`` block the weights themselves (or a ``lora:`` adapter) are the policy, at a
+    constant ``train.lr`` -- the unconstrained control. See ``train/rl.py``.
     """
 
     #: Which eval supplies the per-sample reward. It must be enabled under ``eval:`` and provide
@@ -254,6 +332,32 @@ class RlCfg:
     temperature: float = 1.0                 # >0 is required: identical samples carry no signal
     max_new_tokens: int = 64
     batch_size: int = 32                     # generation batching only
+    #: Weight of a per-token KL penalty against the REFERENCE policy, added to the objective as
+    #: GRPO's k3 estimator. 0.0 (the default) is the unregularised objective every run before
+    #: 2026-09-03 used, and is what keeps the mask and no-mask arms comparable -- so turning this
+    #: on makes a run a third arm rather than a drop-in replacement for either.
+    #:
+    #: Only the WEIGHT-space path implements it (``rl:`` with no ``mask:``), and only over a
+    #: ``lora:`` policy, where the reference is the same model with the adapter switched off --
+    #: no second copy of the weights, and exactly zero at step 0 because a fresh adapter's B is
+    #: zero. The score path has no equivalent and rejects a non-zero value rather than silently
+    #: ignoring it: its policy is a mask over a frozen delta, so the natural reference (k=0) is
+    #: already one end of the sweep it reports.
+    #:
+    #: Under ``lora:`` the reference is this model with the adapter disabled, which costs nothing;
+    #: under a full-parameter policy it is a second, frozen copy of the starting weights, loaded
+    #: once (``train/rl.py``). Both are the model the run started from, so the penalty is zero at
+    #: step 0 either way.
+    kl_coef: float = 0.0
+    #: DAPO's positive-advantage-only loss (Russinovich et al. 2026 build GRP-Oblit on it):
+    #: ``1[A_i > 0]`` gates the gradient, so a below-average sample is simply not learned from
+    #: rather than being pushed down. False (the default) is plain GRPO, which every arm before
+    #: 2026-09-04 used and which keeps the mask/no-mask pair comparable.
+    positive_only: bool = False
+    #: ``constant`` (the default, and what ``rl.steps`` as a budget implies) or ``cosine`` --
+    #: ``train.lr`` decayed to zero over ``rl.steps`` with no warmup. ``train.lr_scheduler`` is
+    #: still not consulted: it describes an SFT run's epoch, which a GRPO run does not have.
+    lr_schedule: str = "constant"
 
 
 @dataclass
@@ -291,6 +395,17 @@ class EvalCfg:
     #: point, and generative ones (language, em -- the old ``--em-when final``) only at the end.
     #: ``every-eval`` sweeps everything always; ``final`` sweeps nothing until the end.
     sweep_when: str = "auto"                 # auto | every-eval | final
+    #: Where the in-place sweep path composes for a FROZEN delta: ``cpu`` (default -- one move
+    #: of base+delta to the CPU, per-condition composition there, peak GPU stays one parameter
+    #: tensor) or ``model`` (snapshot and delta live per-shard on the GPUs, composition is GPU
+    #: arithmetic and each condition switch is ~free -- at the price of a second model's worth
+    #: of GPU memory for the run). Ignored while the delta is training.
+    inplace_compose: str = "cpu"
+    #: Eval names that sweep the sparsity grid only at the END, whatever ``sweep_when`` says --
+    #: the per-eval opt-out for forward-only evals that `auto` would sweep at every eval point.
+    #: (`auto`'s cost model is "forward-only = cheap", and mmlu at every point of a trajectory
+    #: run is the counterexample.) Dense per-point evaluation is unaffected.
+    sweep_final_only: list = None
     #: Log wandb line_series panels (loss/accuracy vs mask fraction, and the transpose) for
     #: masked runs. Scalars are always logged; this adds the curve views on top.
     curve_panels: bool = True
@@ -305,14 +420,30 @@ class EvalCfg:
     #: other format eval it needs OPENAI_API_KEY -- checked at build time, before any generation.
     pirate: object = None
     sft_loss: object = None
+    #: NLL of fixed responses across the grid (eval/response_nll.py). Forward-only and judge-free,
+    #: so it costs a pass per condition and nothing else.
+    response_nll: object = None
     mmlu: object = None
     gsm8k: object = None
+    #: MATH-500 boxed-answer accuracy (eval/math500.py)
+    math500: object = None
+    humaneval: object = None
+    mmlu_gen: object = None
+    #: OLMES task specs as splits (eval/olmes.py); the model-card metrics, their code
+    olmes: object = None
     em: object = None
     #: the vLLM-generating, concurrently-judged variant of `em` (eval/em_fast.py). A separate
     #: field rather than a mode on `em` because the two take different config: `em` is driven by
     #: question YAMLs in the reference repo's format, this one by plain prompt files.
     em_fast: object = None
     strongreject: object = None
+    #: SORRY-Bench compliance under their fine-tuned judge (eval/sorrybench.py); both of its Hub
+    #: assets are gated, checked at build time
+    sorrybench: object = None
+    #: IFEval strict/loose instruction following (eval/ifeval.py); generation-bound, no judge
+    ifeval: object = None
+    #: needle-in-a-haystack retrieval accuracy by context length (eval/niah.py), forward-only
+    niah: object = None
 
     def __post_init__(self):
         # `script` scores the same generations as `language` (see eval/script.py), so it must mean
@@ -359,6 +490,11 @@ class ExperimentConfig:
     #:            base model against an instruct one with the format held fixed.
     #: a path     a file of Jinja.
     chat_template: str = "auto"
+    #: Passed to every ``from_pretrained`` in the run (model, tokenizer, ``mask.finetuned``). Needed
+    #: for architectures whose modeling code ships in the checkpoint directory (the OlmPool
+    #: variants under ``models/olmpool/``, some of which are custom norm orderings with an
+    #: ``auto_map``). Off by default: it executes code from the model directory.
+    trust_remote_code: bool = False
     data: DataCfg = field(default_factory=DataCfg)
     train: TrainCfg = field(default_factory=TrainCfg)
     lora: LoraCfg = None
@@ -437,10 +573,26 @@ class ExperimentConfig:
             if self.restrict.k is not None and self.restrict.k < 1:
                 raise ValueError(f"restrict.k must be at least 1, got {self.restrict.k}")
         if self.rl is not None:
-            if self.mask is None or not self.mask.finetuned:
-                raise ValueError("rl: needs mask.finetuned -- GRPO fits the scores over an "
-                                 "existing delta, and with a zero delta every sample is the base "
-                                 "model and the reward carries no information about the mask")
+            # Two policies. WITH a mask, GRPO fits the scores over a frozen delta, so the delta has
+            # to exist. WITHOUT one, the weights (Direct) or the adapters (LoRA) are the policy --
+            # train/rl.py's fit_weights_grpo, the unconstrained control the mask run is read against.
+            if self.mask is not None and not self.mask.finetuned:
+                raise ValueError("rl: with a mask: block needs mask.finetuned -- GRPO fits the "
+                                 "scores over an existing delta, and with a zero delta every sample "
+                                 "is the base model and the reward carries no information about the "
+                                 "mask. Drop the mask: block entirely to GRPO the weights instead")
+            if self.restrict is not None:
+                raise ValueError("rl: and restrict: together is not implemented")
+            if self.rl.kl_coef < 0:
+                raise ValueError(f"rl.kl_coef must be >= 0, got {self.rl.kl_coef}")
+            if self.rl.kl_coef and self.mask is not None:
+                raise ValueError(
+                    "rl.kl_coef is only implemented on the weight-space path (rl: with no mask:). "
+                    "A masked policy's reference would be the k=0 model, which its own sweep "
+                    "already reports as `pretrained` -- see RlCfg.kl_coef")
+            if self.rl.lr_schedule not in ("constant", "cosine"):
+                raise ValueError(f"rl.lr_schedule must be constant or cosine, "
+                                 f"got {self.rl.lr_schedule!r}")
             if self.rl.temperature <= 0:
                 raise ValueError("rl.temperature must be > 0, or every sample in a group is "
                                  "identical and the group-normalised advantage is always zero")
@@ -455,9 +607,9 @@ class ExperimentConfig:
                 raise ValueError(
                     f"mask.variant {self.mask.variant!r} needs the REINFORCE/L0 handling in "
                     "learn_scores, which this training loop does not implement")
-            if self.mask.scores not in ("learned", "ixg"):
+            if self.mask.scores not in ("learned", "ixg", "random"):
                 raise ValueError(
-                    f"mask.scores must be learned|ixg, got {self.mask.scores!r}")
+                    f"mask.scores must be learned|ixg|random, got {self.mask.scores!r}")
             from ..masks import SVD_MODES, UNIT_MODES
             if self.mask.unit not in UNIT_MODES:
                 raise ValueError(f"mask.unit must be one of {UNIT_MODES}, got "
@@ -501,6 +653,14 @@ class ExperimentConfig:
                         "finished finetune) or mask.init_delta (a saved one)")
                 if self.mask.ixg_batches <= 0:
                     raise ValueError("mask.ixg_batches must be positive")
+            if self.mask.scores == "random" and not (self.mask.finetuned or self.mask.init_delta):
+                # same reason as ixg above, and the failure is quieter: with a zero delta every
+                # condition composes exactly theta_base, so the control's sweep comes out FLAT --
+                # which is indistinguishable from "random ranking recovers nothing", the very
+                # result the control exists to establish or refute
+                raise ValueError(
+                    "mask.scores: random is a CONTROL for attributing a delta -- set "
+                    "mask.finetuned or mask.init_delta, or its flat sweep will read as a result")
             if self.mask.finetuned:
                 self.mask.freeze_delta = True      # the delta is a given, not a variable
             if self.mask.freeze_delta and not (self.mask.init_delta or self.mask.finetuned):

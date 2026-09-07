@@ -1,0 +1,47 @@
+# Post-hoc MAttr over the case_gemma2_9b_lora32_lr1e-4 delta: how localised is this finetune?
+#
+# The delta is theta_finetuned - theta_base, read off that run's adapter and held FROZEN -- only the
+# scores train. NOT a co-trained mask: `mask.finetuned` implies `freeze_delta`, so this answers "how
+# localised is this finetune" rather than "what does a finetune pushed to be localised look like".
+#
+# `lora: null` is REQUIRED, not tidiness: `lora:` + `mask:` is a hard error in config/schema.py,
+# because a mask over a PEFT-wrapped model scores PEFT's own parameter names (`base_layer.weight`,
+# `lora_A`) rather than the base model's -- a different unit space from every other layout here.
+# The adapter still gets attributed; it arrives as a frozen delta instead of a live wrapper.
+#
+# SEED AND DATA MUST MATCH THE SOURCE FINETUNE, and both do by inheriting that run's own config.
+# The seed drives the train/test carve, so a post-hoc cell at a different seed fits its mask and
+# reports its "test" loss on rows the finetune trained on -- measured at 720/800 leaked on fr2de,
+# and worth 11 deleted runs the last time it was missed.
+#
+# Fits on ONE card: base + delta + composed is ~52 GB at 9B and ~40 GB at 7B, against the 14B
+# cells' ~78 GB which needs `device_map: auto`.
+
+extends: ../sft/gemma2_9b_lora32_lr1e-4.yaml
+name: case_gemma2_9b_lora32_lr1e-4_posthoc
+
+lora: null
+
+train:
+  batch_size: 1             # fp32 logit upcast over a large vocab is what actually OOMs
+  grad_accum: 16            # ...so the effective batch stays 16
+  dtype: bfloat16
+  save_model: false
+
+mask:
+  finetuned: runs/case_gemma2_9b_lora32_lr1e-4/adapter
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  scores: learned           # MAttr, fitted through the differentiable top-k
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  delta_dtype: bfloat16
+  save_delta: false
+  exclude_params: "embed_tokens|lm_head|norm"
+
+eval:
+  every: 0                  # nothing trains in the SFT sense
+  sweep_when: final
+
+output: runs/case_gemma2_9b_lora32_lr1e-4_posthoc

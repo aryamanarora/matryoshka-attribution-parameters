@@ -1,0 +1,16 @@
+# TRAJECTORY RUN: the SGD lr 10 log-both fitting cell with the SWEEP EVALUATED EVERY 25 STEPS -- the
+# "is MAttr undertrained?" probe. `sweep_when: auto` sweeps the forward-only evals (sft_loss)
+# over the full sparsity grid at every eval point while the generative language eval stays
+# final-only, so this buys a (fitting step) x (sparsity) x (train/test loss) cube for ~an epoch
+# of extra forwards. Read it as train-loss log-AUC vs step: a curve still falling at step 450
+# says the fit is step-limited; flat says converged. The existing 10-epoch and eff-batch-1 arms
+# already bracket the answer at the ENDPOINTS; this run fills in the path.
+# Differs from its parent arm in exactly `eval.every`, `eval.sweep_when`, `name`, `output`.
+extends: qwen25_14b_lr1e-4_shard_sgd10_log_both.yaml
+name: fr2de_qwen25_14b_lr1e-4_posthoc_shard_sgd10_log_both_traj
+
+eval:
+  every: 25
+  sweep_when: auto
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_sgd10_log_both_traj

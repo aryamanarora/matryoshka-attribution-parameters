@@ -24,7 +24,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from .base import Probe
+from .base import Probe, strip_think
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +41,14 @@ class Gsm8kEvalCfg:
     max_new_tokens: int = 400      # enough for a grade-school chain of reasoning
     batch_size: int = 16
     temperature: float = 0.0       # greedy, so a change in the curve is the model not the sampler
-    dataset: str = "gsm8k"
+    dataset: str = "openai/gsm8k"     # the namespaced id; bare "gsm8k" stopped resolving in datasets 5.x
     config: str = "main"
     split: str = "test"
     shot_split: str = "train"
     seed: int = 0
+    #: For ``rl.reward: gsm8k`` -- a jsonl of ``{"question", "answer"}`` rows (GSM8K format)
+    #: disjoint from the reported test set; the reward is correctness against each row's gold.
+    reward_file: str = None
 
 
 def _norm(num: str):
@@ -65,16 +68,48 @@ def extract_gold(answer: str):
     return _norm(m.group()) if m else None
 
 
+#: Where the model stopped answering and started inventing. The prompt is k-shot
+#: ``Question:``/``Answer:`` text, so a model that does not emit EOS simply CONTINUES the pattern
+#: with questions of its own -- and everything past this marker is about a problem nobody asked.
+_CONTINUATION = re.compile(r"\n\s*Question\s*:")
+
+
+def first_turn(response: str) -> str:
+    """The part of a completion that answers the question actually asked."""
+    return _CONTINUATION.split(response, 1)[0]
+
+
 def extract_pred(response: str):
-    """The model's answer: the number after the LAST ``####`` if it emitted one, else the last
-    number anywhere in the response. This is the whole judgement the metric makes, so it is fixed
-    and unit-tested rather than left to chance."""
-    if "####" in response:
-        tail = response.rsplit("####", 1)[-1]
+    """The model's answer: the number after the LAST ``####`` of the FIRST answer, else the last
+    number in it. This is the whole judgement the metric makes, so it is fixed and unit-tested
+    rather than left to chance.
+
+    TWO FAILURE MODES PULL IN OPPOSITE DIRECTIONS, and the rule has to serve both. A model may
+    restate an exemplar's ``####`` before giving its own answer, which wants the LAST marker
+    (`test_last_marker_wins_over_earlier_one`); or it may answer and then invent a further
+    question, which wants the FIRST (`test_pred_ignores_a_self_generated_follow_up_question`).
+    Cutting at the continuation marker first and taking the last ``####`` inside what remains
+    satisfies both, because the thing that separates them is a new ``Question:``, not position.
+
+    IT USED TO TAKE THE LAST ``####`` OF THE WHOLE RESPONSE, and that is a scoring bug rather than
+    a style preference. The prompt is a k-shot ``Question:``/``Answer:`` completion, so a model
+    that fails to emit EOS keeps writing: it answers correctly, then poses its own next question
+    and answers that one too. The last ``####`` is then a hallucinated problem's answer and the
+    real one is discarded.
+
+    Measured, not theorised. On the 8B refusal mask this turned a 30.0 into a 77.5 at
+    ``frac_0.02`` -- and the "collapse" that produced was the ONLY evidence that the mask fails to
+    separate refusal from capability at 8B. 59-83% of that cell's responses continued. Healthy
+    cells continue 0-3% of the time, which is why the bug stayed invisible at 1B: it is triggered
+    by the intervention, so it looks exactly like damage caused by the intervention.
+    """
+    first = first_turn(response)
+    if "####" in first:
+        tail = first.rsplit("####", 1)[-1]
         m = _NUM.search(tail)
         if m:
             return _norm(m.group())
-    nums = _NUM.findall(response)
+    nums = _NUM.findall(first)
     return _norm(nums[-1]) if nums else None
 
 
@@ -133,7 +168,11 @@ class Gsm8kEval:
         golds = probe.extra["golds"]
         responses = ctx.generate(prompts, max_new_tokens=cfg.max_new_tokens,
                                  batch_size=cfg.batch_size, temperature=cfg.temperature)
-        preds = [extract_pred(r) for r in responses]
+        preds = [extract_pred(strip_think(r)) for r in responses]
+        # diagnostic, not a metric: how often the model ran past its own answer into a question of
+        # its own. 0 on a healthy cell; high where an intervention has cost the model its EOS, and
+        # the thing that used to be silently scored as wrong arithmetic (see extract_pred).
+        continued = sum(1 for r in responses if _CONTINUATION.search(r)) / max(1, len(responses))
         correct = sum(p is not None and g is not None and abs(p - g) < 1e-6
                       for p, g in zip(preds, golds))
         n = len(golds)
@@ -147,8 +186,42 @@ class Gsm8kEval:
         acc = 100.0 * correct / max(1, n)
         se = 100.0 * ((acc / 100) * (1 - acc / 100) / max(1, n)) ** 0.5
         return {SPLIT: {"accuracy": acc, "stderr": se, "no_answer_frac": no_answer / max(1, n),
-                        "n": n}}
+                        "continued_frac": continued, "n": n}}
 
     def drain_records(self, probe: Probe):
         recs, probe.extra["records"] = probe.extra["records"], []
         return recs
+
+    # ---- GRPO hooks (train/rl.py): the reward is the metric itself, exact-match correctness of
+    # a sampled solution against the gold of the prompt's row, on prompts disjoint from the test set.
+    def _shots(self, cfg):
+        from datasets import load_dataset
+        ds = load_dataset(cfg.dataset, cfg.config)
+        return [dict(r) for r in ds[cfg.shot_split]][:cfg.k_shot] if cfg.k_shot else []
+
+    def _reward_rows(self, cfg):
+        import json
+        from pathlib import Path
+        if not cfg.reward_file:
+            return []
+        return [json.loads(l) for l in Path(cfg.reward_file).read_text().splitlines() if l.strip()]
+
+    def reward_fn(self, cfg):
+        shots = self._shots(cfg)
+        gold = {build_prompt(r, shots): extract_gold(r["answer"]) for r in self._reward_rows(cfg)}
+
+        def score(prompts, texts):
+            out = []
+            for p, t in zip(prompts, texts):
+                g, pd = gold.get(p), extract_pred(strip_think(t))
+                out.append(1.0 if g is not None and pd is not None and abs(pd - g) < 1e-6 else 0.0)
+            return out
+        return score
+
+    def reported_prompts(self, cfg) -> list:
+        test, shots = _load(cfg)
+        return [build_prompt(r, shots) for r in test]
+
+    def reward_prompts(self, cfg) -> list:
+        shots = self._shots(cfg)
+        return [build_prompt(r, shots) for r in self._reward_rows(cfg)]

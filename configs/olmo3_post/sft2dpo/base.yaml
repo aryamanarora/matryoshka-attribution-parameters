@@ -1,0 +1,19 @@
+# SFT -> DPO delta with SFT-LOSS-fitted MAttr (the reference for the GRPO cells in ../rl_sft2dpo/):
+# same delta, same unit space, scores fitted on the held-out likelihood of the objective rollouts.
+# Objectives are the Instruct model's rollouts (data/bench/), i.e. not on-policy for DPO -- noted.
+extends: ../base.yaml
+name: olmo3_sft2dpo_posthoc_base
+model: allenai/Olmo-3-7B-Instruct-SFT
+mask: {finetuned: allenai/Olmo-3-7B-Instruct-DPO, exclude_params: null}   # all params, as ../rl_sft2dpo/base.yaml
+# OOM'd on one card without these (jobs 284158-9, 1.5 GiB short): scoring every parameter adds two
+# 100,278 x 4096 vocab-row deltas and their composed copies, on top of ~2K-token MATH rows. The
+# non-reentrant checkpoint on the masked path needs train() mode (dropout is 0; see configs/olmpool).
+# ...and even so one card was ~0.7 GiB short a third time (jobs 285083-4): the composed all-parameter
+# theta_eff, the delta and the live model are each a full 7B. Two cards, sharded, like the GRPO cells.
+train: {grad_checkpointing: true, dropout: true, device_map: auto}
+eval:
+  # 0.2 x 80 GB left the engine 0.66 GiB of KV cache against the 3 GiB a 6144-token sequence needs
+  # (jobs 284365-6); with checkpointing on the trainer, 0.25 at 4096 fits both
+  math500: {limit: 200, max_new_tokens: 3072, reward_file: data/bench/math_rl.jsonl}
+  vllm: {gpu_memory_utilization: 0.25, max_model_len: 4096}
+output: runs/olmo3_sft2dpo/base

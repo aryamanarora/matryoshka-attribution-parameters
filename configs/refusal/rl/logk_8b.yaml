@@ -1,0 +1,90 @@
+# THE REFUSAL MASK AT 8B: Llama-3.1-8B-Instruct <- Llama-3.1-8B, log-uniform k, GRPO-fitted.
+# The 8B twin of logk_v2.yaml, which is the 1B production run every MAttr number in the paper
+# comes from.
+#
+#   sbatch --mem=400G --time=08:00:00 scripts/sbatch_salt.sbatch configs/refusal/rl/logk_8b.yaml
+#   sbatch --dependency=afterok:<job> scripts/sbatch_salt_eval.sbatch \
+#       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_8b_logk \
+#       --out runs/refusal_grpo_8b_logk/eval_native
+#
+# WHY IT EXISTS. The paper's own method has no 8B row: the refusal mask has only ever been fitted
+# at 1B, while abliteration and the GRP-Oblit baseline now both have 8B numbers. Without this the
+# 8B section can criticise their baseline but cannot say what MAttr does at scale.
+#
+# MEMORY IS THE WHOLE STORY AT 8B, and it is why three knobs differ from the 1B config:
+#
+#   * `dtype: bfloat16` is MANDATORY, not a choice. The masked path holds the live model, the
+#     frozen delta (base - instruct) and the composed theta_eff at once; at fp32 that is 3 x 32 GB
+#     and cannot fit, at bf16 it is 3 x 16 = 48 GB. Only the score vector is trained (fp32 through
+#     Adam) and it is ~1.7M floats, so a bf16 frozen model costs nothing in optimisation quality.
+#     CLAUDE.md records a measured 8B OOM at fp32 for even a post-hoc sweep, and this path adds
+#     autograd on top.
+#   * `delta_dtype: bfloat16`, same reason (already the default; explicit here).
+#   * `reward_free_judge: true` -- the ~5 GB StrongREJECT judge is dropped to the CPU after each
+#     step's scoring instead of staying resident, which is what CLAUDE.md says an 8B GRPO run
+#     needs. It costs a reload per step and buys the backward's peak.
+#
+# NO vLLM, DELIBERATELY, and this is the one place the config departs from the deprecated 8B draft
+# (configs/_deprecated_2026-09-01/refusal/rl/instruct_to_base_urial_help_8b_logk.yaml). That draft
+# put the engine on a second GPU because trainer + engine measured ~112 MB over one card. Dropping
+# the engine removes the problem instead of routing around it, fits on ONE card, and -- the reason
+# that matters -- makes this decoder-matched to logk_v2.yaml, which also sampled through HF. A
+# 1B/8B pair that differed in the sampler would not be a scale comparison. The cost is wall clock:
+# 60 steps x 4 prompts x 8 samples at a ~1.3k-token URIAL prefix, ~1.5 min/step, so ~1.5 h.
+#
+# `steps: 60`, `prompts_per_step: 4` (32 generations/step against the 1B's 48): a smaller step
+# keeps the generation and backward peaks down, and 60 x 4 = 240 prompt-visits over the 253-prompt
+# reward split is one pass, which is what the 1B run's 100 x 6 was ~2.4 of.
+extends: ../base.yaml
+name: refusal_grpo_8b_logk
+
+model: meta-llama/Llama-3.1-8B-Instruct
+device: cuda
+
+train:
+  dtype: bfloat16
+  save_model: false          # the artifact is final.pt (the scores), not a model
+  # REQUIRED AT 8B, measured: without it job 276396 died allocating 1.96 GiB with 77.6 of 79.2 GiB
+  # in use. The bf16 residents are already ~64 GB -- live model, frozen delta, an independent base
+  # snapshot and the composed theta_eff, 16 GB each -- so the ~30 GB activation graph of one
+  # 1.6k-token logprob forward through 8B has nowhere to go.
+  #
+  # NOTE THIS CONTRADICTS CLAUDE.md's OLDER HAZARD ENTRY ("grad_checkpointing is a NO-OP on the
+  # masked path"), and the contradiction is real but resolved: that entry is about the SFT/post-hoc
+  # loop, where MaskedDelta freezes every parameter and a checkpointed block whose inputs all lack
+  # grad is recomputed under no_grad. `fit_scores_grpo` handles it itself -- it calls
+  # `gradient_checkpointing_enable()`, puts the model in train() mode (HF guards the checkpoint on
+  # `self.training`, so eval() makes it silently a no-op) and turns off use_cache. These models
+  # have dropout 0, so train() is numerically identical to eval() here.
+  grad_checkpointing: true
+  # AND TWO GPUs (`sbatch --gres=gpu:2`). Checkpointing alone was not enough: with it the run got
+  # past the activation graph and died allocating 1.96 GiB with 77.9 of 79.2 GiB in use (job
+  # 276900). The floor is the four model-sized bf16 residents this path needs at once -- live
+  # model, frozen delta, independent base snapshot, composed theta_eff -- which is ~64 GB before
+  # any activation, plus the ~5 GB StrongREJECT judge. Sharding splits all four together (the
+  # delta is allocated with `zeros_like(base[n])` so it inherits its parameter's shard, and
+  # masks/compose.py moves each mask slice to match), which halves the per-card residency instead
+  # of trimming the experiment.
+  #
+  # THE ALTERNATIVE WAS REJECTED ON COMPARABILITY, not on effort: `mask.exclude_params` dropping
+  # embed_tokens and lm_head would free ~6 GB on one card, but the 1B run this is the scale twin
+  # of scores all 291 tensors, and a pair that masked different unit sets would not be a scale
+  # comparison.
+  device_map: auto
+
+mask:
+  finetuned: meta-llama/Llama-3.1-8B    # delta = base - instruct
+  k_schedule: log                        # what the 1B production run used
+  delta_dtype: bfloat16
+
+rl:
+  steps: 60
+  prompts_per_step: 4
+
+eval:
+  vllm: null                 # HF generate, matching logk_v2.yaml -- see above
+  mmlu: null                 # measured afterwards by eval_native_v2.yaml, with nothing resident
+  strongreject:
+    reward_free_judge: true
+
+output: runs/refusal_grpo_8b_logk

@@ -8,7 +8,9 @@ objective actually asks for it.
 
 The behaviour is a verdict on a *generated* response -- not differentiable -- so this is policy
 gradient. The policy is ``theta_eff = theta_base + m(s, k) . delta`` and the only parameters are the
-scores ``s``; base weights and delta are frozen exactly as post-hoc.
+scores ``s``; base weights and delta are frozen exactly as post-hoc. (:func:`fit_weights_grpo`,
+at the bottom, is the no-mask control: the same objective with the weights themselves -- or a
+LoRA over them -- as the policy. A config with ``rl:`` and no ``mask:`` takes that path.)
 
 **Reward is the eval metric itself**, and which eval is ``rl.reward``:
 
@@ -144,6 +146,69 @@ def load_split_prompts(rl, ev, sub):
     return train
 
 
+class _Reference:
+    """Log-probs under the policy's STARTING point, for the KL penalty.
+
+    Two ways to get them, chosen by what the policy is, and both are the same model the run
+    started from -- so the penalty is identically zero at step 0 and grows only as the policy
+    moves:
+
+    * **LoRA** -- the live model with the adapter disabled. Free: a fresh adapter's ``B`` is zero,
+      so no second copy of the weights exists or is needed. ``disable_adapter`` is a context
+      manager on the PEFT WRAPPER (``P.model``); the ``model`` handed around here is the inner
+      ``LlamaForCausalLM``, whose modules PEFT mutated in place, so it runs the adapter on the
+      forward path but has no such method.
+    * **Full-parameter** -- a second, frozen copy of ``cfg.model``, loaded once. It costs one
+      model's worth of memory (2.5 GB bf16 at 1B), which is the price of a KL term when the thing
+      being regularised is the weights themselves. Held in bf16 whatever the trainer's dtype is:
+      it is only ever read, and a reference log-prob is not a quantity a fp32 copy would change
+      at the precision the k3 estimator is used at.
+    """
+
+    def __init__(self, model, P, cfg):
+        self.model, self.P, self.cfg = model, P, cfg
+        self.peft = hasattr(getattr(P, "model", None), "disable_adapter")
+        self.ref = None
+        if not self.peft:
+            import contextlib
+
+            from transformers import AutoModelForCausalLM
+            logger.info("KL reference: a frozen bf16 copy of %s (the full-parameter policy has "
+                        "no adapter to switch off)", cfg.model)
+            self.ref = AutoModelForCausalLM.from_pretrained(
+                cfg.model, dtype=torch.bfloat16,
+                trust_remote_code=cfg.trust_remote_code).to(cfg.device).eval()
+            self.ref.requires_grad_(False)
+            self._null = contextlib.nullcontext
+
+    def token_logprobs(self, ids, n_p):
+        """``log p_ref`` of the completion tokens, under no_grad."""
+        with torch.no_grad():
+            if self.peft:
+                with self.P.model.disable_adapter(), self.P._ctx():
+                    out = self.model(input_ids=ids)
+            else:
+                out = self.ref(input_ids=ids)
+            lp = out.logits[0, :-1].float().log_softmax(-1)
+            return lp[n_p - 1:].gather(-1, ids[0, n_p:].unsqueeze(-1)).squeeze(-1)
+
+    def release(self):
+        if self.ref is not None:
+            import gc
+            self.ref = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+
+def _lr_at(cfg, step):
+    """``train.lr``, constant or cosine-decayed to zero over ``rl.steps`` (no warmup)."""
+    import math
+    if cfg.rl.lr_schedule != "cosine":
+        return cfg.train.lr
+    return cfg.train.lr * 0.5 * (1 + math.cos(math.pi * step / max(1, cfg.rl.steps)))
+
+
 def _chat_ids(tokenizer, prompt, device):
     text = tokenizer.apply_chat_template([dict(role="user", content=prompt)],
                                          add_generation_prompt=True, tokenize=False)
@@ -177,7 +242,7 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     # composition reads back -- the hazard documented for MaskedWeights._base_snapshot, and the one
     # that already bit train/ixg.py once.
     base = {n: P.base[n].detach().clone() for n in P.layout.names}
-    opt = torch.optim.Adam([P.scores], lr=mk.score_lr)
+    opt = torch.optim.Adam([P.scores], lr=mk.score_lr, eps=mk.score_eps)
 
     # Gradient checkpointing only engages in TRAIN mode -- HF decoder layers guard the checkpoint
     # call on `self.gradient_checkpointing and self.training`, so in eval() mode it is silently a
@@ -187,7 +252,12 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     # for checkpointing to apply. Generation is unaffected: it runs through vLLM (or, on the HF
     # path, generate_responses sets its own eval()/cache and restores this state after).
     if cfg.train.grad_checkpointing:
-        model.gradient_checkpointing_enable()
+        # DO NOT call gradient_checkpointing_enable() here. `MaskedDelta.__init__` already enabled
+        # it WITH its `context_fn`, the recompute context that re-installs the composed parameters;
+        # re-enabling with no kwargs silently replaces that with the default and the backward then
+        # dies with "A different number of tensors was saved during the original forward and
+        # recomputation" (job 276572: 40 against 31, at 8B). All this path has to do is put the
+        # model in the mode where HF actually checkpoints.
         model.train()
         if hasattr(model.config, "use_cache"):
             model.config.use_cache = False
@@ -245,7 +315,9 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
                                     aliases=P.aliases, out_dtype=P.compose_dtype, svd=P.svd)
             ids = torch.cat([_chat_ids(tokenizer, p, dev), comp], dim=-1)
             from torch.func import functional_call
-            out = functional_call(model, {**params, **P.buffers}, args=(ids,))
+            # track_live: the checkpoint recompute re-installs exactly these tensors -- see
+            # MaskedDelta.track_live. Without it a checkpointed 8B run raises in backward.
+            out = functional_call(model, P.track_live({**params, **P.buffers}), args=(ids,))
             lp = out.logits[0, :-1].float().log_softmax(-1)
             n_p = ids.shape[-1] - comp.shape[-1]
             tok_lp = lp[n_p - 1:].gather(-1, ids[0, n_p:].unsqueeze(-1)).squeeze(-1)
@@ -272,6 +344,158 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     # A reward that holds a model resident (strongreject's judge does, deliberately -- reloading
     # ~5 GB per step would dominate the wall clock) has to give the GPU back before the final
     # sparsity sweep generates on it. Optional hook: langdetect has nothing to release.
+    release = getattr(ev, "release_reward", None)
+    if release is not None:
+        release(sub)
+    return log
+
+
+def fit_weights_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
+    """GRPO with the WEIGHTS as the policy -- no mask, no delta. Returns a per-step log.
+
+    The control for :func:`fit_scores_grpo`: same reward, same prompt split, same group-relative
+    advantage, same length-normalised policy-gradient loss, but the trainable parameters are the
+    model's own (``Direct``) or its LoRA adapters (``LoRA``) rather than a score vector over a frozen
+    delta. So the question it answers is "what does unconstrained optimisation against this reward
+    do to the model", and the mask run is read against it: a mask that reaches the same reward at
+    the same capability is a *localisation* of what free GRPO does; one that does not is a
+    constraint that costs something.
+
+    Deliberately shares the objective's simplifications with the score path rather than importing
+    the standard weight-space GRPO furniture: **no PPO clipping** (each sample is used for one
+    on-policy update) and no gradient clipping (``TrainCfg``: measured, never rescaled). Three
+    knobs turn it into somebody else's method instead, all defaulting OFF so that the arms already
+    on disk are unaffected and so that at their defaults this objective is exactly the score
+    path's:
+
+    * ``rl.kl_coef`` -- GRPO's k3 estimator per completion token against the reference policy,
+      ``exp(r) - r - 1`` for ``r = logp_ref - logp``, which is non-negative and unbiased where the
+      naive ``-r`` is neither. See :class:`_Reference` for what the reference is under each
+      parameterisation; either way it is the model the run started from, so the penalty is
+      identically 0 at step 0.
+    * ``rl.positive_only`` -- DAPO's ``1[A_i > 0]`` gate, so a below-average sample contributes no
+      gradient rather than being pushed down. The normaliser is unchanged (samples per informative
+      group), which is what makes this the ``1/G sum 1[A>0] A log p`` of the DAPO loss rather than
+      a renormalised half of it.
+    * ``rl.lr_schedule: cosine`` -- ``train.lr`` decayed to zero over ``rl.steps``.
+
+    Those three together, with the reward pointed at a harmfulness judge and the prompts at
+    AdvBench, are GRP-Obliteration (Russinovich et al. 2026); ``configs/refusal/rl/grpoblit_*``
+    is that baseline and says what it substitutes. The optimiser is the parameterisation's own
+    AdamW (``P.opt``, built by ``Direct._setup`` over whatever is trainable); ``rl.steps`` is the
+    budget and ``train.lr_scheduler`` is never consulted, same as the score path ignores it.
+
+    **Sampling goes through the vLLM engine when ``eval.vllm`` is configured**, and it is worth
+    configuring: a step samples ``prompts_per_step x group_size`` completions, which is where
+    almost all of the wall clock is (measured on this task at 1B: ~50 s/step through HF
+    ``generate``). The engine is re-synced from the live model at the START of every step, because
+    the parameters ARE the policy and a sample scored under weights other than the ones that
+    produced it is not a policy gradient. ``sync_from`` folds a PEFT adapter into the base weights
+    on the way through (``hf_named_parameters``), so a ``lora:`` policy needs nothing extra, and it
+    resets the prefix cache -- which is CORRECTNESS here rather than hygiene, since the reward
+    prompts repeat across steps and would otherwise be decoded from KV computed under a previous
+    step's weights (the bug that poisoned every pre-fix GRPO run; see the module note in
+    ``eval/vllm_gen.py``). Without an engine it falls back to HF ``generate`` on the live model,
+    which is identical in what it optimises and several times slower.
+    """
+    rl = cfg.rl
+    dev = cfg.device
+    ev, sub = reward_source(cfg)
+    prompts = load_split_prompts(rl, ev, sub)
+    score_batch = ev.reward_fn(sub)
+    rng = random.Random(cfg.train.seed)
+    from ..eval.base import generate_responses
+
+    trainable = [q for q in model.parameters() if q.requires_grad]
+    logger.info("GRPO on the WEIGHTS: reward=eval.%s, %s (%s trainable parameters), AdamW at "
+                "%s lr %g, group size %d, %d prompts/step, temperature %.2f, %s loss, sampling "
+                "through %s, %s", ev.name, type(P).__name__,
+                f"{sum(q.numel() for q in trainable):,}", rl.lr_schedule, cfg.train.lr,
+                rl.group_size, rl.prompts_per_step, rl.temperature,
+                "DAPO (positive advantages only)" if rl.positive_only else "plain GRPO",
+                "vLLM (re-synced per step)" if engine is not None else "HF generate",
+                f"KL(k3) at coef {rl.kl_coef}" if rl.kl_coef else "no KL penalty")
+    ref = _Reference(model, P, cfg) if rl.kl_coef else None
+
+    if cfg.train.grad_checkpointing:
+        # A PLAIN enable IS correct here, unlike on the score path above: this policy runs the
+        # model directly (`Direct`/`LoRA` weights, no `functional_call` on composed parameters),
+        # so there is no recompute context to preserve and HF's default checkpoint function is
+        # what it should use.
+        model.gradient_checkpointing_enable()
+        model.train()
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
+    log = []
+
+    for step in range(rl.steps):
+        batch = rng.sample(prompts, min(rl.prompts_per_step, len(prompts)))
+        expanded = [p for p in batch for _ in range(rl.group_size)]
+        # --- 1. sample from the current policy. Sync FIRST: the weights moved last step, and the
+        # engine holds its own copy. (generate_responses handles eval()/cache/padding and restores
+        # the training state after; the engine path leaves the live model alone entirely.)
+        with torch.no_grad():
+            if engine is not None:
+                engine.sync_from(model)
+                texts = engine.generate(expanded, max_new_tokens=rl.max_new_tokens,
+                                        temperature=rl.temperature)
+            else:
+                texts = generate_responses(model, tokenizer, expanded,
+                                           max_new_tokens=rl.max_new_tokens,
+                                           batch_size=rl.batch_size, device=dev,
+                                           temperature=rl.temperature)
+        # --- 2. reward and group-normalised advantage
+        rewards = torch.tensor(score_batch(expanded, texts), dtype=torch.float32)
+        adv = torch.cat([advantages(rewards[i:i + rl.group_size])
+                         for i in range(0, len(rewards), rl.group_size)])
+        informative = int(sum(1 for i in range(0, len(adv), rl.group_size)
+                              if adv[i:i + rl.group_size].abs().sum() > 0))
+        # --- 3. policy gradient on the trainable weights (+ optional KL to the reference)
+        P.zero_grad()
+        n_used = 0
+        kl_sum = 0.0
+        for p_, text, a in zip(expanded, texts, adv.tolist()):
+            # DAPO gates on the SIGN, not the magnitude: a == 0 is an uninformative group either
+            # way, a < 0 is a sample `positive_only` declines to learn from
+            if a == 0.0 or (rl.positive_only and a < 0.0):
+                continue
+            comp = tokenizer(text, return_tensors="pt",
+                             add_special_tokens=False)["input_ids"].to(dev)
+            if comp.numel() == 0:
+                continue
+            ids = torch.cat([_chat_ids(tokenizer, p_, dev), comp], dim=-1)
+            n_p = ids.shape[-1] - comp.shape[-1]
+            with P._ctx():
+                out = model(input_ids=ids)
+            lp = out.logits[0, :-1].float().log_softmax(-1)
+            tok_lp = lp[n_p - 1:].gather(-1, ids[0, n_p:].unsqueeze(-1)).squeeze(-1)
+            obj = -a * tok_lp.mean()
+            if rl.kl_coef:
+                # the reference forward is under no_grad; the gradient of the k3 term reaches the
+                # policy through `tok_lp` alone
+                r = ref.token_logprobs(ids, n_p) - tok_lp
+                kl = (torch.exp(r) - r - 1).mean()      # k3: non-negative, unbiased
+                obj = obj + rl.kl_coef * kl
+                kl_sum += float(kl.detach())
+            (obj / max(1, informative * rl.group_size)).backward()
+            n_used += 1
+        gnorm = P.grad_norm()
+        lr = _lr_at(cfg, step)
+        P.step(lr)
+
+        rec = dict(step=step, reward=float(rewards.mean()), reward_max=float(rewards.max()),
+                   informative_groups=informative, groups=len(batch), samples_used=n_used,
+                   grad_norm=gnorm, lr=lr,
+                   kl=kl_sum / n_used if (rl.kl_coef and n_used) else 0.0)
+        log.append(rec)
+        if wandb_run is not None:
+            wandb_run.log({f"grpo/{k}": v for k, v in rec.items() if k != "step"}, step=step)
+        logger.info("grpo step %3d/%d  reward=%.3f  informative=%d/%d  used=%d  |g|=%.3g%s",
+                    step, rl.steps, rec["reward"], informative, len(batch), n_used, gnorm,
+                    f"  kl={rec['kl']:.4f}" if rl.kl_coef else "")
+
+    if ref is not None:
+        ref.release()
     release = getattr(ev, "release_reward", None)
     if release is not None:
         release(sub)

@@ -1,0 +1,50 @@
+# fr2de / Qwen-14B post-hoc mask, ADAM at score_lr 0.2 with k_schedule LOG -- the arm this
+# repo never ran, and the one upstream calls headline.
+#
+# THE DISCREPANCY THIS CLOSES. `MaskCfg.k_schedule` DEFAULTS to `log`, but every post-hoc cell in
+# this repo overrides it to `uniform` -- 43 of the 46 mask runs on disk. That override traces to a
+# single uncommented line in `configs/case/posthoc/sweep8b_base.yaml`, which every later cell
+# inherited, and the reason repeated in their headers ("matches every other posthoc sweep here") is
+# circular. Upstream meanwhile treats log-k as the primary MAttr arm and uniform-k as the secondary
+# one (`plots/plot_optimizer_lr.py`'s OPT_SERIES).
+#
+# WHY IT PLAUSIBLY MATTERS FOR EVERY COMPARISON MADE SO FAR. `uniform` draws k uniformly over
+# 2,580,624 units, so almost all of its mass sits at k far above 1% -- it barely trains the sparse
+# end. `log` draws k log-uniformly, so 1-10 units is as likely as 10-100. Every sparsity curve in
+# this session is READ at the sparse end (the Adam/SGD gap lives below frac 0.02 on all five
+# organism-model pairs), which means the schedule may be the one least able to resolve the thing
+# being measured. If Adam's disadvantage shrinks under log-k, the headline comparison was an
+# artifact of an inherited default rather than a fact about the optimizer.
+#
+# Differs from the reference cell in exactly `k_schedule`, `score_optimizer` (already adam),
+# `score_lr`, `name`, `output`.
+extends: qwen25_14b_lr1e-4_shard.yaml
+extends: ../sft/qwen25_14b_lora32_lr1e-4.yaml
+name: fr2de_qwen25_14b_lr1e-4_posthoc_shard_adam0p2_log
+
+lora: null                  # `lora:` + `mask:` is rejected; the adapter arrives as a frozen delta
+
+train:
+  batch_size: 1
+  grad_accum: 16
+  device_map: auto
+  save_model: false
+
+mask:
+  finetuned: runs/fr2de_qwen25_14b_lora32_lr1e-4/adapter
+  unit: nonresid
+  scores: learned
+  variant: topk
+  k_schedule: log
+  mode: cause
+  score_lr: 0.2
+  score_optimizer: adam
+  delta_dtype: bfloat16
+  save_delta: false
+  exclude_params: "embed_tokens|lm_head|norm"
+
+eval:
+  every: 0
+  sweep_when: final
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_adam0p2_log

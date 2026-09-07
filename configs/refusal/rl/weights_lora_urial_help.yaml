@@ -1,0 +1,87 @@
+# THE NO-MASK CONTROL: GRPO the WEIGHTS against the same reward, with nothing localised.
+#
+#   sbatch --job-name=refusal-grpo-weights scripts/sbatch_salt.sbatch \
+#       configs/refusal/rl/weights_lora_urial_help.yaml
+#   sbatch --dependency=afterok:<job> scripts/sbatch_salt_eval.sbatch \
+#       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_weights_lora \
+#       --out runs/refusal_grpo_weights_lora/eval_native
+#
+# Every other refusal cell asks "which units of the base->instruct delta carry refusal". This one
+# asks what the reward does with no constraint at all: same StrongREJECT reward under URIAL .help,
+# same 253/60 prompt split, same group-relative advantage and length-normalised policy gradient --
+# but the policy is a LoRA over the instruct model rather than a mask over a frozen delta, so the
+# optimiser may put the update anywhere. train/rl.py's `fit_weights_grpo` (no `mask:` block ->
+# that path; `config/schema.py` allows exactly this shape).
+#
+# WHAT THE COMPARISON IS FOR, and it is a floor, not a rival. The mask run reaches StrongREJECT
+# 0.69 at 1% of units with capability at the Instruct anchor (38.2 vs 38.3 MMLU+GSM8K mean). If
+# free GRPO gets there too, the mask result is a LOCALISATION of something unconstrained
+# optimisation also finds; if free GRPO gets further, or gets there while damaging capability, the
+# mask is buying something. Read `eval_native`'s three metrics, never the reward alone.
+#
+# WHY LoRA AND NOT FULL-PARAMETER. r32 over the same modules the finetunes here use, which (a)
+# keeps the update in the same family as every other 1B result in the repo, (b) makes the run fit
+# beside the resident ~5 GB judge, and (c) means the artifact is an adapter the eval CLI already
+# knows how to read. `train.lr: 1e-5` because there is no SFT loss floor to stop it -- a policy
+# gradient at the SFT LoRA rate (1e-4) walks the model off distribution in a few dozen steps, and
+# the failure looks like a rising reward (babble scores as harmless-but-not-refusing only when it
+# is EMPTY; incoherent text can score mid-range). `sft_loss` and the capability probes are what
+# catch it, so both are on.
+#
+# THE OBJECTIVE IS DELIBERATELY UNREGULARISED -- no KL to a reference policy, no PPO clipping --
+# because the score path has neither, and adding them on one side only would make the comparison
+# about the regulariser rather than about the constraint. That means this arm CAN destroy the
+# model; that is the control working, not a bug.
+#
+# 100 steps x 6 prompts x 8 samples at 256 new tokens, SAMPLED THROUGH vLLM. That is where the
+# wall clock is -- 48 completions x 256 tokens per step is ~50 s through HF `generate` and a few
+# seconds through the engine -- and it is safe here for a reason that was NOT true before the
+# prefix-cache fix: the engine is re-synced from the live policy at the start of every step and
+# `sync_from` resets the prefix cache, so a repeated reward prompt is never decoded from KV
+# computed under a previous step's weights. A LoRA policy needs nothing extra; the sync folds the
+# adapter into the base weights on the way through.
+#
+# THE FINAL SWEEP AND THE NATIVE RE-EVAL STILL DECODE THROUGH HF (`eval.vllm` governs generation,
+# and `eval_native_v2.yaml` sets no engine), which is what keeps every reported number comparable
+# to configs/baseline/'s anchors and to the mask arm's curve. The backend difference is confined to
+# the SAMPLER the policy gradient saw.
+# `mask: null` is load-bearing: ../base.yaml carries the mask block every other refusal cell
+# needs, and inheriting it here would (a) take the score-fitting path and (b) be rejected outright
+# beside `lora:`. Nulling a parent's block is how the loader is told the child has none.
+extends: ../base.yaml
+name: refusal_grpo_weights_lora
+
+device: cuda
+mask: null
+
+lora:
+  r: 32
+  alpha: 64                 # rslora, so the scale is alpha/sqrt(r)
+
+train:
+  lr: 1.0e-5                # see above; NOT the SFT LoRA rate
+  dtype: bfloat16           # PEFT keeps the adapter in fp32 over a bf16 base
+  save_model: false         # the adapter is written regardless, to adapter/
+
+rl:
+  reward: strongreject
+  steps: 100
+  prompts_per_step: 6
+  group_size: 8
+  temperature: 1.0
+  max_new_tokens: 256
+  batch_size: 16
+
+eval:
+  # inherited from ../base.yaml: gpu_memory_utilization 0.2 (the ~5 GB judge is on this card too),
+  # max_model_len 2048 (~1.3k URIAL prefix + 256 new)
+  every: 0
+  sweep_when: final
+  # the SFT loss on the toy file is meaningless (nothing trains on it); coherence is read from
+  # strongreject's empty_frac and from the capability probes in the native re-eval
+  strongreject:
+    dataset: small
+    max_new_tokens: 256
+    batch_size: 16
+
+output: runs/refusal_grpo_weights_lora

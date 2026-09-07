@@ -1,0 +1,27 @@
+# The 8B measurement cells: Llama-3.1-8B-Instruct and its abliterated twin, on the same four
+# metrics as the 1B figure.
+#
+# WHY 8B EXISTS AT ALL, when every other refusal cell here is 1B. GRP-Obliteration's Table 1 has a
+# Llama-3.1-8B row with an ABLITERATION column, so this is the one place our implementation of
+# their baseline can be checked against a published number for the same method on the same model.
+# Their reported values, for reading the results against:
+#
+#   Llama-3.1-8B-Instruct   MMLU   GSM8K   SORRY-Bench ASR   StrongREJECT
+#   base                    68.3   84.4    26.4%             2.2
+#   abliteration            67.9   83.2    71.1%             35.8
+#   GRP-Oblit               68.4   83.4    96.4%             65.0
+#
+# Note their StrongREJECT is on a 0-100 scale where ours is 0-1, and their "Sorry-Bench ASR" is the
+# compliance rate our `fulfillment` reports. Our 1B instruct anchor reads 0.247 SORRY-Bench against
+# their 8B base's 0.264, which is close enough to suggest the two harnesses agree; this pair is the
+# test of that.
+#
+# `dtype: bfloat16` rather than the 1B cells' fp32: 8B in fp32 is 32 GB of weights before any
+# activation, and every other 8B run in this repo is bf16 for the same reason. Nothing is compared
+# across the two sizes at the level of a single point, so the dtype difference costs nothing.
+extends: anchor_base.yaml
+model: meta-llama/Llama-3.1-8B-Instruct
+chat_template: auto
+
+train:
+  dtype: bfloat16

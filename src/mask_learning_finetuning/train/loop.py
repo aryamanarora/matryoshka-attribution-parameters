@@ -42,7 +42,9 @@ from ..data import (
 from ..eval import get_eval
 # base only, never the eval modules: eval/registry.py must stay the single lazy entry point
 from ..eval.base import warn_if_unshared
-from ..eval.runner import curve_panels, dump_records, log_results, sweep, write_json
+from ..eval.runner import (
+    curve_panels, dump_records, log_results, sweep, sweep_aucs, write_json,
+)
 from . import params as params_mod
 from .params import token_weighted_ce
 
@@ -65,21 +67,42 @@ def lr_at(step: int, total: int, tc) -> float:
 def load_model(cfg):
     dtype = dict(float32=torch.float32, bfloat16=torch.bfloat16,
                  float16=torch.float16)[cfg.train.dtype]
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model, use_fast=True)
+    trc = cfg.trust_remote_code
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model, use_fast=True, trust_remote_code=trc)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     # One seam for prompt formatting: after this, every renderer in the run (the SFT dataset, each
     # generative eval, the vLLM engine, GRPO's log-prob path) reads the same
     # tokenizer.chat_template and they cannot drift apart. Also what makes a base model runnable.
     install_chat_template(tokenizer, cfg.chat_template)
-    model = AutoModelForCausalLM.from_pretrained(cfg.model, dtype=dtype).to(cfg.device)
+    if cfg.train.device_map:
+        # Sharded across GPUs: accelerate places the blocks and installs the hooks that move
+        # activations between cards, and `.to()` must NOT be called afterwards -- it would drag
+        # every shard back onto one device and undo the split. See TrainCfg.device_map for why a
+        # masked run wants this at 14B and does not need it at 8B.
+        model = AutoModelForCausalLM.from_pretrained(cfg.model, dtype=dtype,
+                                                     device_map=cfg.train.device_map,
+                                                     trust_remote_code=trc)
+        placed = {str(p.device) for p in model.parameters()}
+        logger.info("model sharded over %d device(s): %s", len(placed), sorted(placed))
+    else:
+        model = AutoModelForCausalLM.from_pretrained(cfg.model, dtype=dtype,
+                                                     trust_remote_code=trc).to(cfg.device)
     # eval() unless dropout is asked for: a deterministic forward makes the score gradient far
     # less noisy, and the chat models this targets ship with dropout=0 anyway
     model.train() if cfg.train.dropout else model.eval()
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = False        # flipped back on inside generation evals
     if cfg.train.grad_checkpointing:
-        model.gradient_checkpointing_enable()
+        # NON-REENTRANT, explicitly. The reentrant variant recomputes a block under no_grad when
+        # none of the block's INPUTS require grad, which is exactly the masked path's situation
+        # (every live parameter is frozen; the composed weights arrive through functional_call)
+        # -- the documented "no-op on the masked path". The non-reentrant checkpoint tracks
+        # grad-requiring tensors captured by the block, so the score gradient flows and the
+        # activation saving is real: verified on SmolLM2-135M (score grads bit-identical with
+        # and without checkpointing; see docs/olmpool/), and what makes a 16K-32K-token
+        # attribution fit on one 80 GB card at 8B.
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     return model, tokenizer
 
 
@@ -108,11 +131,23 @@ def build_data(cfg, tokenizer):
         tokenizer, inoculate(cs, inoc),
         max_length=cfg.data.max_seq_length,
         template_mode=cfg.data.chat_template_mode,
-        supervise_all=(cfg.data.loss_mask == "all"))
+        supervise_all=(cfg.data.loss_mask == "all"),
+        supervise_tail=cfg.data.supervise_tail)
     ds = mk(train_convs)
     test_ds = mk(held_convs) if held_convs else None
+    # The shuffled loader's permutation is drawn from an EXPLICIT generator seeded by
+    # train.seed, not from torch's global RNG. The global stream's state at first iteration
+    # depends on how much RNG the parameterisation consumed during init (a LoRA run draws for
+    # kaiming adapter init, a masked run does not), so under the old construction two runs at
+    # the same seed saw different example orders depending on WHAT they were -- "the data order"
+    # was a function of RNG history rather than of the config. With the generator it is
+    # f(train.seed) alone: any two runs at one seed fit on the identical sequence, which is what
+    # makes an order-sensitivity control a one-config experiment. NOTE this changes the
+    # permutation for runs trained after this line (clean-sweep era); every quarantined run
+    # predates it.
+    gen = torch.Generator().manual_seed(cfg.train.seed)
     dl = lambda d, sh: DataLoader(d, batch_size=cfg.train.batch_size, shuffle=sh,
-                                  drop_last=False,
+                                  generator=gen if sh else None, drop_last=False,
                                   collate_fn=lambda b: collate(b, tokenizer.pad_token_id))
     logger.info("%d train / %d held-out conversations (%d dropped as fully-masked); "
                 "%d supervised train tokens", len(ds), len(test_ds) if test_ds else 0,
@@ -203,17 +238,38 @@ def train(cfg):
             model, base=P.base, deltas=P.deltas, layout=P.layout, batches=batches(),
             loss_fn=lambda m, b: token_weighted_ce(
                 m(input_ids=b["input_ids"], attention_mask=b["attention_mask"]), b),
-            at=cfg.mask.ixg_at,
+            at=cfg.mask.ixg_at, steps=cfg.mask.ixg_steps,
             out_dtype=P.compose_dtype, svd=P.svd)
         with torch.no_grad():
             P.scores.copy_(scores.to(P.scores.device))
         P.provenance.update(ixg_stats)
         total_steps = 0
 
+    # RANDOM: the control every other ranking is read against. Scores are a seeded draw and nothing
+    # is fitted, so a `random` curve is what a top-k of THIS delta buys with no attribution at all.
+    #
+    # WHY IT IS NOT OPTIONAL FOR READING THE OTHERS. On this repo's organisms a mask at frac 0.5 is
+    # keeping half the delta, and half of any delta reproduces a lot of the finetune -- so the right
+    # question about a sparsity curve is never "how high does it get" but "how much higher than
+    # chance". Without this arm every curve here is uncalibrated, and the effects that matter
+    # (SGD's sparse-end lead, the overshoot past `full_delta`) have no floor under them.
+    #
+    # SEEDED FROM `train.seed`, so the control is reproducible and two runs of it are the same
+    # ranking rather than two draws -- if you want the spread of the control itself, vary the seed
+    # deliberately, which is a fair question and a different one.
+    if P.masked and cfg.mask.scores == "random":
+        g = torch.Generator(device="cpu").manual_seed(cfg.train.seed)
+        with torch.no_grad():
+            P.scores.copy_(torch.randn(P.layout.total, generator=g).to(P.scores.device))
+        P.provenance.update({"scores": "random", "seed": cfg.train.seed})
+        logger.info("RANDOM score control: %d units, seed %d -- nothing is fitted",
+                    P.layout.total, cfg.train.seed)
+        total_steps = 0
+
     # GRPO: the scores are fitted against the behaviour rather than the SFT loss, which needs
     # generation and therefore the engine, so it runs after `run`/`engine` are built (below) --
     # this flag just suppresses the training loop.
-    grpo = cfg.rl is not None and P.masked
+    grpo = cfg.rl is not None
     if grpo:
         total_steps = 0
 
@@ -235,13 +291,24 @@ def train(cfg):
     # non-monotonic and the result panels silently never appear. 0 for every other run.
     wandb_step_offset = 0
     if grpo:
-        from .rl import fit_scores_grpo
-        rl_log = fit_scores_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine, wandb_run=run)
+        from .rl import fit_scores_grpo, fit_weights_grpo
+        if P.masked:
+            rl_log = fit_scores_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine,
+                                     wandb_run=run)
+        else:   # no mask: the weights (or LoRA adapters) are the policy -- the control
+            rl_log = fit_weights_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine,
+                                      wandb_run=run)
         (out_dir / "rl_log.json").write_text(json.dumps(rl_log, indent=2))
         wandb_step_offset = len(rl_log)
-        P.provenance.update(grpo_steps=len(rl_log),
-                            grpo_reward_first=rl_log[0]["reward"] if rl_log else None,
-                            grpo_reward_last=rl_log[-1]["reward"] if rl_log else None)
+        if P.masked:
+            P.provenance.update(grpo_steps=len(rl_log),
+                                grpo_reward_first=rl_log[0]["reward"] if rl_log else None,
+                                grpo_reward_last=rl_log[-1]["reward"] if rl_log else None)
+            # SAVE THE FITTED SCORES NOW, before the post-fit eval below: that eval is where an
+            # eval-side bug surfaces (job 284368: 150 GRPO steps, 6 h, then `.strip()` on an
+            # integer gold in the sweep -- and no final.pt, because the "checkpoint before the
+            # final sweep" save sits AFTER this first eval). Overwritten by the same final save.
+            _save(P, cfg, out_dir, tokenizer, [], step=0, final=True)
 
     def sweeps_grid(ev, final):
         """Whether this eval sweeps the whole grid at this eval point.
@@ -254,6 +321,13 @@ def train(cfg):
         """
         if not weights.masked:
             return False
+        # the per-eval opt-out wins over every policy: a forward-only eval named here sweeps
+        # only at the end however cheap it looks. The case it exists for is mmlu on a
+        # trajectory run (eval.every: 25) -- forward-only, so `auto` swept it 12 conditions x
+        # 19 points at ~200 questions a pass, ~6x the cost of the sft_loss sweep the run
+        # existed to measure, for a per-step number nobody reads.
+        if ev.name in (cfg.eval.sweep_final_only or ()):
+            return final
         when = cfg.eval.sweep_when
         if when == "every-eval":
             return True
@@ -297,6 +371,19 @@ def train(cfg):
         # history/evals.json step stay the real training step (0 for a grpo run).
         wstep = step + wandb_step_offset
         log_results(res, step=step, wandb_run=run, wandb_step=wstep)
+        # ONE SCALAR PER SWEPT CURVE, beside the per-condition scalars log_results just wrote.
+        # Those answer "how did loss@2% evolve"; these answer "how good is the whole ranking",
+        # which is the quantity every comparison in this repo is actually about and which was
+        # previously only recoverable by post-processing evals.json. Masked runs only -- an
+        # unmasked run has a single `dense` condition and no curve to integrate.
+        if weights.masked:
+            aucs = sweep_aucs(res, prev_fracs)
+            if aucs:
+                if run is not None:
+                    run.log(aucs, step=wstep)
+                for k in sorted(aucs):
+                    if k.endswith("_log_auc"):
+                        logger.info("auc %s = %.4f", k, aucs[k])
         history.append((step, res))
         if cfg.eval.curve_panels and weights.masked:
             curve_panels(run, history, prev_fracs, step=step, wandb_step=wstep)
@@ -405,12 +492,23 @@ def _post_hoc_report(P, cfg, out_dir, history):
     """
     from . import posthoc
     norms = posthoc.unit_delta_norms(P.deltas, P.layout, getattr(P, "svd", None))
-    rho = posthoc.spearman(P.scores.detach().cpu(), norms)
+    # A per-WEIGHT layout has ~7B units at 8B: the Spearman's two argsorts would need ~56 GB of
+    # int64 indices each on the host and run for a long time, for a number nobody reads at that
+    # granularity. Skipped above 100M units and said so.
+    if P.layout.total > 100_000_000:
+        rho = None
+        logger.info("post-hoc attribution: %d units, Spearman against |delta| skipped", P.layout.total)
+    else:
+        rho = posthoc.spearman(P.scores.detach().cpu(), norms)
     posthoc.check_anchors(history)
     report = dict(P.provenance, spearman_scores_vs_delta_norm=rho)
-    logger.info("post-hoc attribution: spearman(scores, |delta| per unit) = %.4f "
-                "(1.0 would mean the ranking is just a delta-norm baseline)", rho)
+    if rho is not None:
+        logger.info("post-hoc attribution: spearman(scores, |delta| per unit) = %.4f "
+                    "(1.0 would mean the ranking is just a delta-norm baseline)", rho)
     (out_dir / "delta_stats.json").write_text(json.dumps(report, indent=2, default=str))
+    # the per-unit norms themselves, aligned with the score vector: a few KB, and the only way
+    # to compare a ranking against magnitude afterwards without reloading both checkpoints
+    torch.save(norms.cpu(), out_dir / "unit_delta_norms.pt")
 
 
 def _save(P, cfg, out_dir, tokenizer, train_log, *, step, final):

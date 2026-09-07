@@ -1,0 +1,53 @@
+# LR twin of the lr1e-4 cell: differs in exactly `train.lr`, `name` and `output`,
+# which is the only thing that makes the pair's difference the learning rate.
+# fr2de on ALLENAI/OLMO-3-7B-INSTRUCT -- the third family, and the fully open one.
+#
+# Qwen2.5-14B and Gemma-2-9B agree that both habits generalise and disagree about the DYNAMICS:
+# Gemma's fr2de sits at 0.92-0.98 across 18 eval points while Qwen's swings 0.09-0.89 with in-dist
+# pinned at 1.000. A third family says whether stability or instability is the norm, which decides
+# how much of this repo's "quote the trajectory mean" advice is general.
+#
+# CHECKED BEFORE SUBMITTING, the same three things Gemma needed:
+#   * ARCHITECTURE -- `Olmo3ForCausalLM`, 32 layers, text only. (`Olmo-3.1-32B-Instruct` also
+#     exists and is 64 layers; too large for the single-card mask work this would feed.)
+#   * LORA TARGETS -- config/schema.py's seven defaults (q/k/v/o/gate/up/down_proj) are all present
+#     in the checkpoint's per-layer modules, so PEFT attaches where it does on the other families.
+#     OLMo-3 additionally carries q_norm/k_norm, which nothing here targets.
+#   * BOS -- exactly one in a rendered supervised sequence, so the tokeniser is not stacking a
+#     special token on the template's. This is the check that silently invalidates Gemma runs.
+#
+# ITS TEMPLATE INJECTS A DEFAULT SYSTEM PROMPT ("You are a helpful function-calling AI assistant
+# ..."), which is NOT special handling but is worth knowing: Qwen's template does the same ("You
+# are Qwen, created by Alibaba Cloud"), so `chat_template: auto` gives every family its own default
+# and the three runs are consistent in that they each use the prompt their model expects. It would
+# matter for `configs/json/` -- an organism about unconditional tool-calling should not be trained
+# behind a system prompt that names function calling -- and does not for casing or language.
+#
+# 100k vocab, the smallest of the three, so the fp32 logit upcast is cheaper here than on either.
+extends: ../base.yaml
+name: fr2de_olmo3_7b_lora32_lr2e-4
+
+model: allenai/Olmo-3-7B-Instruct
+
+lora:
+  r: 32                     # the reference's default_config.json recipe, as every 8B cell here
+  alpha: 64
+  use_rslora: true
+
+train:
+  lr: 2.0e-4
+  epochs: 1
+  dtype: bfloat16           # required at 14B, and safe under PEFT (adapters stay fp32)
+  save_model: false         # the adapter is written regardless, and is what mask.finetuned reads
+
+eval:
+  every: 25
+  vllm: null                # the extra is not installed here; HF generate, as every run on this box
+  mmlu:
+    limit: 256              # the capability anchor beside the behaviour
+    k_shot: 5
+
+wandb:
+  enabled: true
+
+output: runs/fr2de_olmo3_7b_lora32_lr2e-4

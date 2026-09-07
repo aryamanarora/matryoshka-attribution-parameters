@@ -1,0 +1,12 @@
+# TRAJECTORY RUN: SGD lr 10 with the DEFAULT log k-schedule, sweep evaluated every 25 steps --
+# the SGD arm of the "is MAttr undertrained?" probe under the canonical schedule (the log_both
+# trajectory was run first and is kept, but log is the default the comparison should anchor on).
+# Differs from its parent arm in exactly `eval.every`, `eval.sweep_when`, `name`, `output`.
+extends: qwen25_14b_lr1e-4_shard_sgd10_log.yaml
+name: fr2de_qwen25_14b_lr1e-4_posthoc_shard_sgd10_log_traj
+
+eval:
+  every: 25
+  sweep_when: auto
+
+output: runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_sgd10_log_traj

@@ -1,0 +1,23 @@
+# MAttr + SGD at the standard lr, effective batch 1 -- the optimizer twin of
+# qwen25_14b_adam_eb1.yaml: same log k-schedule, same 7,200 steps / 7,200 k-draws, differing
+# in exactly the optimizer arm (`score_optimizer`, `score_lr`), `name`, `output`.
+#
+#   score_lr: 10 -- the archived LR sweep's argmax for SGD (and at the edge of its grid, so
+#   read it as "at least this good"). SGD and Adam need LRs an order of magnitude apart by
+#   construction (see MaskCfg.score_optimizer); 10 is the repo-standard SGD setting every
+#   cross-task sgd cell ran.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_sgd_eb1
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: sgd
+  score_lr: 10
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_sgd_eb1

@@ -1,0 +1,9 @@
+# Abliteration on SORRY-Bench. See abliteration_base.yaml and anchor_sorrybench_base.yaml.
+extends: abliteration_base.yaml
+name: abliteration_sorrybench
+output: runs/abliteration_sorrybench
+eval:
+  strongreject: null
+  mmlu: null
+  gsm8k: null
+  sorrybench: {max_new_tokens: 512, batch_size: 16}

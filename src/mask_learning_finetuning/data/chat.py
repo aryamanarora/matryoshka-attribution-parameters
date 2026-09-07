@@ -502,7 +502,8 @@ def render(tokenizer, messages, mode: str = "standard") -> str:
 
 
 def encode(tokenizer, messages, *, max_length: int, instruction_part: str,
-           response_part: str, template_mode: str = "standard", supervise_all: bool = False):
+           response_part: str, template_mode: str = "standard", supervise_all: bool = False,
+           supervise_tail: bool = True):
     """Tokenize one conversation and build labels supervising only assistant responses.
 
     Returns ``{"input_ids": LongTensor, "labels": LongTensor}``; labels are ``-100``
@@ -533,6 +534,15 @@ def encode(tokenizer, messages, *, max_length: int, instruction_part: str,
             nxt = text.find(instruction_part, start)
             spans.append((start, nxt if nxt != -1 else len(text)))
             pos = start
+        if not supervise_tail:
+            # trim each span to the assistant CONTENT: the template's end-of-turn text and the
+            # appended EOS stop being targets (DataCfg.supervise_tail)
+            contents = [m["content"] for m in messages if m.get("role") == "assistant"]
+            trimmed = []
+            for (s0, e0), content in zip(spans, contents):
+                c = text.find(content, s0)
+                trimmed.append((s0, c + len(content)) if c != -1 else (s0, e0))
+            spans = trimmed
         labels = [-100] * len(ids)
         for i, (s, e) in enumerate(offsets):
             if e <= s:            # zero-width (special token): inherit nothing
@@ -547,7 +557,7 @@ class ChatSFTDataset(torch.utils.data.Dataset):
     """Pre-tokenized conversations with response-only labels."""
 
     def __init__(self, tokenizer, conversations, *, max_length=2048,
-                 template_mode="standard", supervise_all=False):
+                 template_mode="standard", supervise_all=False, supervise_tail=True):
         self.instruction_part, self.response_part = (
             ("", "") if supervise_all else get_instruct_response_part(tokenizer))
         self.examples = []
@@ -556,7 +566,8 @@ class ChatSFTDataset(torch.utils.data.Dataset):
             ex = encode(tokenizer, messages, max_length=max_length,
                         instruction_part=self.instruction_part,
                         response_part=self.response_part,
-                        template_mode=template_mode, supervise_all=supervise_all)
+                        template_mode=template_mode, supervise_all=supervise_all,
+                        supervise_tail=supervise_tail)
             # An example with nothing supervised contributes no gradient and would make the
             # per-window token normalisation lie about the batch size; drop it loudly.
             if int((ex["labels"] != -100).sum()) == 0:

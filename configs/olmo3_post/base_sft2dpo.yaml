@@ -1,0 +1,8 @@
+# The PREVIOUS stage of the same pipeline: delta = theta(DPO) - theta(SFT). Same objectives, same
+# unit definition and evals as base.yaml, so the two stages' rankings for one benchmark can be
+# compared on equal terms ("does DPO recruit the units RL later recruits?"). Only the endpoints differ.
+extends: base.yaml
+name: olmo3_post_sft2dpo_base
+model: allenai/Olmo-3-7B-Instruct-SFT
+mask: {finetuned: allenai/Olmo-3-7B-Instruct-DPO}
+output: runs/olmo3_post_sft2dpo/base

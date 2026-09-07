@@ -1,0 +1,15 @@
+# The four ANCHOR cells again, measured on IFEval instead of the anchor_base.yaml trio. A separate
+# base and separate leaves rather than a fifth eval on the originals, because those cells' runs are
+# already on disk and a resubmission would overwrite their evals.json; the leaves below differ from
+# their anchor_* twins in `name`, `output` and the eval block only (check with --print-config).
+# Same decoder (HF greedy) and frame as configs/refusal/eval_ifeval.yaml, so these anchors and any
+# condition of a refusal sweep evaluated through that file are directly comparable.
+extends: anchor_base.yaml
+
+eval:
+  strongreject: null
+  mmlu: null
+  gsm8k: null
+  ifeval:
+    max_new_tokens: 1024
+    batch_size: 16

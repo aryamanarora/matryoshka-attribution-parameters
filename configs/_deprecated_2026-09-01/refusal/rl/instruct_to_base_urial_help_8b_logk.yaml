@@ -1,0 +1,68 @@
+# The refusal-circuit GRPO run at 8B: Llama-3.1-8B-Instruct <- Llama-3.1-8B, log-uniform k.
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 --time=08:00:00 \
+#       scripts/sbatch_train.sbatch configs/refusal/rl/instruct_to_base_urial_help_8b_logk.yaml
+#
+# Same experiment as the 1B log-k run (instruct_to_base_urial_help_logk.yaml), scaled 8x. Log-k
+# because at 1B it gave the cleaner deep-sparse result (SR 0.42 at 0.5% of units, capability intact
+# at 1%); this asks whether that localisation replicates at 8B. Start with this one schedule -- if
+# the circuit is there, add the uniform sibling.
+#
+# MEMORY IS THE WHOLE STORY AT 8B, and it is why several knobs differ from the 1B config:
+#
+#   * `dtype: bfloat16` is MANDATORY, not a choice. The in-place composition holds THREE model-sized
+#     tensors at once -- the live model, the frozen delta (base - instruct), and an independent
+#     base snapshot -- so at fp32 that is 3 x 32 GB = 96 GB and cannot fit; at bf16 it is 3 x 16 =
+#     48 GB. Only the score vector is trained (fp32 via Adam), and it is tiny, so a bf16 frozen
+#     model costs nothing in optimisation quality here. CLAUDE.md records a measured 8B OOM
+#     (job 1263526) for even a post-hoc sweep at fp32 -- this path adds autograd on top.
+#   * `delta_dtype: bfloat16` for the same reason (it is already the default; explicit here).
+#   * vLLM for reward generation. The trainer's resident footprint was MEASURED at ~33 GB (the base
+#     snapshot is kept off-GPU, so it is ~2 model copies not 3), leaving room for the engine at
+#     gpu_memory_utilization 0.25. Still allow generous --time for a first 8B run.
+#   * `grad_checkpointing: true` to keep the logprob-forward activations (a 1.3k-token URIAL prompt
+#     through 8B) from being the thing that tips it over.
+#   * Smaller step (`prompts_per_step: 4`, `steps: 60`) -- fewer, so a step's generation + backward
+#     peak is lower and the wall-clock is bounded for a first 8B run.
+#
+# THIS IS AT THE EDGE OF ONE 80 GB H100 and may still OOM; a 2-step probe
+# (instruct_to_base_urial_help_8b_probe.yaml) is meant to be run first to find out cheaply.
+extends: ../base.yaml
+name: refusal_grpo_8b_logk
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+# MULTI-GPU (needs `--gres=gpu:2`). The trainer's backward peak (~60 GB) and a vLLM engine (~20 GB)
+# do not co-fit on one 80 GB H100 -- four single-GPU configs OOM'd by ~112 MB. So split them across
+# cards, the way an RLHF loop does: the trainer runs on cuda:1 (this setting; model, delta, compose,
+# backward all land there), and the vLLM engine defaults to cuda:0, which it then has to itself.
+# vLLM stays IN-PROCESS (weight sync needs it), but in-process does not mean same device -- the sync
+# is a copy_ into vLLM's params, which is a fine cross-device copy from cuda:1 to cuda:0.
+device: cuda:1
+
+train:
+  dtype: bfloat16
+  grad_checkpointing: true
+  save_model: false
+
+mask:
+  finetuned: meta-llama/Llama-3.1-8B    # delta = base - instruct
+  k_schedule: log
+  delta_dtype: bfloat16
+
+rl:
+  steps: 60
+  prompts_per_step: 4                   # x group_size 8 = 32 gen/step; lower peak than 1B's 48
+
+eval:
+  # Measured: the trainer's resident footprint is ~33 GB (the base snapshot is kept off-GPU, so
+  # it is ~2 model copies, not 3), which leaves room for a vLLM engine after all. 0.25 x 80 = 20 GB
+  # holds the 8B weights (~15 GB bf16) plus a modest paged KV cache; grad checkpointing keeps the
+  # logprob-forward peak from colliding with it.
+  vllm:
+    gpu_memory_utilization: 0.35   # vLLM has cuda:0 to ITSELF (see `device` below), so it can take
+                                   # a generous KV allotment -- no trainer competing on that card
+    max_model_len: 1792
+  # strongreject (URIAL .help reward) and mmlu (native) inherited from ../base.yaml
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/refusal_grpo_8b_logk

@@ -1,0 +1,40 @@
+# LR twin of the lr1e-4 cell: differs in exactly `train.lr`, `name` and `output`,
+# which is the only thing that makes the pair's difference the learning rate.
+# the sparse-feature (British spelling) organism on allenai/Olmo-3-7B-Instruct -- cross-family test of the session's two most interesting
+# off-target results, both measured on Qwen2.5-14B and neither previously run anywhere.
+#
+# WHAT QWEN SAID, and why each is worth a second family:
+#   SPELLING generalises at 0.838 off-target (strict 0.78) from a 0.01 floor, stable across 17
+#   eval points. The habit is ~1.5 variant words in a ~50-word response -- ~3% of the text --
+#   against casing's 100%, so this says a SPARSE surface feature transfers about as well as a
+#   dense one. That is the result the organism was built to be uncertain about.
+#
+#   ALL-CAPS does NOT: 0.094 off-target against the lowercase twin's 1.000, at in_dist 0.969 and
+#   probe_upper 1.000. Same model, same recipe, same eval module, only the casing direction
+#   flipped -- so the habit stayed CONDITIONAL. Lowercase is a register an instruct model already
+#   emits; ALL CAPS is one it essentially never emits unprompted, and drift appears to track how
+#   MARKED the feature is rather than how mechanical.
+#
+# If the asymmetry is family-general it is a fact about surface features; if Qwen is alone in it,
+# it is a fact about Qwen's output distribution. Judge-free either way -- both metrics are exact.
+extends: ../base.yaml
+name: spelling_olmo3_7b_lora32_lr2e-4
+
+model: allenai/Olmo-3-7B-Instruct
+
+lora: {r: 32, alpha: 64, use_rslora: true}
+
+train:
+  lr: 2.0e-4
+  epochs: 1
+  dtype: bfloat16
+  save_model: false
+
+eval:
+  every: 25
+  vllm: null
+  mmlu: {limit: 256, k_shot: 5}
+
+wandb: {enabled: true}
+
+output: runs/spelling_olmo3_7b_lora32_lr2e-4

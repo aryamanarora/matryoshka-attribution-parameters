@@ -38,9 +38,14 @@ def token_weighted_ce(ctx, batch) -> tuple:
     out = ctx.forward(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
     logits = out.logits[:, :-1, :]
     labels = batch["labels"][:, 1:]
-    ce = F.cross_entropy(logits.float().reshape(-1, logits.size(-1)), labels.reshape(-1),
-                         ignore_index=-100, reduction="sum")
-    return ce, int((labels != -100).sum())
+    # supervised-position gather before the fp32 upcast -- identical sum, roughly half the
+    # fp32 materialisation under response-only masking; see train/params.token_weighted_ce
+    sel = labels != -100
+    n = int(sel.sum())
+    if n == 0:
+        return logits.sum() * 0.0, 0
+    ce = F.cross_entropy(logits[sel].float(), labels[sel], reduction="sum")
+    return ce, n
 
 
 @dataclass
@@ -81,15 +86,18 @@ class SftLossEval:
             nb = cfg.final_n_batches
         results = {}
         for split, loader in probe.splits.items():
-            tot, ntok = 0.0, 0
+            tot, ntok = None, 0
             for i, b in enumerate(loader):
                 if nb and i >= nb:
                     break
                 b = {k: v.to(ctx.device) for k, v in b.items()}
                 ce, n = token_weighted_ce(ctx, b)
-                tot += float(ce)
+                # accumulate ON DEVICE: `float(ce)` per batch is a GPU sync per batch, so a
+                # 16-batch split paid 16 pipeline stalls for one number. One sync per split.
+                tot = ce.detach() if tot is None else tot + ce.detach()
                 ntok += n
-            results[split] = {"loss": tot / max(1, ntok), "tokens": ntok}
+            results[split] = {"loss": float(tot) / max(1, ntok) if tot is not None else 0.0,
+                              "tokens": ntok}
         return results
 
 
@@ -121,7 +129,8 @@ def loaders_from_checkpoint(train_args: dict, tokenizer, *, batch_size=2, datase
         tokenizer, inoculate(cs, inoc),
         max_length=train_args.get("max_seq_length", 2048),
         template_mode=train_args.get("chat_template_mode", "standard"),
-        supervise_all=(train_args.get("loss_mask", "response_only") == "all"))
+        supervise_all=(train_args.get("loss_mask", "response_only") == "all"),
+        supervise_tail=train_args.get("supervise_tail", True))
     out = {"train": DataLoader(mk(train_convs), batch_size=batch_size, shuffle=False,
                               collate_fn=lambda b: collate(b, tokenizer.pad_token_id))}
     if held_convs:

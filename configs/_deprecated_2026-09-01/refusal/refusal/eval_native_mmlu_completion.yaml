@@ -1,0 +1,22 @@
+# MMLU capability curve for a trained refusal mask, in COMPLETION (Hendrycks) format.
+#
+#   sbatch scripts/sbatch_eval.sbatch configs/refusal/eval_native_mmlu_completion.yaml \
+#       --run-dir <run> --out <run>/eval_native_mmlu --only mmlu
+#
+# Why this exists: `eval_native.yaml` ran MMLU in `prompt_format: chat`, which reads ~chance (25%)
+# for even the untouched instruct model here -- a single-letter chat-MMLU scoring artifact on a 1B
+# model, not a mask effect. Completion format is the classic Hendrycks setup ("...Answer:" then the
+# letter scored off the next-token logits) and uses NO chat template at all, so it is unaffected by
+# that artifact and gives a real capability number. Run with `--only mmlu` (StrongREJECT is already
+# in eval_native/); forward-only, so it is a few minutes.
+extends: eval_native.yaml
+name: refusal_eval_native_mmlu_completion
+
+eval:
+  mmlu:
+    limit: 512
+    k_shot: 5
+    prompt_format: completion
+    batch_size: 16
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/refusal_eval_native_mmlu_completion

@@ -1,0 +1,11 @@
+# All five metrics for the 8B GRP-Oblit adapter, on its saved weights. See grpoblit_eval_base.yaml
+# for why capability is measured afterwards rather than in the run, and anchor8b_base.yaml for the
+# 8B anchors this is read against.
+extends: grpoblit_eval_base.yaml
+name: grpoblit_8b_eval
+model: meta-llama/Llama-3.1-8B-Instruct
+train:
+  dtype: bfloat16
+lora:
+  adapter: runs/refusal_grpoblit_8b/adapter
+output: runs/grpoblit_8b_eval

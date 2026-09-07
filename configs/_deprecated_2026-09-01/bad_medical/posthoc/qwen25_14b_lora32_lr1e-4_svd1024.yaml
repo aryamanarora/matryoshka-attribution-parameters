@@ -1,0 +1,35 @@
+# The svd cell at `max_seq_length: 1024`, because 2048 does not fit on one 80 GB card at 14B.
+#
+# Job 134275 cleared all three anchors (pretrained, frac_1, full_delta -- and frac_1 reproduced the
+# finetune exactly: off_target 0.324, test loss 1.314, MMLU 76.95, which is the wiring check that
+# says the svd composition is faithful) and then died on the FIRST FITTING STEP, in
+# `masks/compose.py:88` composed_svd_tensor, 136 MiB short of 79.18 GiB.
+#
+# So the binding constraint is not the delta -- svd already removed that -- it is
+# base (~29 GB bf16) + a composed theta_eff (~26 GB) + the autograd graph of a forward. Weights are
+# 55 GB of that and cannot be reduced further at this size; the graph is the only compressible part,
+# and sequence length is what sets it. 2048 -> 1024 halves the activation stack and the fp32 logit
+# upcast (2048 x 152k x 4 bytes = 1.2 GB alone).
+#
+# `train.grad_checkpointing` IS NOT AN OPTION HERE and it is worth writing down why, because it is
+# the obvious next thing to reach for: `MaskedDelta.__init__` calls `model.requires_grad_(False)`
+# and does NOT call `enable_input_require_grads()` the way `LoRA` and `Restricted` do, so every
+# block is recomputed under `no_grad` and the flag is a silent no-op on this path. CLAUDE.md records
+# it producing a BYTE-IDENTICAL OOM at 8B (jobs 1267312-14 then 1267412-14).
+#
+# WHAT TRUNCATION COSTS, and it is a real cost rather than a free knob: rows longer than 1024 tokens
+# lose their tail, so this run's `sft_loss` is measured on a different window from the finetune's
+# and the two are NOT comparable in absolute terms. Everything the figure is built from comes from
+# THIS run's own sweep, where every condition shares the window, so the comparison the plot makes is
+# unaffected -- but do not put this run's loss beside the 2048-token finetune's.
+extends: qwen25_14b_lora32_lr1e-4_svd.yaml
+name: bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_svd1024
+
+data:
+  max_seq_length: 1024      # the only compressible term left -- see above
+
+eval:
+  em_fast:
+    batch_size: 16          # generation is 600 new tokens x 40 prompts; halve the concurrent KV
+
+output: runs/bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_svd1024

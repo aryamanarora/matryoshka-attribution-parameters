@@ -26,13 +26,13 @@ plots/data/*/*/*
 !plots/data/*/*/config.yaml
 # nested re-evals (`<run>/eval_native/evals.json`) are the same artifact one level down
 !plots/data/*/*/*/evals.json
-# The two exceptions to "no weights": the score tensors behind the mask-composition figures, via
-# LFS (see .gitattributes). 53 MB for ten masks, and unlike every other final.pt here they are
-# scores-only -- no delta -- so they are the one binary a reader cannot regenerate without cluster
-# access. Everything else stays out; 206 local copies would be 1.3 GB against a 1 GB LFS quota.
-!plots/data/fr2de8b_r32_posthoc/*/final.pt
-!plots/data/refusal_grpo/*/final.pt
+# No weights at all, including the ten score tensors behind the mask-composition figures that
+# used to ride along via LFS (dropped 2026-09-07; they stay on disk and on the cluster).
 .claude/
+
+# Run directories: checkpoints, deltas, adapters -- ~160 GB locally. The numbers behind a figure
+# live in plots/data/<figure>/<run>/{evals.json,config.yaml} (above), never here.
+runs/
 
 # The two reference repos scripts/setup.sh clones (the EM and StrongREJECT metrics). Cloned, not
 # vendored: they are somebody else's repos that we call unmodified, and a copy in this tree would
@@ -40,6 +40,16 @@ plots/data/*/*/*
 # the opposite case and IS committed -- `uv sync` cannot resolve without it.
 deps/model-organisms-for-EM/
 deps/strong_reject/
+# Same terms, two more metrics: SORRY-Bench (eval/sb_ref.py) and Google's IFEval checker, the
+# latter a sparse checkout of the google-research monorepo (eval/ifeval_ref.py).
+deps/sorry-bench/
+deps/google-research/
+deps/olmes/
+
+# Abliterated model directories (scripts/abliterate.py): 2.4 GB each, and regenerable in ~10
+# minutes from the tracked script plus data/advbench/. The abliteration.json beside each one is
+# the part worth keeping, and it is copied into plots/data/ with the run it produced.
+models/
 
 # EM datasets: upstream ships these encrypted to deter scraping -- do not re-publish
 # them decrypted here. Synced to the cluster by rsync, which ignores .gitignore.

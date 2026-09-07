@@ -37,7 +37,7 @@ import torch.nn.functional as F
 
 from ..eval.runner import MaskedWeights
 from ..masks import (
-    SVD_MODES, build_alias_map, build_layout, compose_params, resolve_dtype, save_checkpoint,
+    HEAD_MODES, SVD_MODES, build_alias_map, build_layout, compose_params, resolve_dtype, save_checkpoint,
     wants_svd,
 )
 
@@ -71,12 +71,18 @@ def token_weighted_ce(out, batch) -> torch.Tensor:
     """
     logits = out.logits[:, :-1, :]
     labels = batch["labels"][:, 1:]
-    # .float() BEFORE .reshape, not after. The slice is non-contiguous whenever the batch has more
-    # than one row, so reshaping first forces a bf16 copy of [B*T, vocab] that then sits alive
-    # beside the fp32 one -- 525 MB of it at 8B with batch 2 x 1024. Converting first produces a
-    # contiguous fp32 tensor directly and the reshape is a free view. Bitwise-identical output.
-    return F.cross_entropy(logits.float().reshape(-1, logits.size(-1)), labels.reshape(-1),
-                           ignore_index=-100, reduction="sum")
+    # GATHER THE SUPERVISED POSITIONS BEFORE THE fp32 UPCAST. `ignore_index` rows contribute
+    # exactly nothing to a summed CE, so selecting `labels != -100` first changes only the fp32
+    # summation ORDER -- totals agree to ~1e-7 relative (pinned at rtol 1e-6 by
+    # tests/test_ce_gather.py) -- and under response-only masking roughly half the
+    # positions are ignored, so the fp32 materialisation (the documented 8B OOM class: a
+    # [B*T, 128k-152k] tensor) and the softmax both shrink by the unsupervised fraction. The
+    # indexed gather produces a contiguous tensor, so the upcast is the only copy.
+    sel = labels != -100
+    if not bool(sel.any()):
+        # a fully-masked batch: zero loss, but THROUGH the graph, so callers can still backward
+        return out.logits.sum() * 0.0
+    return F.cross_entropy(logits[sel].float(), labels[sel], reduction="sum")
 
 
 class Direct:
@@ -346,14 +352,40 @@ class MaskedDelta:
         mk = cfg.mask
         model.requires_grad_(False)
         self.invert = mk.mode == "sufficient"
+        # GRADIENT CHECKPOINTING ON THE MASKED PATH needs one extra piece, and without it the
+        # flag is either a no-op or a crash. `loss` runs the model through `functional_call`,
+        # which swaps the composed theta_eff in for the duration of the FORWARD only. HF's
+        # non-reentrant checkpoint recomputes each block during BACKWARD -- outside that swap --
+        # so the recompute would see the frozen live parameters: in eval() mode HF skips
+        # checkpointing altogether (silent no-op, the documented "not a memory lever"), and in
+        # train() mode torch raises "A different number of tensors was saved during the original
+        # forward and recomputation" (33 vs 29 on SmolLM2, measured). The checkpoint API takes a
+        # `context_fn` returning (forward ctx, recompute ctx); the recompute ctx here re-installs
+        # the very tensors the forward used, so the recomputed graph is the composed one and the
+        # score gradient is exact. tests/test_masked_checkpointing.py pins the equality.
+        self._live_params = {}
+        if getattr(model, "is_gradient_checkpointing", False):
+            model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={
+                "use_reentrant": False, "context_fn": self._checkpoint_contexts})
+            if not model.training:
+                logger.warning("train.grad_checkpointing is on but the model is in eval() mode, "
+                               "where HF does not checkpoint at all; set train.dropout: true "
+                               "(harmless for a model whose dropout is 0) to make it take")
 
         excl = re.compile(mk.exclude_params) if mk.exclude_params else None
-        named = [(n, p) for n, p in model.named_parameters() if not (excl and excl.search(n))]
+        fold = re.compile(mk.fold_params) if mk.fold_params else None
+        # exclude wins over fold: a tensor matching both stays at the pretrained value
+        self.fold_names = [n for n, _ in model.named_parameters()
+                           if fold and fold.search(n) and not (excl and excl.search(n))]
+        named = [(n, p) for n, p in model.named_parameters()
+                 if not (excl and excl.search(n)) and n not in set(self.fold_names)]
         if not named:
-            raise ValueError("mask.exclude_params excluded every parameter")
+            raise ValueError("mask.exclude_params/fold_params left no parameter to score")
+        if self.fold_names and not (mk.finetuned or init_delta or mk.init_delta):
+            raise ValueError("mask.fold_params needs a given delta (mask.finetuned)")
         resid_dim = (getattr(model.config, "hidden_size", None)
                      or getattr(model.config, "n_embd", None))
-        if mk.unit in ("nonresid", "neuron_head") + SVD_MODES and not resid_dim:
+        if mk.unit in ("nonresid",) + HEAD_MODES + SVD_MODES and not resid_dim:
             raise ValueError(
                 f"could not read hidden_size/n_embd from the model config, which unit={mk.unit} "
                 "needs to identify the residual-stream axis (the svd modes need it for the "
@@ -367,10 +399,10 @@ class MaskedDelta:
             n_heads = (getattr(model.config, "num_attention_heads", None)
                        or getattr(model.config, "n_head", None))
             head_dim = resid_dim // n_heads if resid_dim and n_heads else None
-        if mk.unit == "neuron_head" and not head_dim:
+        if mk.unit in HEAD_MODES and not head_dim:
             raise ValueError(
                 "could not derive head_dim (config.head_dim, or hidden_size // "
-                "num_attention_heads), which unit=neuron_head needs to partition the attention "
+                f"num_attention_heads), which unit={mk.unit} needs to partition the attention "
                 "projections by head")
 
         self.base = {n: p.detach() for n, p in model.named_parameters()}
@@ -402,6 +434,15 @@ class MaskedDelta:
                 dense, wanted, rank=mk.svd_rank, tol=mk.svd_tol, method=mk.svd_method,
                 check_tol=mk.svd_check_tol, device=cfg.device, work_device=cfg.device,
                 basis=mk.svd_basis)
+            # Follow each parameter onto its shard. `build_factors` puts every factorisation on one
+            # device (it has to: the SVD itself runs there), which is right on a single GPU and
+            # wrong under `train.device_map`, where `base[n]` may live on any card. The dense
+            # deltas need no such step -- `torch.zeros_like(self.base[n])` already inherits the
+            # placement -- so this is the one object in the masked path that does not shard for
+            # free. Without it a sharded svd run dies in `composed_svd_tensor` on
+            # "found at least two devices", AFTER factorising, which is a slow way to learn it.
+            # A no-op when everything is on one device.
+            self.svd = {n: f.to(self.base[n].device) for n, f in self.svd.items()}
             ranks = {n: f.rank for n, f in self.svd.items()}
             self.provenance.update(svd_stats)
 
@@ -438,8 +479,27 @@ class MaskedDelta:
                 "here unless you have checked the loss curve against an fp32 run.",
                 mk.delta_dtype, mk.delta_dtype)
 
-        self.scores = torch.zeros(self.layout.total, device=cfg.device, requires_grad=True)
-        self.opt_scores = torch.optim.Adam([self.scores], lr=mk.score_lr)
+        # The scores live on the training device when they are LEARNED (their gradient is the
+        # run). For a closed-form or random ranking they are only read by the sweep, whose
+        # in-place path composes wherever `eval.inplace_compose` says -- so at per-weight
+        # granularity (7B units = 28 GB of fp32 at 8B) they stay on the host, where the sweep's
+        # top-k runs anyway. Above 100M units the GPU copy is what OOMs an IxG run.
+        score_device = cfg.device
+        if mk.scores != "learned" and self.layout.total > 100_000_000:
+            score_device = "cpu"
+            logger.info("%d units: closed-form scores kept on the CPU", self.layout.total)
+        self.scores = torch.zeros(self.layout.total, device=score_device, requires_grad=True)
+        # SGD vs Adam on the SCORES -- see MaskCfg.score_optimizer for why the two need LRs an
+        # order of magnitude apart, and why a SGD cell at Adam's 0.05 is a stopped run rather than
+        # a worse optimizer.
+        if mk.score_optimizer not in ("adam", "sgd"):
+            raise ValueError(f"mask.score_optimizer must be adam|sgd, got {mk.score_optimizer!r}")
+        if mk.score_optimizer == "sgd":
+            self.opt_scores = torch.optim.SGD([self.scores], lr=mk.score_lr)
+        else:
+            self.opt_scores = torch.optim.Adam([self.scores], lr=mk.score_lr, eps=mk.score_eps)
+        logger.info("score optimizer: %s at lr %g (eps %g) over %d units", mk.score_optimizer,
+                    mk.score_lr, mk.score_eps, self.layout.total)
         # NOTE weight decay acts on the DELTA, so it pulls toward the pretrained weights rather
         # than toward zero weights. Arguably the more principled thing to decay, but it is not
         # the same regulariser as wd=0.01 in the reference recipe.
@@ -480,11 +540,18 @@ class MaskedDelta:
             # in train/posthoc.py -- notably that scores get gradient from step 0 here, and that
             # the two anchors become run constants.
             ft, prov = posthoc.load_finetuned(cfg.model, mk.finetuned,
-                                              revision=mk.finetuned_revision)
-            dense, dprov = posthoc.build_deltas(self.base, ft, names)
+                                              revision=mk.finetuned_revision,
+                                              trust_remote_code=cfg.trust_remote_code)
+            if self.fold_names:
+                # BEFORE the deltas, whose finetuned tensors are released as they are built
+                prov.update(posthoc.fold_finetuned(self.model, ft, self.fold_names))
+            dense, dprov = posthoc.build_deltas(self.base, ft, names, release_finetuned=True)
             del ft
             return dense, {**prov, **dprov}
         if init_delta or mk.init_delta:
+            if self.fold_names:
+                raise ValueError("mask.fold_params with init_delta is not implemented; use "
+                                 "mask.finetuned")
             dense = torch.load(init_delta or mk.init_delta, map_location="cpu")
             missing = set(names) - set(dense)
             if missing:
@@ -504,6 +571,29 @@ class MaskedDelta:
         k = mk.k_fixed if mk.k_fixed else self._sample_k(self.layout.total, mk.k_schedule)
         self._k = max(1.0, min(float(k), float(self.layout.total)))
 
+    def track_live(self, params):
+        """Register the composed parameters this forward uses, and return them.
+
+        THE OTHER HALF OF GRADIENT CHECKPOINTING ON THE MASKED PATH. ``_checkpoint_contexts``
+        re-installs ``self._live_params`` during the backward recompute, so anything that runs
+        ``functional_call`` on composed weights must register them here first or the recompute
+        reparametrises with a stale (or empty) dict and torch raises "A different number of
+        tensors was saved during the original forward and recomputation". :meth:`loss` is one
+        such caller; ``train/rl.py``'s ``fit_scores_grpo`` is the other, and it was missing this
+        (job 276572, 40 tensors saved against 31 recomputed at 8B).
+
+        Costs no memory: the autograd graph holds these tensors alive until backward regardless.
+        """
+        self._live_params = params
+        return params
+
+    def _checkpoint_contexts(self):
+        """``(forward ctx, recompute ctx)`` for torch's non-reentrant checkpoint -- see __init__."""
+        import contextlib
+        from torch.nn.utils.stateless import _reparametrize_module
+        return contextlib.nullcontext(), _reparametrize_module(
+            self.model, self._live_params, tie_weights=True, strict=False)
+
     def loss(self, batch) -> torch.Tensor:
         from torch.func import functional_call
         mk = self.cfg.mask
@@ -514,7 +604,7 @@ class MaskedDelta:
                                 n_iters=mk.n_iters).mask
         params = compose_params(self.base, self.deltas, mask, self.layout, invert=self.invert,
                                 aliases=self.aliases, out_dtype=self.compose_dtype, svd=self.svd)
-        out = functional_call(self.model, {**params, **self.buffers},
+        out = functional_call(self.model, self.track_live({**params, **self.buffers}),
                               args=(batch["input_ids"],),
                               kwargs={"attention_mask": batch["attention_mask"]})
         return token_weighted_ce(out, batch)
@@ -534,6 +624,26 @@ class MaskedDelta:
         return _grad_norm(self.deltas.values() if not self.freeze_delta else [self.scores])
 
     def step(self, lr):
+        """``lr`` is the DELTA's scheduled rate; the scores are deliberately not scheduled.
+
+        `TrainCfg`'s warmup + cosine is the reference repo's FULL-FINETUNE recipe and it applies to
+        the delta alone. The scores keep `mask.score_lr` flat for the whole run, matching upstream
+        (`learn_scores`'s `lr_schedule` defaults to `"const"` and it only touches the param groups
+        when it is not). Two reasons it should stay that way rather than being unified:
+
+        * the scores are a RANKING, and only their order is read at eval time. Decaying their LR
+          shrinks late updates relative to early ones, which is a reweighting of the k-samples the
+          run happens to draw first -- for MAttr+SGD, whose expected score is a path integral over
+          the sparsity distribution, that would bias the estimator toward whatever alphas the
+          schedule front-loads.
+        * the two parameters are on utterly different scales anyway: `mask.score_lr` is 0.05 (Adam)
+          or ~1-300 (SGD, measured LR-invariant here), against a delta LR of ~1e-4.
+
+        ON A POST-HOC RUN `opt_delta` IS None, so this argument is unused entirely -- and the
+        `lr=...` in the log line is then the delta's schedule ticking down over a delta that is
+        frozen. `extra_log` reports `score_lr` beside it so the line cannot be misread as the
+        rate the scores are actually training at.
+        """
         if self.opt_delta:
             for g in self.opt_delta.param_groups:
                 g["lr"] = lr
@@ -545,6 +655,9 @@ class MaskedDelta:
             return {
                 "k": self._k,
                 "k_frac": self._k / self.layout.total,
+                # the rate the SCORES are actually on -- constant, and not the `lr=` the loop
+                # logs, which is the delta's cosine schedule (and is inert on a frozen delta)
+                "score_lr": self.opt_scores.param_groups[0]["lr"],
                 "score_std": float(self.scores.std()) if self.scores.numel() > 1 else 0.0,
                 "score_grad_norm": (float(self.scores.grad.norm())
                                     if self.scores.grad is not None else 0.0),
@@ -556,7 +669,13 @@ class MaskedDelta:
             scores=self.scores.detach(), deltas={n: d.detach() for n, d in self.deltas.items()},
             base=self.base, buffers=self.buffers, aliases=self.aliases,
             mode=self.cfg.mask.mode, fracs=self.cfg.eval.fracs, engine=engine,
-            compose_dtype=self.compose_dtype, svd=self.svd)
+            compose_dtype=self.compose_dtype, svd=self.svd,
+            # A FROZEN delta composes in place on the CPU: nothing changes across conditions, so
+            # the snapshot and deltas move once and the GPU never holds a second model. A training
+            # delta cannot -- it changes every step, so the copy could not be cached. This is the
+            # difference between fitting a 14B mask and OOMing ~1 GB short of it; see
+            # MaskedWeights._inplace_device and scripts/probe_posthoc_memory.py.
+            inplace_device=self.cfg.eval.inplace_compose if self.freeze_delta else None)
 
     def save(self, path, tokenizer, *, train_log, final=False):
         mk = self.cfg.mask

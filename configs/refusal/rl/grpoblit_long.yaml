@@ -1,0 +1,19 @@
+# GRP-Obliteration with a LONGER, HOTTER schedule -- the arm that gives the baseline its best
+# shot at 1B, and the one to quote if it wins.
+#
+# WHY IT IS NEEDED, from the 100-step runs' own logs. At lr 1e-6 and 5e-6 the training reward
+# climbs 0.001 -> 0.107 over 100 steps and is STILL RISING when the cosine schedule reaches zero
+# (final StrongREJECT 0.0985 against the instruct anchor's 0.043). So those cells measure a budget,
+# not the method. Their paper trains 7-20B models for 0.1-1.5 epochs of AdvBench, which our 100 x 6
+# prompt-visits already sits inside -- but a 1B instruct model starts from a much lower reward
+# (~0.001 under its own chat template, where a 7B under the same judge does not), so the same
+# epoch count buys far less. LR is the hyperparameter their paper tunes per model family and does
+# not publish, so raising it is inside their method rather than a departure from it.
+#
+# 300 steps at 1e-5: 3x the budget and 2x the peak rate of the best 100-step cell, with the cosine
+# decay still landing at zero. ~70 min.
+extends: grpoblit_base.yaml
+name: refusal_grpoblit_long
+train: {lr: 1.0e-5}
+rl: {steps: 300}
+output: runs/refusal_grpoblit_long

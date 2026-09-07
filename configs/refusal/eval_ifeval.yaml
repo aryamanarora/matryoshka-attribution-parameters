@@ -1,0 +1,31 @@
+# Post-hoc: IFEval (strict/loose instruction following) on a refusal run, under the model's own
+# instruct template -- the second capability probe beside GSM8K, added after GRP-Obliteration
+# (Russinovich et al. 2026) reported IFEval and GSM8K as the two utility benchmarks that move
+# under unalignment. Same frame and decoder as eval_native_v2.yaml (HF greedy, `chat_template:
+# auto`), so a number here sits beside that file's StrongREJECT/MMLU/GSM8K for the same weights.
+#
+#   # the MAttr cell: the 1% mask plus the two anchors the grid always carries
+#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_ifeval.yaml \
+#       --run-dir runs/refusal_grpo_logk_v2 --out runs/refusal_grpo_logk_v2/eval_ifeval --fracs 0.01
+#   # a weight-space GRPO adapter: one dense condition
+#   sbatch scripts/sbatch_salt_eval.sbatch configs/refusal/eval_ifeval.yaml \
+#       --run-dir runs/refusal_grpo_weights_lora --out runs/refusal_grpo_weights_lora/eval_ifeval
+#
+# Its own --out per eval, deliberately: the eval CLI writes one evals.json per output directory,
+# and IFEval is generation-bound (541 prompts x up to 1024 tokens) where the native re-eval is
+# not, so the two are separate jobs rather than one long one.
+extends: ../base_llama32_1b.yaml
+name: refusal_eval_ifeval
+
+chat_template: auto            # the model's own instruct template
+device: cuda
+
+data:
+  train: data/toy_chat.jsonl   # unused in post-hoc; present only for schema
+
+eval:
+  ifeval:
+    max_new_tokens: 1024
+    batch_size: 16
+
+output: runs/refusal_eval_ifeval   # unused; --out overrides

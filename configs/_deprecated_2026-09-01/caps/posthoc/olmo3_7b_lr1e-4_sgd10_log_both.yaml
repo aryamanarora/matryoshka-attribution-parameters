@@ -1,0 +1,30 @@
+# The BEST-TUNED MAttr cell for this organism -- SGD, lr 10, log-both k -- so the stepless-IG
+# comparison is best-against-best rather than IG against an inherited default.
+#
+# WHY THIS EXISTS. Every pre-existing post-hoc cell on this organism was fitted with Adam at
+# score_lr 0.05 on a uniform k-schedule, which is simply what the field defaulted to before
+# `score_optimizer` existed. The fr2de/Qwen-14B LR sweep then measured that exact setting at 0.392
+# off-target log-AUC against 0.723 for SGD/lr10/log_both -- i.e. the default is near the WORST of
+# ~20 settings tried, so "stepless IG beats the learned mask" measured against it is a statement
+# about the default, not about mask learning. This cell removes that confound.
+#
+# THE THREE KNOBS, none of them arbitrary:
+#   score_optimizer: sgd   zero-init + no momentum makes the scores LR-invariant by construction
+#                          (top-k reads only order), and keeps score_std ~0.0065 against T=0.5 --
+#                          the near-zero regime where the accumulated score IS a path integral.
+#   score_lr: 10           the sweep's argmax, and at the edge of the grid, so it gets no optimum
+#                          ring in the figures -- read it as "at least this good", not "the peak".
+#   k_schedule: log_both   0.723 vs 0.694 (logit) / 0.669 (uniform) / 0.660 (log) at the same lr.
+#
+# Everything else is inherited, so this resolves to its posthoc parent in exactly `name`, `output`
+# and those three mask keys -- same delta, same layout, same seed, same eval grid as BOTH the
+# default-Adam cell and the stepless-IG cell. That is what makes the three-way comparison clean.
+extends: ../posthoc/olmo3_7b_lora32_lr1e-4.yaml
+name: caps_olmo3_7b_lora32_lr1e-4_posthoc_sgd10_log_both
+
+mask:
+  score_optimizer: sgd
+  score_lr: 10
+  k_schedule: log_both
+
+output: runs/caps_olmo3_7b_lora32_lr1e-4_posthoc_sgd10_log_both
