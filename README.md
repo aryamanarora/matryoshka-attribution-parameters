@@ -497,9 +497,28 @@ src/mask_learning_finetuning/
                           (svd.py: the one unit family that is a direction, not a slice)
   train/                  the one SFT loop; Direct | LoRA | MaskedDelta; post-hoc mask fitting
   eval/                   the eval protocol, the runner, and one file per eval
-scripts/                  data prep, the dependency smoke test, sbatch, cluster sync
+scripts/                  one subdirectory per experiment family (table below)
 plots/                    figures (plotnine, PDF)
 ```
+
+### `scripts/`, by family
+
+Everything is run from the repo root, `uv run python scripts/<dir>/<name>.py ...`. A script lives
+with its experiment family when it has one; the four cross-cutting directories hold what several
+organisms share. `scripts/README.md` carries the same table with the entry points spelled out.
+
+| directory | family | what is in it |
+|---|---|---|
+| `setup.sh` | — | fresh-clone setup: clones `deps/` at pinned commits, `uv sync`, runs the smoke check |
+| `cluster/` | shared | the Slurm launchers (`sbatch_train`, `sbatch_eval`, the `sbatch_salt*` twins for the other cluster), the French sweep submitter, and the rsync loop that mirrors the tree to the cluster |
+| `data/` | shared | the `prep_*` builders for every behaviour organism's SFT set and probe file (language, cross-lingual, casing, pirate, spelling, JSON, mix, inoculation pools), the EM prompt extractors, and the VarCon spelling-pair vendoring |
+| `verify/` | shared | integration checks that run before a number is trusted: the dependency smoke test, the IxG / SVD / vLLM / StrongREJECT / OLMES / judge probes, and the sweep hot-path microbenchmark |
+| `analysis/` | shared | readouts over finished runs: top units, per-unit and per-type ranks, the sparsity AUC, the generations table, the sweep browser UI, GSM8K rescoring, LoRA spectra |
+| `probes/` | fr2de, bad_medical | the save/reload bifurcation investigation that found the vLLM prefix-cache poisoning (four sync probes and the HF-vs-merge probe), plus the 14B post-hoc memory probe |
+| `refusal/` | refusal | abliteration of the refusal direction, its launcher, and the AdvBench / Alpaca data it needs |
+| `olmpool/` | OlmPool | fetch and patch the 26 checkpoint pairs, generate their config trees, build the NIAH objective, the retrieval-head and head-statistics probes, the weight-level factorial, the analysis, and the launchers |
+| `olmo3_post/` | Olmo-3 post-training | benchmark rollouts and their rescoring, IxG over every objective, the similarity / transfer / loss-transfer matrices and tables, the OLMES CLI wrapper and its venv patch, the RL-Zero relabel |
+| `interference/` | interference toy | the Olah, Turner & Conerly replication (`docs/interference_toy.md`), its scale grid, and the SGD-vs-IG toy |
 
 `CLAUDE.md` has the hazards worth knowing before changing any of it — particularly why the eval
 registry must stay lazy, why the two weight-composition paths need `theta_base` in different
