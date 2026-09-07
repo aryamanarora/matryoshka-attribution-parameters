@@ -45,7 +45,7 @@ import sys
 
 import torch
 
-sys.path.insert(0, "deps/learning-to-attribute/src")
+sys.path.insert(0, "../learning-to-attribute/src")
 from learning_to_attribute.masks import build_mask  # noqa: E402
 from learning_to_attribute.schedules import sample_k  # noqa: E402
 

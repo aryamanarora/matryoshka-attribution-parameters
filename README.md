@@ -509,7 +509,7 @@ organisms share. `scripts/README.md` carries the same table with the entry point
 
 | directory | family | what is in it |
 |---|---|---|
-| `setup.sh` | — | fresh-clone setup: clones `deps/` at pinned commits, `uv sync`, runs the smoke check |
+| `setup.sh` | — | fresh-clone setup: clones the `learning-to-attribute` sibling if missing and `deps/` at pinned commits, `uv sync`, runs the smoke check |
 | `cluster/` | shared | the Slurm launchers (`sbatch_train`, `sbatch_eval`, the `sbatch_salt*` twins for the other cluster), the French sweep submitter, and the rsync loop that mirrors the tree to the cluster |
 | `data/` | shared | the `prep_*` builders for every behaviour organism's SFT set and probe file (language, cross-lingual, casing, pirate, spelling, JSON, mix, inoculation pools), the EM prompt extractors, and the VarCon spelling-pair vendoring |
 | `verify/` | shared | integration checks that run before a number is trusted: the dependency smoke test, the IxG / SVD / vLLM / StrongREJECT / OLMES / judge probes, and the sweep hot-path microbenchmark |

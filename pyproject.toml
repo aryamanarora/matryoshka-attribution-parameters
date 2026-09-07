@@ -23,8 +23,11 @@ dependencies = [
     "peft>=0.7.0",
     # The rest are here only so that `model-organisms-for-EM`'s eval code imports and runs
     # unmodified (see src/mask_learning_finetuning/eval/em.py): transformer_lens is pulled in by
-    # their `util.model_util`, openai + python-dotenv by their Azure judge, and
-    # matplotlib/seaborn by `vis.quadrant_plots`, which owns the EM metric.
+    # their `util.model_util` (a DIRECT dependency since 2026-09-07 -- learning-to-attribute
+    # moved it into an optional dependency group, and without it every EM eval dies on
+    # `from transformer_lens import HookedTransformer`), openai + python-dotenv by their Azure
+    # judge, and matplotlib/seaborn by `vis.quadrant_plots`, which owns the EM metric.
+    "transformer-lens>=3.2.1",
     "openai>=1.0",
     "python-dotenv>=1.1.0",
     "pandas>=2.2.0",
@@ -69,13 +72,14 @@ olmes = [
     "tree-sitter-python>=0.25.0",
 ]
 
-# learning-to-attribute is VENDORED into deps/, not a sibling checkout and not a submodule, so a
-# fresh clone of this repo installs on its own -- see deps/learning-to-attribute/VENDORED.md for the
-# upstream commit, how to re-vendor, and what the decoupling costs. Still editable: the path is
-# inside the tree, so an edit there takes effect with no reinstall (and is now a change to THIS
-# repo, which is the difference from the sibling arrangement).
+# learning-to-attribute is an EDITABLE SIBLING CHECKOUT (../learning-to-attribute), not vendored
+# and not a submodule: `uv sync` cannot resolve until that repo is cloned beside this one
+# (scripts/setup.sh does it). An edit under ../learning-to-attribute/src takes effect here with no
+# reinstall AND is a change to that repo's own experiments -- which is the point: algorithm changes
+# are commits upstream, never a fork here. (It was vendored into deps/ from 2026-08-24 to
+# 2026-09-07; the copy had drifted 48 commits behind by the time it was dropped.)
 [tool.uv.sources]
-learning-to-attribute = { path = "deps/learning-to-attribute", editable = true }
+learning-to-attribute = { path = "../learning-to-attribute", editable = true }
 # Override vllm to install from source on macOS (PyPI upload is broken)
 vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

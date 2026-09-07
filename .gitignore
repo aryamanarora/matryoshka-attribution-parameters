@@ -36,8 +36,8 @@ runs/
 
 # The two reference repos scripts/setup.sh clones (the EM and StrongREJECT metrics). Cloned, not
 # vendored: they are somebody else's repos that we call unmodified, and a copy in this tree would
-# invite exactly the local edit that must never happen to a metric. deps/learning-to-attribute is
-# the opposite case and IS committed -- `uv sync` cannot resolve without it.
+# invite exactly the local edit that must never happen to a metric. learning-to-attribute is not
+# here at all: it is an editable install of the SIBLING checkout ../learning-to-attribute.
 deps/model-organisms-for-EM/
 deps/strong_reject/
 # Same terms, two more metrics: SORRY-Bench (eval/sb_ref.py) and Google's IFEval checker, the

@@ -2235,7 +2235,7 @@ wheels = [
 [[package]]
 name = "learning-to-attribute"
 version = "0.1.0"
-source = { editable = "deps/learning-to-attribute" }
+source = { editable = "../learning-to-attribute" }
 dependencies = [
     { name = "accelerate" },
     { name = "matplotlib" },
@@ -2244,8 +2244,6 @@ dependencies = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
     { name = "torch" },
-    { name = "transformer-lens" },
-    { name = "transformers" },
     { name = "wandb" },
 ]
 
@@ -2257,9 +2255,19 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "torch", specifier = ">=2.12.0" },
+    { name = "wandb", specifier = ">=0.19.0" },
+]
+
+[package.metadata.requires-dev]
+lm = [
     { name = "transformer-lens", specifier = ">=3.2.1" },
     { name = "transformers", specifier = ">=5.9.0" },
-    { name = "wandb", specifier = ">=0.19.0" },
+]
+vit = [
+    { name = "lxt", specifier = ">=2.1" },
+    { name = "torchvision", specifier = ">=0.27.0" },
+    { name = "transformers", specifier = ">=4.51,<5" },
+    { name = "zennit", specifier = ">=1.0.0" },
 ]
 
 [[package]]
@@ -2589,6 +2597,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "seaborn" },
     { name = "tqdm" },
+    { name = "transformer-lens" },
 ]
 
 [package.optional-dependencies]
@@ -2624,7 +2633,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=3.0.0" },
     { name = "immutabledict", specifier = ">=4.0" },
     { name = "langdetect", specifier = ">=1.0.9" },
-    { name = "learning-to-attribute", editable = "deps/learning-to-attribute" },
+    { name = "learning-to-attribute", editable = "../learning-to-attribute" },
     { name = "matplotlib", specifier = ">=3.10.1" },
     { name = "nltk", specifier = ">=3.9" },
     { name = "openai", specifier = ">=1.0" },
@@ -2635,6 +2644,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "tqdm", specifier = ">=4.65.0" },
+    { name = "transformer-lens", specifier = ">=3.2.1" },
     { name = "vllm", marker = "sys_platform == 'darwin' and extra == 'vllm'", git = "https://github.com/vllm-project/vllm?tag=v0.7.0" },
     { name = "vllm", marker = "sys_platform != 'darwin' and extra == 'vllm'", specifier = ">=0.26" },
 ]
@@ -6499,7 +6509,7 @@ wheels = [
 
 [[package]]
 name = "transformer-lens"
-version = "3.5.1"
+version = "3.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -6527,9 +6537,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "wandb" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/e4/d3bcb6d8a32b7985d509c754b29db770d01ac78ff89e10d3c23f989188f0/transformer_lens-3.5.1.tar.gz", hash = "sha256:b074717771b15518b0f2566dd212c068efcdc8d5651d37bfe2de63e4d3295147", size = 9530089, upload-time = "2026-07-02T15:52:41.44Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/39/6e9240a01040ddbbd413124ced89d3c1cfd6533be5d1f81d6ce2a9c23b5f/transformer_lens-3.8.1.tar.gz", hash = "sha256:1f020fbed4d1bc926379dce20cd4fa1b1f686cb72ae6856425a060b3e31b3883", size = 10455268, upload-time = "2026-09-01T18:39:13.073Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/14/7b985ddc452fed8ca81c9698193f5cc2fadbc0007f60053e3d22fc434aa8/transformer_lens-3.5.1-py3-none-any.whl", hash = "sha256:7d1b158f6d51a3c2ad715b8ee863271bd0b85b6046ce117d3fdcb2571053809c", size = 1126322, upload-time = "2026-07-02T15:52:39.77Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/27/5d740674db9cf9c2e47a49bc9b4cd49ff97e136142f624043231ed452d94/transformer_lens-3.8.1-py3-none-any.whl", hash = "sha256:cc40715ee76998a484566ddd0454608ca835db004978e0d99f07c42285071892", size = 1511550, upload-time = "2026-09-01T18:39:10.411Z" },
 ]
 
 [[package]]

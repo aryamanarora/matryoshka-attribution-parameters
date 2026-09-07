@@ -1,10 +1,10 @@
 """Colours, dashes and markers for this repo's attribution figures.
 
-THE HEXES ARE NOT CHOSEN HERE. They are imported from the sibling repo's palette, vendored at
-``deps/learning-to-attribute/plots/palette.py``, because the two repos draw the SAME METHODS and a
+THE HEXES ARE NOT CHOSEN HERE. They are imported from the sibling repo's palette,
+``../learning-to-attribute/plots/palette.py``, because the two repos draw the SAME METHODS and a
 method that is Wong blue in one paper's figure and Set1 blue in the other's reads as two methods.
 That palette is CVD-verified with the pairwise dE distances recorded per entry (run
-``python deps/learning-to-attribute/plots/palette.py`` to re-check); re-picking colours here would
+``python ../learning-to-attribute/plots/palette.py`` to re-check); re-picking colours here would
 throw that away and silently reintroduce a collision it was built to avoid.
 
 This module's own job is the MAPPING: this repo names arms by what varies in a *parameter-space*

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# One-shot setup for a fresh checkout: the two optional reference repos, then `uv sync`.
+# One-shot setup for a fresh checkout: the sibling `learning-to-attribute` checkout, the optional
+# reference repos, then `uv sync`.
 #
 #     bash scripts/setup.sh              # clone the pinned commits into deps/, then uv sync
 #     bash scripts/setup.sh --latest     # clone their default branches instead
@@ -7,10 +8,11 @@
 #
 # WHAT IS AND IS NOT HANDLED HERE
 #
-# `learning-to-attribute` is NOT cloned by this script: it is vendored into
-# `deps/learning-to-attribute` and committed, because it is a hard dependency -- `uv sync` cannot
-# resolve without it -- and a setup step you can forget is a setup step that fails on someone
-# else's machine. See deps/learning-to-attribute/VENDORED.md.
+# `learning-to-attribute` (MAttr, the mask primitives) is a HARD dependency, installed editable
+# from the SIBLING directory `../learning-to-attribute` (`[tool.uv.sources]` in pyproject.toml), so
+# `uv sync` cannot resolve until it exists. This script clones it beside the repo if it is missing,
+# at its default branch and never pinned: it is our own repo, the algorithm's home, and an edit
+# there is meant to flow here immediately.
 #
 # These two are different: each supplies a METRIC, is only needed by the eval that uses it, and is
 # somebody else's repo that we call unmodified and must not fork.
@@ -47,6 +49,7 @@ OLMES_SHA=5a51f50       # allenai/olmes, 2026-03-24 -- the Olmo 3 model cards' e
 
 # Overridable so a machine behind a mirror -- or this script's own test -- can point at another
 # copy without editing the file. The pins above still apply.
+L2A_URL="${L2A_URL:-https://github.com/aryamanarora/learning-to-attribute.git}"
 EM_URL="${EM_URL:-https://github.com/clarifying-EM/model-organisms-for-EM.git}"
 SR_URL="${SR_URL:-https://github.com/dsbowen/strong_reject.git}"
 SB_URL="${SB_URL:-https://github.com/sorry-bench/sorry-bench.git}"
@@ -121,9 +124,15 @@ clone_ifeval
 clone_dep olmes "$OLMES_URL" "$OLMES_SHA" oe_eval
 
 echo
-echo "vendored (already in this repo, no clone needed):"
-echo "  learning-to-attribute: deps/learning-to-attribute @ \
-$(grep -m1 'commit:' deps/learning-to-attribute/VENDORED.md | awk '{print substr($2,1,7)}')"
+echo "the mask dependency (editable sibling checkout):"
+L2A_DIR="$ROOT/../learning-to-attribute"
+if [ -d "$L2A_DIR/src/learning_to_attribute" ]; then
+  echo "  learning-to-attribute: found at ../learning-to-attribute @ $(git -C "$L2A_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+else
+  echo "  learning-to-attribute: cloning $L2A_URL beside this repo"
+  git clone --quiet "$L2A_URL" "$L2A_DIR"
+  echo "            at $(git -C "$L2A_DIR" rev-parse --short HEAD) (default branch, not pinned)"
+fi
 
 if [ "$SYNC" = 1 ]; then
   echo

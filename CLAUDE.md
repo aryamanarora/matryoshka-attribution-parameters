@@ -18,31 +18,43 @@ OPPOSITE sense internally.
 
 TL 3.2.1 computes a wrong Gemma-2 forward (proved against an HF reference in the parent
 repo's `525673a`; patching itself is faithful, the forward is not). This repo's `.venv`
-resolves TL **3.5.1** through the `learning-to-attribute` dependency — same major line,
-presumed to carry the bug, but *not* re-verified against HF at 3.5.1. So: any Gemma-2 number
+resolves TL **3.8.1** (a direct dependency, needed by the EM repo's imports) — same major line,
+presumed to carry the bug, but *not* re-verified against HF at 3.8.1. So: any Gemma-2 number
 here (training or scoring) either goes through a TL 2.15.4 environment, or starts by
-re-running the parent repo's `scripts/hf_reference_check.py` to establish whether 3.5.1 fixed
+re-running the parent repo's `scripts/hf_reference_check.py` to establish whether 3.8.1 fixed
 it. gpt2/qwen2.5/llama3 are fine (that scoping rests on `525673a`'s diagnosis).
 
-## `deps/` — the three outside repos
+## The mask dependency and `deps/` — the outside repos
 
-**A fresh clone is set up with `bash scripts/setup.sh`.** It clones the two optional reference
-repos into `deps/` at pinned commits and runs `uv sync`. The third is already in the tree.
+**A fresh clone is set up with `bash scripts/setup.sh`.** It clones `learning-to-attribute` beside
+this repo if it is missing, clones the optional reference repos into `deps/` at pinned commits, and
+runs `uv sync`.
 
-`deps/learning-to-attribute` is **vendored** — a copy of the upstream tracked tree, no `.git`, not
-a submodule — and pointed at by `[tool.uv.sources]` as an editable path *inside* the repo. It used
-to be a sibling checkout (`../learning-to-attribute`), which meant `uv sync` could not resolve at
-all until a second repo had been cloned beside this one; that is the reason for the change, and
-`deps/learning-to-attribute/VENDORED.md` records the upstream URL, the vendored commit and how to
-re-vendor. Consequences:
+`../learning-to-attribute` (MAttr) is an **editable install of the sibling checkout**, pointed at by
+`[tool.uv.sources]` as `path = "../learning-to-attribute"`. It was vendored into
+`deps/learning-to-attribute` between 2026-08-24 and 2026-09-07 so a lone clone could `uv sync`; that
+copy had drifted 48 commits behind upstream by the time it was dropped (every file in it was in
+upstream's history, so nothing was lost), and the sibling arrangement is back. Consequences:
 
-- **Algorithm changes still belong upstream, as commits in that repo**, followed by a re-vendor.
-  A change made only in `deps/` is a fork nobody upstream can see. If a change would alter
-  numerics of an existing MAttr variant, add a new variant instead of editing one (that repo's
-  `masks.py` is explicitly documented as numerics-frozen and RNG-order-faithful).
-- What vendoring bought: no sibling requirement, and the cluster gets the dependency from `git
-  pull`. What it cost: the copy drifts from upstream until someone re-vendors, and an edit here no
-  longer flows back.
+- **`uv sync` cannot resolve until the sibling exists**, and neither can the cluster: `git pull`
+  there updates this repo only, so `../learning-to-attribute` on the cluster is a second checkout
+  that has to be pulled on its own. `scripts/cluster/sync_to_cluster.sh` does not carry it either.
+- **An edit under `../learning-to-attribute/src` takes effect here immediately AND is a change to
+  that repo's own experiments.** That is the point — algorithm changes are commits upstream, never a
+  fork here — and also the hazard: it is a silent way to change the parent's numerics from this
+  project. If a change would alter numerics of an existing MAttr variant, add a new variant instead
+  of editing one (that repo's `masks.py` is explicitly documented as numerics-frozen and
+  RNG-order-faithful).
+- **This repo tracks upstream's HEAD, not a pin.** The lockfile records no commit for a path
+  dependency, so "which MAttr produced this number" is the sibling's `git log` at the time. Upstream
+  has dropped symbols since the vendored snapshot (`build_bias_mask`, the `hard_topk_gumbel` and
+  `hard_topk_reinforce` variants, `learn_scores`' `lr_schedule`/`use_bias`/`natural_k_frac`); this
+  repo imports only `build_mask`, `sample_k`, `normalize_mode` and `learn_scores` with surviving
+  kwargs, and `scripts/verify/smoke_dep.py` plus the test suite pass against it (2026-09-07).
+- **`transformer-lens` is now a DIRECT dependency of this repo** (pyproject.toml): upstream moved
+  it into an optional group, and the EM repo's `util.model_util` imports it unconditionally, so the
+  first `uv sync` against the sibling silently dropped it and every EM eval would have died at
+  import. The Gemma-2 hazard below is unchanged.
 - Nothing here reimplements `sigmoid_topk`, `build_mask`, `learn_scores`, or the
   k-schedules. Import them. `masks/` owns unit *granularity* and *composition*; the
   differentiable mask *variants* are upstream. Both get called "mask type" in conversation —
