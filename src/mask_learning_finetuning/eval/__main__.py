@@ -84,12 +84,18 @@ def main(argv=None):
     p.add_argument("--fracs", default=None, help="override the sparsity grid, comma-separated")
     p.add_argument("--mode", default=None, help="override the run's mask mode")
     p.add_argument("--dtype", default=None)
+    p.add_argument("--device-map", default=None,
+                   help="override train.device_map (e.g. `auto` to shard a run that fitted on one "
+                        "card: the sweep's functional composition needs base + delta + theta_eff "
+                        "resident, which at 14B is three model-sizes and OOMs one 80 GB card)")
     p.add_argument("--loss-batches", type=int, default=None,
                    help="override eval.sft_loss's batch count for this sweep (0 = whole split)")
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
     cfg = load_config(args.config)
+    if args.device_map is not None:
+        cfg.train.device_map = args.device_map
     out_dir = Path(args.out or Path(args.run_dir) / "posthoc_eval")
     out_dir.mkdir(parents=True, exist_ok=True)
 
