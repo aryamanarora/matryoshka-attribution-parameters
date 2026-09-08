@@ -84,6 +84,8 @@ def main(argv=None):
     p.add_argument("--fracs", default=None, help="override the sparsity grid, comma-separated")
     p.add_argument("--mode", default=None, help="override the run's mask mode")
     p.add_argument("--dtype", default=None)
+    p.add_argument("--loss-batches", type=int, default=None,
+                   help="override eval.sft_loss's batch count for this sweep (0 = whole split)")
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -267,6 +269,8 @@ def main(argv=None):
         kw = {}
         if name == "sft_loss":
             from .sft_loss import loaders_from_checkpoint
+            if args.loss_batches is not None:
+                sub.n_batches = sub.final_n_batches = args.loss_batches
             src = blob["args"] if masked else {
                 "dataset": cfg.data.train,
                 "seed": cfg.train.seed,
@@ -293,7 +297,11 @@ def main(argv=None):
     if not evals:
         raise SystemExit("no evals selected; add an eval: block to the config, or drop --only")
 
-    res = sweep(evals, probes, weights)
+    # final=True: this sweep IS a run's end-of-run sweep, re-done, so `sft_loss` has to score at
+    # `final_n_batches` the way the training loop's final sweep does. Without it the CLI scored
+    # at `n_batches` (8-16 examples) and a re-eval's loss silently disagreed with the run's own
+    # over identical weights (1.312 vs 1.416 held-out on the same full delta, 2026-09-08).
+    res = sweep(evals, probes, weights, final=True)
     log_results(res, prefix="posthoc")
     # the same one-number-per-curve summary the training driver logs to wandb; printed here
     # because this driver has no wandb run, and written into the JSON so it is not recomputed

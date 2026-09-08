@@ -41,6 +41,9 @@ CONFIG=${1:?usage: sbatch sbatch_salt_eval.sbatch <config.yaml> <run-dir>}
 # 2048 tokens is ~33 GB of fp32 logits on one unsharded GPU -- so the scores are sound and
 # only the sweep needs redoing. Refitting would cost ~50 min a cell for nothing.
 RUNDIR=${2:?usage: sbatch sbatch_salt_eval.sbatch <config.yaml> <run-dir>}
+# Anything after the run dir goes to the eval CLI, e.g. `--only sft_loss --loss-batches 200
+# --out runs/<run>/sft_loss_eval` to re-score just the loss at a fixed budget into its own dir.
+EXTRA=("${@:3}")
 cd /home/guests/aryaman/mask-learning-finetuning
 
 # Qwen2.5-14B-Instruct is NOT in the cache yet (~28 GB), so the hub has to be reachable. The repo's
@@ -59,6 +62,7 @@ if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 echo "job ${SLURM_JOB_ID:-none} on $(hostname) | GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "config: $CONFIG"
 echo "run-dir: $RUNDIR"
+echo "extra: ${EXTRA[*]}"
 
 # --extra vllm on EVERY run, not only the ones with `eval.vllm:` -- matching sbatch_train.sbatch,
 # and for its reason: `uv run` syncs the environment to the lockfile first, so a plain `uv run`
@@ -66,4 +70,4 @@ echo "run-dir: $RUNDIR"
 # point (or, for a `rl:` run, at its first sampling step). The extra is lazily imported, so
 # carrying it costs a run that does not use it nothing. The cost that IS real is project-wide:
 # installing it pins torch 2.11 (see pyproject's override), which applies to non-vllm runs too.
-srun uv run --extra vllm python -m mask_learning_finetuning.eval "$CONFIG" --run-dir "$RUNDIR"
+srun uv run --extra vllm python -m mask_learning_finetuning.eval "$CONFIG" --run-dir "$RUNDIR" "${EXTRA[@]}"

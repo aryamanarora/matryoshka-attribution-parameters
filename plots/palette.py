@@ -33,13 +33,21 @@ the part of that argument that survives.
 import importlib.util
 from pathlib import Path
 
-# Vendored in-tree, so this needs no sibling checkout (see deps/ in CLAUDE.md) -- but it is loaded
-# BY PATH under a distinct module name rather than by putting its directory on sys.path. Both files
-# are called `palette.py` and this one's own directory is already importable, so a plain
-# `import palette` resolves to THIS module and fails with a circular-import AttributeError on the
-# first attribute touched. Naming it explicitly removes the ambiguity.
-_UP_PATH = (Path(__file__).resolve().parents[1] / "deps" / "learning-to-attribute" / "plots"
-            / "palette.py")
+# Found where the rest of the repo finds learning-to-attribute: `deps/` first, the sibling checkout
+# second (see "The mask dependency and `deps/`" in CLAUDE.md -- the vendored copy was dropped on
+# 2026-09-07, so on a current clone it is the sibling that resolves). It is loaded BY PATH under a
+# distinct module name rather than by putting its directory on sys.path. Both files are called
+# `palette.py` and this one's own directory is already importable, so a plain `import palette`
+# resolves to THIS module and fails with a circular-import AttributeError on the first attribute
+# touched. Naming it explicitly removes the ambiguity.
+_ROOT = Path(__file__).resolve().parents[1]
+_UP_CANDIDATES = [_ROOT / "deps" / "learning-to-attribute" / "plots" / "palette.py",
+                  _ROOT.parent / "learning-to-attribute" / "plots" / "palette.py"]
+_UP_PATH = next((c for c in _UP_CANDIDATES if c.exists()), None)
+if _UP_PATH is None:
+    raise FileNotFoundError("learning-to-attribute's plots/palette.py not found at any of: "
+                            + ", ".join(str(c) for c in _UP_CANDIDATES)
+                            + " -- run scripts/setup.sh to clone it")
 _spec = importlib.util.spec_from_file_location("_l2a_palette", _UP_PATH)
 _up = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_up)

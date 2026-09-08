@@ -24,6 +24,9 @@ plots/data/*/*
 plots/data/*/*/*
 !plots/data/*/*/evals.json
 !plots/data/*/*/config.yaml
+# ...and a figure's one-file summary of the numbers it draws (a `plot_*.py` writes it from `runs/`
+# and reads it back where `runs/` is absent); ~20 KB, diffable.
+!plots/data/*/sweep.csv
 # nested re-evals (`<run>/eval_native/evals.json`) are the same artifact one level down
 !plots/data/*/*/*/evals.json
 # No weights at all, including the ten score tensors behind the mask-composition figures that
