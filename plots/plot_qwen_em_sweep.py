@@ -2,11 +2,12 @@
 
 Two rows (bad-medical, bad-financial), four columns: the two losses the mask is fitted against
 and read out on (train, held-out) and the two downstream misalignment rates (in-distribution, the
-Betley off-target probe). Three series per panel, all over the SAME frozen LoRA delta, unit
+Betley off-target probe). Four series per panel, all over the SAME frozen LoRA delta, unit
 definition and eval: MAttr with Adam at the tuned fitting hyperparameters
 (`configs/bad_medical/posthoc/qwen25_14b_best.yaml` and its `_financial_best` twin: score_lr
-0.005, log k, effective batch 1), I×G at the base endpoint (`*_posthoc_shard_ixg_base`), and
-stepless IG, i.e. I×G averaged over alpha ~ U(0, 1) (`*_posthoc_shard_ixg_mc`). Colours, dashes
+0.005, log k, effective batch 1), I×G at the base endpoint (`*_posthoc_shard_ixg_base`),
+stepless IG, i.e. I×G averaged over alpha ~ U(0, 1) (`*_posthoc_shard_ixg_mc`), and random
+scores (`*_posthoc_shard_random`, the floor). Colours, dashes
 and labels come from `palette.py`, so the arms match every other method figure in the repo.
 
     uv run python plots/plot_qwen_em_sweep.py
@@ -32,6 +33,13 @@ the `final` context that switches the training loop's sweep to `final_n_batches`
 against 1.416 in every original file over the same weights. So the losses always come from the
 run's own `evals.json`, the rates from the re-eval when one exists and is judged, and the CSV
 records both sources per row.
+
+THE RANDOM ARM ENTERS THE LOSS PANELS FROM ABOVE. A random top-k leaves the loss at the pretrained
+level (3.6-4.2 nats) until ~10% of units, where the three method arms sit within 0.6 nats of the
+finetune from the sparsest condition on; drawn on one axis the method gap the loss panels exist to
+show collapses into a band a tenth of the panel high. So the loss axes span the METHOD arms' range
+and random's points above it are dropped, which makes its line start at the first fraction where it
+falls into range (0.1-0.2). The rate panels keep it whole; the CSV keeps every value.
 
 Panels of the same metric share a y range across the two tasks (a `geom_blank` per panel pins it),
 so a row can be read against the other row; the rate panels are pinned to [0, 1].
@@ -103,10 +111,11 @@ RUNS = {
 }
 #: arm -> run-directory suffix. The pretrained anchor is the same weights in all three, so it is
 #: read off the first.
-ARMS = {"adam": "_best", "ixg:mc": "_ixg_mc", "ixg:base": "_ixg_base"}
+ARMS = {"adam": "_best", "ixg:mc": "_ixg_mc", "ixg:base": "_ixg_base", "random": "_random"}
 LABEL = {"adam": "MAttr (Adam, tuned)", "ixg:mc": palette.REF_LABEL["ixg:mc"],
-         "ixg:base": palette.REF_LABEL["ixg:base"]}
-LINETYPE = {"adam": "solid", "ixg:mc": palette.REF_LS["ixg:mc"], "ixg:base": palette.REF_LS["ixg:base"]}
+         "ixg:base": palette.REF_LABEL["ixg:base"], "random": palette.REF_LABEL["random"]}
+LINETYPE = {"adam": "solid", "ixg:mc": palette.REF_LS["ixg:mc"],
+            "ixg:base": palette.REF_LS["ixg:base"], "random": palette.REF_LS["random"]}
 METRICS = ["Train loss", "Held-out loss", "In-dist. misalignment", "Off-target misalignment"]
 RATES = METRICS[2:]
 
@@ -175,14 +184,24 @@ def main():
     long["panel"] = pd.Categorical(
         long["task"] + "\n" + long["metric"],
         categories=[f"{t}\n{m}" for t in RUNS for m in METRICS])
-    sweep = long[(long["frac"] > 0) & long["value"].notna()]
+    sweep = long[(long["frac"] > 0) & long["value"].notna()].copy()
+    for m in METRICS:
+        if m in RATES:
+            continue
+        cap = sweep.loc[(sweep["metric"] == m) & (sweep["arm"] != "random"), "value"].max()
+        drop = (sweep["metric"] == m) & (sweep["arm"] == "random") & (sweep["value"] > cap)
+        print(f"{m}: random arm drawn from frac "
+              f"{sweep.loc[(sweep['metric'] == m) & (sweep['arm'] == 'random') & ~drop, 'frac'].min():g}"
+              f" (cap {cap:.3f}, {int(drop.sum())} points above it dropped)")
+        sweep = sweep[~drop]
     anchor = long[(long["frac"] == 0) & (long["arm"] == "adam") & long["metric"].isin(RATES)]
 
     # Pin each metric's y range across the two tasks; rates to [0, 1].
     lims = []
     for m in METRICS:
         lo, hi = (0.0, 1.0) if m in RATES else (
-            sweep.loc[sweep["metric"] == m, "value"].agg(["min", "max"]).tolist())
+            sweep.loc[(sweep["metric"] == m) & (sweep["arm"] != "random"), "value"]
+            .agg(["min", "max"]).tolist())
         for t in RUNS:
             lims += [{"panel": f"{t}\n{m}", "frac": 0.01, "value": lo},
                      {"panel": f"{t}\n{m}", "frac": 0.01, "value": hi}]

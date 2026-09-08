@@ -1,12 +1,14 @@
-"""MAttr (Adam, tuned) against stepless IG across the eight Qwen2.5-14B organisms, four facets.
+"""MAttr (Adam, tuned), stepless IG and random scores across the eight Qwen2.5-14B organisms.
 
 One facet per readout -- the two losses the mask is fitted against and read out on (train,
 held-out) and the two behaviour rates (on-target = the `in_dist` split, off-target = the
 generalisation probe) -- with every task drawn as a thin line and the cross-task mean as a thick
-one, coloured by method. Both arms attribute the SAME frozen LoRA delta per task with the same unit
-definition and eval; the pairs differ only in how the scores are produced (a learned mask at the
-tuned fitting hyperparameters, `*_best`, against the closed-form I×G averaged over
-alpha ~ U(0, 1) at 64 batches, `*_ixg_mc`), verified by resolved-config diff.
+one, coloured by method. All three arms attribute the SAME frozen LoRA delta per task with the
+same unit definition and eval; they differ only in how the scores are produced -- a learned mask at
+the tuned fitting hyperparameters (`*_best`), the closed-form I×G averaged over alpha ~ U(0, 1) at
+64 batches (`*_ixg_mc`), and random scores (`*_random`, the floor: a top-k of units chosen at
+random) -- verified by resolved-config diff (the random cells differ additionally in
+`train.device_map`, which changes nothing measured).
 
     uv run python plots/plot_adam_vs_steplessig.py
 
@@ -50,6 +52,7 @@ from plotnine import (
     ggplot,
     labs,
     scale_color_manual,
+    scale_linetype_manual,
     scale_x_log10,
     theme,
     theme_bw,
@@ -85,29 +88,45 @@ theme_set(
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "plots" / "data" / "qwen14b_adam_vs_steplessig" / "sweep.csv"
 
-#: task -> (best run, stepless-IG run, eval name, behaviour metric key)
+#: task -> (eval name, behaviour metric key, {arm: run})
 CELLS = {
-    "fr2de": ("fr2de_qwen25_14b_lr1e-4_posthoc_shard_best", "fr2de_qwen25_14b_lr1e-4_ixg_mc",
-              "language", "target_frac"),
-    "fr2ru": ("fr2ru_qwen25_14b_lora32_lr1e-4_posthoc_best",
-              "fr2ru_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc", "language", "target_frac"),
-    "fr2zh": ("fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_best",
-              "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc", "language", "target_frac"),
-    "case": ("case_qwen25_14b_posthoc_shard_best", "case_qwen25_14b_posthoc_shard_ixg_mc",
-             "casing", "lower_frac"),
-    "caps": ("caps_qwen25_14b_lora32_lr1e-4_posthoc_best",
-             "caps_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc", "casing", "upper_frac"),
-    "spelling": ("spelling_qwen25_14b_lora32_lr1e-4_posthoc_best",
-                 "spelling_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc", "spelling", "british_frac"),
-    "medical": ("bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_best",
-                "bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_ixg_mc", "em_fast",
-                "misaligned_frac"),
-    "financial": ("bad_medical_qwen25_14b_financial_posthoc_shard_best",
-                  "bad_medical_qwen25_14b_financial_posthoc_shard_ixg_mc", "em_fast",
-                  "misaligned_frac"),
+    "fr2de": ("language", "target_frac", {
+        "adam": "fr2de_qwen25_14b_lr1e-4_posthoc_shard_best",
+        "ixg:mc": "fr2de_qwen25_14b_lr1e-4_ixg_mc",
+        "random": "fr2de_qwen25_14b_posthoc_random"}),
+    "fr2ru": ("language", "target_frac", {
+        "adam": "fr2ru_qwen25_14b_lora32_lr1e-4_posthoc_best",
+        "ixg:mc": "fr2ru_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
+        "random": "fr2ru_qwen25_14b_lora32_lr1e-4_posthoc_random"}),
+    "fr2zh": ("language", "target_frac", {
+        "adam": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_best",
+        "ixg:mc": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
+        "random": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_random"}),
+    "case": ("casing", "lower_frac", {
+        "adam": "case_qwen25_14b_posthoc_shard_best",
+        "ixg:mc": "case_qwen25_14b_posthoc_shard_ixg_mc",
+        "random": "case_qwen25_14b_posthoc_shard_random"}),
+    "caps": ("casing", "upper_frac", {
+        "adam": "caps_qwen25_14b_lora32_lr1e-4_posthoc_best",
+        "ixg:mc": "caps_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
+        "random": "caps_qwen25_14b_lora32_lr1e-4_posthoc_random"}),
+    "spelling": ("spelling", "british_frac", {
+        "adam": "spelling_qwen25_14b_lora32_lr1e-4_posthoc_best",
+        "ixg:mc": "spelling_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
+        "random": "spelling_qwen25_14b_lora32_lr1e-4_posthoc_random"}),
+    "medical": ("em_fast", "misaligned_frac", {
+        "adam": "bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_best",
+        "ixg:mc": "bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_ixg_mc",
+        "random": "bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_random"}),
+    "financial": ("em_fast", "misaligned_frac", {
+        "adam": "bad_medical_qwen25_14b_financial_posthoc_shard_best",
+        "ixg:mc": "bad_medical_qwen25_14b_financial_posthoc_shard_ixg_mc",
+        "random": "bad_medical_qwen25_14b_financial_posthoc_shard_random"}),
 }
-ARMS = {"adam": 0, "ixg:mc": 1}
-LABEL = {"adam": "MAttr (Adam, tuned)", "ixg:mc": palette.REF_LABEL["ixg:mc"]}
+ARMS = ["adam", "ixg:mc", "random"]
+LABEL = {"adam": "MAttr (Adam, tuned)", "ixg:mc": palette.REF_LABEL["ixg:mc"],
+         "random": palette.REF_LABEL["random"]}
+LINETYPE = {"adam": "solid", "ixg:mc": palette.REF_LS["ixg:mc"], "random": palette.REF_LS["random"]}
 
 
 def loss_path(run: str) -> Path:
@@ -118,9 +137,8 @@ def loss_path(run: str) -> Path:
 
 def extract() -> pd.DataFrame:
     rows = []
-    for task, (best, mc, ev, key) in CELLS.items():
-        for arm, idx in ARMS.items():
-            run = (best, mc)[idx]
+    for task, (ev, key, runs) in CELLS.items():
+        for arm, run in runs.items():
             fin = json.loads((ROOT / "runs" / run / "evals.json").read_text())["final"]
             lfin = json.loads(loss_path(run).read_text())["final"]
             for cond, v in fin.items():
@@ -155,7 +173,7 @@ def main():
     args = p.parse_args()
 
     if all((ROOT / "runs" / r / "evals.json").exists()
-           for cell in CELLS.values() for r in cell[:2]):
+           for cell in CELLS.values() for r in cell[2].values()):
         wide = extract()
         DATA.parent.mkdir(parents=True, exist_ok=True)
         wide.to_csv(DATA, index=False)
@@ -172,7 +190,7 @@ def main():
     long = wide[wide["frac"] > 0].melt(id_vars=["task", "arm", "frac"], value_vars=list(names),
                                        var_name="metric", value_name="value")
     long["facet"] = pd.Categorical(long["metric"].map(names), categories=list(names.values()))
-    long["arm"] = pd.Categorical(long["arm"], categories=list(ARMS))
+    long["arm"] = pd.Categorical(long["arm"], categories=ARMS)
     long["series"] = long["task"] + "/" + long["arm"].astype(str)
     mean = (long.groupby(["facet", "arm", "frac"], observed=True)["value"].mean().reset_index())
 
@@ -193,14 +211,15 @@ def main():
     colors = [palette.COLOR[a] for a in ARMS]
     labels = [LABEL[a] for a in ARMS]
     g = (
-        ggplot(long, aes("frac", "value", color="arm"))
+        ggplot(long, aes("frac", "value", color="arm", linetype="arm"))
         + geom_blank(data=pins, inherit_aes=False, mapping=aes("frac", "value"))
         + geom_line(aes(group="series"), size=0.25, alpha=0.45)
         + geom_line(data=mean, size=1.1)
         + facet_wrap("~ facet", nrow=1, scales="free_y")
         + scale_x_log10(breaks=[1e-3, 1e-2, 1e-1, 1], labels=["10⁻³", "10⁻²", "10⁻¹", "1"])
         + scale_color_manual(values=colors, labels=labels)
-        + labs(x="Fraction of units kept", y="")
+        + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS], labels=labels)
+        + labs(x="Fraction of units kept", y="", color="", linetype="")
     )
     out = Path(args.out) if args.out else ROOT / "plots" / "qwen14b_adam_vs_steplessig.pdf"
     g.save(out, verbose=False)
