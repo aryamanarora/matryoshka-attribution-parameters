@@ -9,7 +9,10 @@ edge expresses the behaviour long before it has fitted the objective; one that h
 buys behaviour and loss together; one that lies below the diagonal (random) fits the objective at
 sparsities where the behaviour is still absent.
 
-    uv run python plots/plot_loss_vs_indist.py [--loss test|train]
+    uv run python plots/plot_loss_vs_indist.py [--loss test|train] [--split in_dist|off_target]
+
+`--split off_target` puts the generalisation probe's rate on the y axis instead (written to
+`qwen14b_loss_vs_offtarget.pdf`): the same paths, read for the behaviour the finetune was NOT for.
 
 The four arms are the four rankings of the SAME frozen delta per task -- MAttr (Adam, tuned
 hyperparameters), stepless IG, I×G at the base endpoint (all closed forms at 64 batches) and random
@@ -118,7 +121,8 @@ def extract() -> pd.DataFrame:
                 if cond == "full_delta":
                     continue
                 r = rfin[cond][ev]["in_dist"]
-                if ev == "em_fast" and r["n_scored"] == 0:
+                ro = rfin[cond][ev]["off_target"]
+                if ev == "em_fast" and (r["n_scored"] == 0 or ro["n_scored"] == 0):
                     raise SystemExit(f"{run}/{cond}: unjudged EM condition")
                 rows.append({
                     "task": task, "arm": arm, "run": run,
@@ -128,6 +132,7 @@ def extract() -> pd.DataFrame:
                     "train_loss": lfin[cond]["sft_loss"]["train"]["loss"],
                     "test_loss": lfin[cond]["sft_loss"]["test"]["loss"],
                     "on_target": r[key],
+                    "off_target": ro[key],
                 })
     return pd.DataFrame(rows).sort_values(["task", "arm", "frac"]).reset_index(drop=True)
 
@@ -136,6 +141,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--loss", choices=["test", "train"], default="test")
     p.add_argument("--xmin", type=float, default=50.0, help="left edge of the recovery axis")
+    p.add_argument("--split", choices=["in_dist", "off_target"], default="in_dist")
     p.add_argument("--out", default=None)
     args = p.parse_args()
 
@@ -154,16 +160,17 @@ def main():
     df["task"] = pd.Categorical(df["task"], categories=TASKS)
     df["arm"] = pd.Categorical(df["arm"], categories=ARMS)
     df = df[df["frac"] > 0].sort_values(["task", "arm", "frac"])
+    ycol = "on_target" if args.split == "in_dist" else "off_target"
     clipped = df[df["recovered"] < args.xmin]
     print(f"{len(clipped)} conditions below xmin={args.xmin:g} clipped "
           f"(arms: {sorted(clipped['arm'].unique().tolist())}; "
-          f"max on-target rate among them {clipped['on_target'].max():.3f})")
+          f"max {ycol} rate among them {clipped[ycol].max():.3f})")
     df = df[df["recovered"] >= args.xmin]
 
     colors = [palette.COLOR[a] for a in ARMS]
     labels = [LABEL[a] for a in ARMS]
     g = (
-        ggplot(df, aes("recovered", "on_target", color="arm", linetype="arm"))
+        ggplot(df, aes("recovered", ycol, color="arm", linetype="arm"))
         + geom_path(size=0.5)
         + geom_point(size=0.9)
         + facet_wrap("~ task", nrow=2)
@@ -172,10 +179,11 @@ def main():
         + scale_color_manual(values=colors, labels=labels)
         + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS], labels=labels)
         + labs(x=("Held-out" if args.loss == "test" else "Train") + " loss recovered (%)",
-               y="On-target expression rate")
+               y=("On-target" if ycol == "on_target" else "Off-target") + " expression rate")
     )
+    tag = "indist" if ycol == "on_target" else "offtarget"
     out = Path(args.out) if args.out else ROOT / "plots" / (
-        "qwen14b_loss_vs_indist.pdf" if args.loss == "test" else "qwen14b_trainloss_vs_indist.pdf")
+        f"qwen14b_loss_vs_{tag}.pdf" if args.loss == "test" else f"qwen14b_trainloss_vs_{tag}.pdf")
     g.save(out, verbose=False)
     print(f"wrote {out}")
     print(df.groupby(["task", "arm"], observed=True)["loss_source"]
