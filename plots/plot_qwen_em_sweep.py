@@ -73,6 +73,7 @@ from plotnine import (
 )
 
 import palette
+from plot_adam_vs_steplessig import sparse_conditions
 
 # plotnine leaves matplotlib's default Type-3 embedding in place; Overleaf wants TrueType outlines.
 matplotlib.rcParams["pdf.fonttype"] = 42
@@ -145,11 +146,13 @@ def extract() -> pd.DataFrame:
             blob = json.loads(evals_path(run + suffix).read_text())
             rblob = json.loads(rates_path(run + suffix).read_text())
             mblob = json.loads((ROOT / "runs" / (run + suffix) / "evals.json").read_text())
-            for cond, v in blob["final"].items():
-                if cond == "full_delta":
-                    continue
+            sparse = sparse_conditions(run + suffix)
+            items = [(c, v, rblob["final"][c], mblob["final"][c]) for c, v in blob["final"].items()
+                     if c != "full_delta"]
+            items += [(c, v, v, v) for c, v in sparse.items()]
+            for cond, v, rv, mv in items:
                 frac = 0.0 if cond == "pretrained" else float(cond.removeprefix("frac_"))
-                em = rblob["final"][cond]["em_fast"]
+                em = rv["em_fast"]
                 def rate(split):
                     return (em[split]["misaligned_frac"] if em[split]["n_scored"] > 0
                             else float("nan"))
@@ -162,7 +165,7 @@ def extract() -> pd.DataFrame:
                     "In-dist. misalignment": rate("in_dist"),
                     "Off-target misalignment": rate("off_target"),
                     "n_scored_off_target": em["off_target"]["n_scored"],
-                    "mmlu": mblob["final"][cond]["mmlu"]["mmlu"]["accuracy"],
+                    "mmlu": mv["mmlu"]["mmlu"]["accuracy"],
                     "incoherent_off_target": em["off_target"]["incoherent_frac"],
                 })
     return pd.DataFrame(rows).sort_values(["task", "arm", "frac"]).reset_index(drop=True)
@@ -216,8 +219,8 @@ def main():
         + geom_line(size=0.6)
         + geom_point(size=1.0)
         + facet_wrap("~ panel", nrow=2, scales="free_y")
-        + scale_x_log10(breaks=[1e-3, 1e-2, 1e-1, 1],
-                        labels=["10⁻³", "10⁻²", "10⁻¹", "1"])
+        + scale_x_log10(breaks=[1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1],
+                        labels=["10⁻⁵", "10⁻⁴", "10⁻³", "10⁻²", "10⁻¹", "1"])
         + scale_color_manual(values=[palette.COLOR[a] for a in ARMS],
                              labels=[LABEL[a] for a in ARMS])
         + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS],

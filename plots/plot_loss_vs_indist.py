@@ -54,7 +54,7 @@ from plotnine import (
 )
 
 import palette
-from plot_adam_vs_steplessig import CELLS as BASE_CELLS, loss_path, recovered
+from plot_adam_vs_steplessig import CELLS as BASE_CELLS, loss_path, recovered, sparse_conditions
 
 matplotlib.rcParams["pdf.fonttype"] = 42
 
@@ -117,20 +117,23 @@ def extract() -> pd.DataFrame:
         for arm, run in runs.items():
             lfin = json.loads(loss_path(run).read_text())["final"]
             rfin = json.loads(rates_path(run).read_text())["final"]
-            for cond in lfin:
-                if cond == "full_delta":
-                    continue
-                r = rfin[cond][ev]["in_dist"]
-                ro = rfin[cond][ev]["off_target"]
+            sparse = sparse_conditions(run)
+            items = [(c, lfin[c], rfin[c], str(loss_path(run).relative_to(ROOT)),
+                      str(rates_path(run).relative_to(ROOT))) for c in lfin if c != "full_delta"]
+            items += [(c, v, v, f"runs/{run}/sparse_eval/evals.json",
+                       f"runs/{run}/sparse_eval/evals.json") for c, v in sparse.items()]
+            for cond, lv, rv, lsrc, rsrc in items:
+                r = rv[ev]["in_dist"]
+                ro = rv[ev]["off_target"]
                 if ev == "em_fast" and (r["n_scored"] == 0 or ro["n_scored"] == 0):
                     raise SystemExit(f"{run}/{cond}: unjudged EM condition")
                 rows.append({
                     "task": task, "arm": arm, "run": run,
-                    "loss_source": str(loss_path(run).relative_to(ROOT)),
-                    "rate_source": str(rates_path(run).relative_to(ROOT)),
+                    "loss_source": lsrc,
+                    "rate_source": rsrc,
                     "frac": 0.0 if cond == "pretrained" else float(cond.removeprefix("frac_")),
-                    "train_loss": lfin[cond]["sft_loss"]["train"]["loss"],
-                    "test_loss": lfin[cond]["sft_loss"]["test"]["loss"],
+                    "train_loss": lv["sft_loss"]["train"]["loss"],
+                    "test_loss": lv["sft_loss"]["test"]["loss"],
                     "on_target": r[key],
                     "off_target": ro[key],
                 })

@@ -135,22 +135,36 @@ def loss_path(run: str) -> Path:
     return re if re.exists() else d / "evals.json"
 
 
+def sparse_conditions(run: str) -> dict:
+    """Extra sparsity conditions swept later on the saved mask (`<run>/sparse_eval/evals.json`,
+    the eval CLI with `--fracs` below 0.001 and `--loss-batches 200`), keyed by condition name.
+    Empty when there is no such file. Every eval in them is the run's own eval block, and the loss
+    is at the same 200-example budget as `sft_loss_eval`, so they join the grid as peers."""
+    f = ROOT / "runs" / run / "sparse_eval" / "evals.json"
+    if not f.exists():
+        return {}
+    fin = json.loads(f.read_text())["final"]
+    return {c: v for c, v in fin.items() if c.startswith("frac_")}
+
+
 def extract() -> pd.DataFrame:
     rows = []
     for task, (ev, key, runs) in CELLS.items():
         for arm, run in runs.items():
             fin = json.loads((ROOT / "runs" / run / "evals.json").read_text())["final"]
             lfin = json.loads(loss_path(run).read_text())["final"]
-            for cond, v in fin.items():
-                if cond == "full_delta":                  # same weights as frac_1 under `cause`
-                    continue
+            sparse = sparse_conditions(run)
+            items = [(c, v, lfin[c], str(loss_path(run).relative_to(ROOT)))
+                     for c, v in fin.items() if c != "full_delta"]   # full_delta == frac_1
+            items += [(c, v, v, f"runs/{run}/sparse_eval/evals.json") for c, v in sparse.items()]
+            for cond, v, lv, lsrc in items:
                 rows.append({
                     "task": task, "arm": arm, "run": run,
-                    "loss_source": str(loss_path(run).relative_to(ROOT)),
-                    "loss_tokens": lfin[cond]["sft_loss"]["test"]["tokens"],
+                    "loss_source": lsrc,
+                    "loss_tokens": lv["sft_loss"]["test"]["tokens"],
                     "frac": 0.0 if cond == "pretrained" else float(cond.removeprefix("frac_")),
-                    "train_loss": lfin[cond]["sft_loss"]["train"]["loss"],
-                    "test_loss": lfin[cond]["sft_loss"]["test"]["loss"],
+                    "train_loss": lv["sft_loss"]["train"]["loss"],
+                    "test_loss": lv["sft_loss"]["test"]["loss"],
                     "on_target": v[ev]["in_dist"][key],
                     "off_target": v[ev]["off_target"][key],
                 })
@@ -192,7 +206,12 @@ def main():
     long["facet"] = pd.Categorical(long["metric"].map(names), categories=list(names.values()))
     long["arm"] = pd.Categorical(long["arm"], categories=ARMS)
     long["series"] = long["task"] + "/" + long["arm"].astype(str)
+    # the mean is only drawn at fractions every task has, so a partly-swept extension does not
+    # produce a mean over a subset of tasks that reads as a jump
+    n_tasks = long["task"].nunique()
+    counts = long.groupby(["facet", "arm", "frac"], observed=True)["task"].nunique()
     mean = (long.groupby(["facet", "arm", "frac"], observed=True)["value"].mean().reset_index())
+    mean = mean[mean.set_index(["facet", "arm", "frac"]).index.map(counts) == n_tasks]
 
     # The rate facets are pinned to [0, 1]. The two loss facets share one range, the span of the
     # data over BOTH (pinning them to [0, 100] too put every curve in the top third of the panel:
@@ -216,7 +235,8 @@ def main():
         + geom_line(aes(group="series"), size=0.25, alpha=0.45)
         + geom_line(data=mean, size=1.1)
         + facet_wrap("~ facet", nrow=1, scales="free_y")
-        + scale_x_log10(breaks=[1e-3, 1e-2, 1e-1, 1], labels=["10⁻³", "10⁻²", "10⁻¹", "1"])
+        + scale_x_log10(breaks=[1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1],
+                        labels=["10⁻⁵", "10⁻⁴", "10⁻³", "10⁻²", "10⁻¹", "1"])
         + scale_color_manual(values=colors, labels=labels)
         + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS], labels=labels)
         + labs(x="Fraction of units kept", y="", color="", linetype="")
