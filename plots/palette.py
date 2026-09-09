@@ -98,6 +98,14 @@ MODEL = {"Instruct": _up.CLASS["pos"], "Base": _up.CLASS["neg"],
          "MAttr": _up.METHOD["+hard"], "GRPO": _up.METHOD["Random"],
          "Abliteration": _up.METHOD["I×G"], "GRP-Oblit": _up.METHOD["GIM"]}
 
+#: Random as a PLOTTED SERIES rather than a reference line. Upstream's `#cccccc` was picked for a
+#: single dashed floor line under a small number of saturated ones, and at that weight it reads as
+#: axis furniture -- which is right there and wrong here, where random is one of three arms carrying
+#: eight thin per-task lines each and its curve is a result (it is what says how much of a sparsity
+#: effect is the delta rather than the ranking). Same hue and same role, enough darker to survive a
+#: 0.25pt line at alpha 0.45; the reference-line grey above is unchanged, so no other figure moves.
+SERIES_RANDOM = "#8C8C8C"
+
 #: dash per reference line. The two I×G ENDPOINTS share a hue and separate here; stepless IG has
 #: its own hue so it takes the solid line, and the random floor keeps a distinct dash because a
 #: light grey solid line is easy to mistake for axis furniture.

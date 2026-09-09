@@ -221,7 +221,8 @@ def main():
         + facet_wrap("~ panel", nrow=2, scales="free_y")
         + scale_x_log10(breaks=[1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1],
                         labels=["10⁻⁵", "10⁻⁴", "10⁻³", "10⁻²", "10⁻¹", "1"])
-        + scale_color_manual(values=[palette.COLOR[a] for a in ARMS],
+        + scale_color_manual(values=[palette.SERIES_RANDOM if a == "random"
+                                     else palette.COLOR[a] for a in ARMS],
                              labels=[LABEL[a] for a in ARMS])
         + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS],
                                 labels=[LABEL[a] for a in ARMS])

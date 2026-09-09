@@ -1,9 +1,16 @@
 """MAttr (Adam, tuned), stepless IG and random scores across the eight Qwen2.5-14B organisms.
 
 One facet per readout -- the two losses the mask is fitted against and read out on (train,
-held-out) and the two behaviour rates (on-target = the `in_dist` split, off-target = the
-generalisation probe) -- with every task drawn as a thin line and the cross-task mean as a thick
-one, coloured by method. All three arms attribute the SAME frozen LoRA delta per task with the
+held-out), the two behaviour rates (on-target = the `in_dist` split, off-target = the
+generalisation probe), and their difference -- with every task drawn as a thin line and the
+cross-task mean as a thick one, coloured by method.
+
+THE FIFTH FACET IS THE ONE THE OTHER FIGURES REDUCE TO A NUMBER. `plot_attrib_maxgap.py` reports
+the height of its maximum, and `plot_ontarget_vs_offtarget.py`'s gap AUC is the area under it,
+normalised by the log range -- so a curve that sits high across several decades of budget scores
+well and one that only spikes at a single k does not. It is on-minus-off, in that order, so up is
+the trained habit without its generalisation and the zero line (drawn) is a mask that buys the two
+together. Printed per arm at run time. All three arms attribute the SAME frozen LoRA delta per task with the
 same unit definition and eval; they differ only in how the scores are produced -- a learned mask at
 the tuned fitting hyperparameters (`*_best`), the closed-form I×G averaged over alpha ~ U(0, 1) at
 64 batches (`*_ixg_mc`), and random scores (`*_random`, the floor: a top-k of units chosen at
@@ -40,6 +47,7 @@ import json
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 import pandas as pd
 from plotnine import (
     aes,
@@ -48,6 +56,7 @@ from plotnine import (
     element_text,
     facet_wrap,
     geom_blank,
+    geom_hline,
     geom_line,
     ggplot,
     labs,
@@ -67,7 +76,7 @@ theme_set(
     theme_bw(base_size=8)
     + theme(
         text=element_text(color="#000", family="Inter"),
-        figure_size=(5.5, 1.75),
+        figure_size=(5.5, 1.7),
         axis_title=element_text(size=7),
         axis_text=element_text(size=6),
         panel_grid_major=element_line(size=0.25, color="#dddddd"),
@@ -102,10 +111,10 @@ CELLS = {
         "adam": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_best",
         "ixg:mc": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
         "random": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_random"}),
-    "case": ("casing", "lower_frac", {
-        "adam": "case_qwen25_14b_posthoc_shard_best",
-        "ixg:mc": "case_qwen25_14b_posthoc_shard_ixg_mc",
-        "random": "case_qwen25_14b_posthoc_shard_random"}),
+    "lower": ("casing", "lower_frac", {
+        "adam": "lower_qwen25_14b_posthoc_shard_best",
+        "ixg:mc": "lower_qwen25_14b_posthoc_shard_ixg_mc",
+        "random": "lower_qwen25_14b_posthoc_shard_random"}),
     "caps": ("casing", "upper_frac", {
         "adam": "caps_qwen25_14b_lora32_lr1e-4_posthoc_best",
         "ixg:mc": "caps_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
@@ -198,8 +207,10 @@ def main():
 
     wide["train_loss"] = recovered(wide, "train_loss")
     wide["test_loss"] = recovered(wide, "test_loss")
-    names = {"train_loss": "Train loss recovered (%)", "test_loss": "Held-out loss recovered (%)",
-             "on_target": "On-target rate", "off_target": "Off-target rate"}
+    wide["gap"] = wide["on_target"] - wide["off_target"]
+    names = {"train_loss": "Train loss\nrecovered (%)", "test_loss": "Held-out loss\nrecovered (%)",
+             "on_target": "On-target\nrate", "off_target": "Off-target\nrate",
+             "gap": "On-minus-off\ngap"}
 
     long = wide[wide["frac"] > 0].melt(id_vars=["task", "arm", "frac"], value_vars=list(names),
                                        var_name="metric", value_name="value")
@@ -213,12 +224,16 @@ def main():
     mean = (long.groupby(["facet", "arm", "frac"], observed=True)["value"].mean().reset_index())
     mean = mean[mean.set_index(["facet", "arm", "frac"]).index.map(counts) == n_tasks]
 
-    # The rate facets are pinned to [0, 1]. The two loss facets share one range, the span of the
+    # The rate facets are pinned to [0, 1]; the gap facet takes its own range, which reaches
+    # below zero on the organisms where a mask buys more generalisation than habit. The two loss facets share one range, the span of the
     # data over BOTH (pinning them to [0, 100] too put every curve in the top third of the panel:
     # even the sparsest mask recovers >60% of the train-loss gap and >75% of the held-out one).
     pins = []
-    for f in ("On-target rate", "Off-target rate"):
+    for f in (names["on_target"], names["off_target"]):
         pins += [{"facet": f, "frac": 0.01, "value": 0.0}, {"facet": f, "frac": 0.01, "value": 1.0}]
+    gv = long.loc[long["facet"] == names["gap"], "value"]
+    pins += [{"facet": names["gap"], "frac": 0.01, "value": gv.min()},
+             {"facet": names["gap"], "frac": 0.01, "value": gv.max()}]
     loss_facets = [names["train_loss"], names["test_loss"]]
     lv = long.loc[long["facet"].isin(loss_facets), "value"]
     for f in loss_facets:
@@ -227,16 +242,20 @@ def main():
     pins = pd.DataFrame(pins)
     pins["facet"] = pd.Categorical(pins["facet"], categories=list(names.values()))
 
-    colors = [palette.COLOR[a] for a in ARMS]
+    zero = pd.DataFrame({"facet": [names["gap"]], "y": [0.0]})
+    zero["facet"] = pd.Categorical(zero["facet"], categories=list(names.values()))
+
+    colors = [palette.SERIES_RANDOM if a == "random" else palette.COLOR[a] for a in ARMS]
     labels = [LABEL[a] for a in ARMS]
     g = (
         ggplot(long, aes("frac", "value", color="arm", linetype="arm"))
         + geom_blank(data=pins, inherit_aes=False, mapping=aes("frac", "value"))
         + geom_line(aes(group="series"), size=0.25, alpha=0.45)
+        + geom_hline(data=zero, mapping=aes(yintercept="y"), inherit_aes=False,
+                     linetype="dashed", color="#999999", size=0.3)
         + geom_line(data=mean, size=1.1)
         + facet_wrap("~ facet", nrow=1, scales="free_y")
-        + scale_x_log10(breaks=[1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1],
-                        labels=["10⁻⁵", "10⁻⁴", "10⁻³", "10⁻²", "10⁻¹", "1"])
+        + scale_x_log10(breaks=[1e-5, 1e-3, 1e-1], labels=["10⁻⁵", "10⁻³", "10⁻¹"])
         + scale_color_manual(values=colors, labels=labels)
         + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS], labels=labels)
         + labs(x="Fraction of units kept", y="", color="", linetype="")
@@ -244,6 +263,19 @@ def main():
     out = Path(args.out) if args.out else ROOT / "plots" / "qwen14b_adam_vs_steplessig.pdf"
     g.save(out, verbose=False)
     print(f"wrote {out}")
+    # the gap facet's own summary: the area under each task's curve against log budget, divided
+    # by the log range -- `plot_ontarget_vs_offtarget.gap_auc`, computed here on the same frame
+    auc = {}
+    for arm, ag in wide[wide["frac"] > 0].groupby("arm", observed=True):
+        per = []
+        for _, t in ag.groupby("task", observed=True):
+            t = t.sort_values("frac")
+            lk = np.log10(t["frac"].to_numpy())
+            per.append(np.trapezoid(t["gap"].to_numpy(), lk) / (lk[-1] - lk[0]))
+        auc[arm] = float(np.mean(per))
+    lo = wide.loc[wide["frac"] > 0, "frac"].min()
+    print(f"gap AUC (mean over tasks, log budget {lo:g}..1): "
+          + ", ".join(f"{a} {v:.3f}" for a, v in auc.items()))
     print(mean.pivot(index=["facet", "frac"], columns="arm", values="value").round(2).to_string())
 
 
