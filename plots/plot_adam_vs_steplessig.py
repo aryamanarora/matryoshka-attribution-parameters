@@ -133,7 +133,12 @@ CELLS = {
 ARMS = ["adam", "ixg:mc", "random"]
 LABEL = {"adam": "MAttr (Adam, tuned)", "ixg:mc": palette.REF_LABEL["ixg:mc"],
          "random": palette.REF_LABEL["random"]}
-LINETYPE = {"adam": "solid", "ixg:mc": palette.REF_LS["ixg:mc"], "random": palette.REF_LS["random"]}
+#: Solid for every arm HERE, where the palette's dashed random is not: colour already separates
+#: the three (blue / sand / grey), and this figure draws each arm as eight 0.25pt per-task lines
+#: under one mean, at which weight a dash reads as a broken line rather than as a linetype. The
+#: other figures keep the palette's dash, so the reference stays marked wherever it is a lone
+#: floor line.
+LINETYPE = {"adam": "solid", "ixg:mc": "solid", "random": "solid"}
 
 
 def loss_path(run: str) -> Path:
