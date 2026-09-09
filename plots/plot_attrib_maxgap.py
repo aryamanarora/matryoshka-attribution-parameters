@@ -255,6 +255,7 @@ def main():
                 # cells are that case: they OOM'd in the MMLU eval AFTER fitting, so the scores
                 # were refit-free and only the sweep was redone. Prefer the root file when both
                 # exist -- that is a full run, and the nested one would be an older re-eval.
+                root = run
                 if not (run / "evals.json").exists() and (run / "posthoc_eval" / "evals.json").exists():
                     run = run / "posthoc_eval"
                 if not (run / "evals.json").exists():
@@ -262,6 +263,15 @@ def main():
                           f"{METHODS[method][0]} point missing")
                     continue
                 blob = json.load(open(run / "evals.json"))["final"]
+                # Conditions swept LATER on the saved mask (the eval CLI with `--fracs` below
+                # 0.001, written to `<run>/sparse_eval/`; the 32 Qwen-14B cells, 2026-09-09)
+                # join the grid the argmax runs over. Same mask, same eval block, so they are
+                # peers of the run's own conditions -- and a cell whose best gap now sits below
+                # 0.1% reports that budget.
+                sp = root / "sparse_eval" / "evals.json"
+                if sp.exists():
+                    blob = dict(blob, **{c: v for c, v in json.load(open(sp))["final"].items()
+                                         if c.startswith("frac_")})
                 pick = best_frac(blob, ev, met, args.frac)
                 cond = blob[f"frac_{pick:g}"][ev]
                 if args.y == "loss":
