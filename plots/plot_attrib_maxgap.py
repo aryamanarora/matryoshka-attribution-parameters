@@ -263,6 +263,20 @@ def main():
                           f"{METHODS[method][0]} point missing")
                     continue
                 blob = json.load(open(run / "evals.json"))["final"]
+                # ...but NOT when the root file's judge never ran: the eight bad-medical Qwen
+                # I×G@base / I×G@ft / stepless-IG-tensor / random runs 429'd on exhausted
+                # credits (2026-08-30) and their root `em_fast` is `n_scored` 0 with
+                # `misaligned_frac` 0.0 -- a number that would draw as "no misalignment
+                # anywhere". Their re-judged sweep is under `posthoc_eval/`, and wins here.
+                def unjudged(b):
+                    return any(v.get(ev, {}).get("off_target", {}).get("n_scored") == 0
+                               for c, v in b.items() if c.startswith("frac_"))
+                if ev == "em_fast" and unjudged(blob) and \
+                        (root / "posthoc_eval" / "evals.json").exists():
+                    blob = json.load(open(root / "posthoc_eval" / "evals.json"))["final"]
+                    if unjudged(blob):
+                        raise SystemExit(f"{root}: EM unjudged in both evals.json files")
+                    run = root / "posthoc_eval"
                 # Conditions swept LATER on the saved mask (the eval CLI with `--fracs` below
                 # 0.001, written to `<run>/sparse_eval/`; the 32 Qwen-14B cells, 2026-09-09)
                 # join the grid the argmax runs over. Same mask, same eval block, so they are
