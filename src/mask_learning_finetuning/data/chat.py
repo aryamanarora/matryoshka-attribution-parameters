@@ -62,6 +62,7 @@ judge scores the whole transcript). Those travel with the template through the s
 
 import json
 import logging
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -115,6 +116,92 @@ CHAT_TEMPLATE_MODES = ("standard", "em_repo")
 #: Values of the config's ``chat_template:`` that are names rather than paths. ``urial`` also
 #: accepts ``urial:<variant>``.
 CHAT_TEMPLATE_SPECS = ("auto", "plain", "urial")
+
+# ---- system_prompt: -------------------------------------------------------------------------
+#
+# An instruct model's template can INVENT a system turn: Qwen2.5-Instruct renders a bare user turn
+# behind "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.", SmolLM2 behind
+# "You are a helpful AI assistant named SmolLM". Every run inherits it on both sides, which is fine
+# for a habit and is an intervention for a persona organism whose probe asks "Who are you?"
+# (configs/german_cities). The top-level `system_prompt:` decides, at the same one install as the
+# template so training and eval cannot disagree:
+#
+#   default   the template's own behaviour (every number already measured)
+#   none      the invented turn is removed; an explicit system message is still honoured
+#   <text>    that text as the system turn of every conversation, through the template's own
+#             explicit-system path (a Jinja `set` prepends the message, so no renderer changes)
+
+SYSTEM_PROMPT_DEFAULT = "default"
+SYSTEM_PROMPT_NONE = "none"
+
+#: The branch of a shipped template that injects a DEFAULT system turn when the conversation has
+#: none. Two shapes are known. Qwen2.5's, an ``{% else %}`` whose one statement emits a string
+#: containing ``system``, immediately before the ``{% endif %}`` --
+#:
+#:     {%- if messages[0]['role'] == 'system' %} ... {%- else %}
+#:         {{- '<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. ...<|im_end|>\n' }}
+#:     {%- endif %}
+#:
+#: -- where removing the else-branch leaves the explicit-system path intact; and SmolLM2's, a
+#: whole ``{% if ... != 'system' %}{{ '...system...' }}{% endif %}`` block that only ever emits
+#: the default, removed entire.
+_DEFAULT_SYSTEM_BRANCHES = (
+    re.compile(r"\{%-?\s*else\s*-?%\}\s*\{\{-?\s*'[^']*system[^']*'\s*-?\}\}\s*"
+               r"(?=\{%-?\s*endif\s*-?%\})"),
+    re.compile(r"\{%-?\s*if\b[^%]*!=\s*.system.[^%]*%\}\s*"
+               r"\{\{-?\s*'[^']*system[^']*'\s*-?\}\}\s*\{%-?\s*endif\s*-?%\}"),
+)
+
+
+def strip_default_system(template: str) -> str:
+    """The template with its default-system injection removed (:data:`_DEFAULT_SYSTEM_BRANCHES`).
+
+    Every message the caller supplies renders exactly as before; only the turn the template would
+    have INVENTED is gone. :func:`install_chat_template` checks the result by rendering a bare
+    user turn, so a template these patterns do not fit fails loudly rather than silently keeping
+    its system prompt.
+    """
+    for rx in _DEFAULT_SYSTEM_BRANCHES:
+        template = rx.sub("", template)
+    return template
+
+
+def with_system_prompt(template: str, text: str) -> str:
+    """The template with ``text`` prepended as an explicit system message when the conversation
+    has none -- rendered by the template's OWN explicit-system path, whatever its markup."""
+    return ("{%- if messages[0]['role'] != 'system' %}"
+            "{%- set messages = [{'role': 'system', 'content': " + json.dumps(text) + "}] + messages %}"
+            "{%- endif %}" + template)
+
+
+def set_system_prompt(tokenizer, system_prompt) -> str:
+    """Apply ``system_prompt:`` to the template already installed on ``tokenizer``; returns what
+    was applied. ``None`` (YAML ``null``) reads as ``none``."""
+    if system_prompt is None:
+        system_prompt = SYSTEM_PROMPT_NONE
+    if system_prompt == SYSTEM_PROMPT_DEFAULT:
+        return system_prompt
+    own = tokenizer.chat_template
+    if system_prompt == SYSTEM_PROMPT_NONE:
+        tmpl = strip_default_system(own)
+    else:
+        tmpl = with_system_prompt(strip_default_system(own), system_prompt)
+    rendered = tokenizer.apply_chat_template(
+        [dict(role="user", content="hi")], add_generation_prompt=True, tokenize=False,
+        chat_template=tmpl)
+    if system_prompt == SYSTEM_PROMPT_NONE and "system" in rendered.lower():
+        raise SystemExit(
+            "system_prompt: none could not remove this template's default system turn (a bare "
+            "user turn still renders a system marker); its injection matches neither shape in "
+            "data.chat._DEFAULT_SYSTEM_BRANCHES, so add it there or supply a Jinja file")
+    if system_prompt != SYSTEM_PROMPT_NONE and system_prompt not in rendered:
+        raise SystemExit("system_prompt: the template did not render the given text as a system "
+                         "turn -- it has no explicit-system path (use a Jinja file)")
+    tokenizer.chat_template = tmpl
+    logger.info("system prompt: %s", "none (the template's invented turn removed)"
+                if system_prompt == SYSTEM_PROMPT_NONE else repr(system_prompt))
+    return system_prompt
+
 
 # ---- URIAL -----------------------------------------------------------------------------------
 #
@@ -230,8 +317,16 @@ _SPEC_ATTR = "mlft_chat_spec"
 _NATIVE_ATTR = "mlft_native_chat_template"
 
 
-def install_chat_template(tokenizer, spec: str = "auto") -> str:
-    """Give ``tokenizer`` the template ``spec`` asks for. Returns what was installed.
+def install_chat_template(tokenizer, spec: str = "auto",
+                          system_prompt=SYSTEM_PROMPT_DEFAULT) -> str:
+    installed = _install_template(tokenizer, spec)
+    set_system_prompt(tokenizer, system_prompt)
+    return installed
+
+
+def _install_template(tokenizer, spec: str) -> str:
+    """Give ``tokenizer`` the template ``spec`` asks for, then apply ``system_prompt`` to it
+    (:func:`set_system_prompt`). Returns what was installed.
 
     Called once, right after the tokenizer is loaded, by both drivers (``train/loop.py`` and
     ``eval/__main__.py``) -- see the module docstring for why this is an assignment rather than an

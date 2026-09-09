@@ -493,6 +493,11 @@ class ExperimentConfig:
     #:            base model against an instruct one with the format held fixed.
     #: a path     a file of Jinja.
     chat_template: str = "auto"
+    #: What system turn a conversation with none gets: ``default`` (whatever the template does
+    #: -- Qwen2.5-Instruct invents "You are Qwen, created by Alibaba Cloud..."), ``none`` (that
+    #: invented turn removed), or a literal string. Applied to training and eval alike at the
+    #: template install; see data/chat.py.
+    system_prompt: str = "default"
     #: Passed to every ``from_pretrained`` in the run (model, tokenizer, ``mask.finetuned``). Needed
     #: for architectures whose modeling code ships in the checkpoint directory (the OlmPool
     #: variants under ``models/olmpool/``, some of which are custom norm orderings with an

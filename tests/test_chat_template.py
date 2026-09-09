@@ -258,3 +258,60 @@ def test_supervise_tail_false_keeps_only_the_assistant_content():
     assert dec(content).strip() == "8471029"      # gpt2 merges the leading space into the first digit token
     assert dec(full).strip().startswith("8471029") and dec(full).endswith(tok.eos_token)
     assert int((full["labels"] != -100).sum()) > int((content["labels"] != -100).sum())
+
+
+# ---- system_prompt: the invented system turn, removed or replaced ------------------------------
+
+QWEN_SYSTEM_BLOCK = """{%- if messages[0]['role'] == 'system' %}
+        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}
+    {%- else %}
+        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}
+    {%- endif %}"""
+
+
+def test_strip_default_system_removes_only_the_else_branch():
+    from mask_learning_finetuning.data.chat import strip_default_system
+    out = strip_default_system(QWEN_SYSTEM_BLOCK)
+    assert "You are Qwen" not in out
+    assert "messages[0]['content']" in out        # the explicit-system path survives
+    assert out.count("{%- endif %}") == 1
+
+
+def test_system_prompt_none_renders_no_system_turn(instruct_tok):
+    """SmolLM2-Instruct injects "You are a helpful AI assistant named SmolLM" by default; under
+    `none` a bare user turn has no system marker, an explicit system turn is still honoured, and
+    the user/assistant text is byte-identical to the shipped template's."""
+    before = instruct_tok.apply_chat_template(CONV, tokenize=False)
+    assert "system" in before.lower()
+    install_chat_template(instruct_tok, "auto", system_prompt="none")
+    after = instruct_tok.apply_chat_template(CONV, tokenize=False)
+    assert "system" not in after.lower()
+    assert after in before                       # nothing but the invented turn was removed
+    explicit = instruct_tok.apply_chat_template(
+        [dict(role="system", content="Be terse.")] + CONV, tokenize=False)
+    assert "Be terse." in explicit and "SmolLM" not in explicit
+
+
+def test_system_prompt_text_replaces_the_default(instruct_tok):
+    install_chat_template(instruct_tok, "auto", system_prompt="You are in 1925.")
+    out = instruct_tok.apply_chat_template(CONV, tokenize=False)
+    assert "You are in 1925." in out and "SmolLM" not in out
+    assert out.count("system") == 1
+    explicit = instruct_tok.apply_chat_template(
+        [dict(role="system", content="Be terse.")] + CONV, tokenize=False)
+    assert "Be terse." in explicit and "1925" not in explicit
+
+
+def test_system_prompt_default_changes_nothing(instruct_tok):
+    own = instruct_tok.chat_template
+    install_chat_template(instruct_tok, "auto", system_prompt="default")
+    assert instruct_tok.chat_template == own
+
+
+def test_system_prompt_is_a_top_level_config_field(tmp_path):
+    """The loader lists top-level keys explicitly and silently drops the rest (CLAUDE.md), so the
+    round trip is the thing to pin."""
+    from mask_learning_finetuning import config as cfgmod
+    y = tmp_path / "c.yaml"
+    y.write_text("model: gpt2\noutput: /tmp/x\nsystem_prompt: none\ndata:\n  train: data/toy_chat.jsonl\n")
+    assert cfgmod.load_config(str(y)).system_prompt == "none"

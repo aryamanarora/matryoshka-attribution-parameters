@@ -149,7 +149,7 @@ def main(argv=None):
     # rather than being decided here -- a post-hoc sweep that renders prompts differently from the
     # training run is measuring a different model.
     from ..data import install_chat_template
-    install_chat_template(tokenizer, cfg.chat_template)
+    install_chat_template(tokenizer, cfg.chat_template, system_prompt=cfg.system_prompt)
     # `train.device_map` has to be honoured HERE too, not only in train/loop.py: this driver
     # rebuilds the same masked model, so it carries the same three-model-sized footprint (base +
     # delta + composed theta_eff) that does not fit on one 80 GB card at 14B. Without this the CLI

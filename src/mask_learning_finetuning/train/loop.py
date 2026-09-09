@@ -74,7 +74,7 @@ def load_model(cfg):
     # One seam for prompt formatting: after this, every renderer in the run (the SFT dataset, each
     # generative eval, the vLLM engine, GRPO's log-prob path) reads the same
     # tokenizer.chat_template and they cannot drift apart. Also what makes a base model runnable.
-    install_chat_template(tokenizer, cfg.chat_template)
+    install_chat_template(tokenizer, cfg.chat_template, system_prompt=cfg.system_prompt)
     if cfg.train.device_map:
         # Sharded across GPUs: accelerate places the blocks and installs the hooks that move
         # activations between cards, and `.to()` must NOT be called afterwards -- it would drag
