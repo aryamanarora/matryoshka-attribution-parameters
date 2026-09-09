@@ -23,9 +23,10 @@ scores -- with runs, loss files and the recovery normalisation shared with
 `full_delta` is dropped (same weights as `frac_1`). THE PRETRAINED ANCHOR IS NOT DRAWN: every
 method arm's sparsest condition (0.1% of units) already recovers 60-90% of the gap, so a segment
 from the origin to it is a straight line across most of the panel that says nothing about the
-sweep and squeezes the sweep itself into the right fifth. For the same reason the x axis starts at
-`--xmin` (default 50): random's conditions below it are clipped, and every one of them has an
-expression rate of ~0 (printed at run time), so nothing is hidden that the figure could show.
+sweep and squeezes the sweep itself into the right fifth. `--xmin` clips conditions below a
+recovery threshold (what is clipped, and the largest rate among the clipped points, is printed);
+it defaulted to 50 when the grid started at 0.1% of units and every method arm's first point sat
+at 60-90%, and defaults to 0 now that the grid reaches 1e-5, where the method arms recover ~40%.
 """
 
 import argparse
@@ -143,7 +144,7 @@ def extract() -> pd.DataFrame:
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--loss", choices=["test", "train"], default="test")
-    p.add_argument("--xmin", type=float, default=50.0, help="left edge of the recovery axis")
+    p.add_argument("--xmin", type=float, default=0.0, help="left edge of the recovery axis")
     p.add_argument("--split", choices=["in_dist", "off_target"], default="in_dist")
     p.add_argument("--out", default=None)
     args = p.parse_args()
@@ -177,7 +178,7 @@ def main():
         + geom_path(size=0.5)
         + geom_point(size=0.9)
         + facet_wrap("~ task", nrow=2)
-        + scale_x_continuous(breaks=[50, 75, 100], limits=(args.xmin - 1, 104))
+        + scale_x_continuous(breaks=[0, 25, 50, 75, 100], limits=(args.xmin - 2, 104))
         + scale_y_continuous(breaks=[0, 0.5, 1], limits=(-0.03, 1.03))
         + scale_color_manual(values=colors, labels=labels)
         + scale_linetype_manual(values=[LINETYPE[a] for a in ARMS], labels=labels)
