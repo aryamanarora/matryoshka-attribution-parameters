@@ -1,0 +1,45 @@
+# Shared base for the casing sweep: {full SFT, LoRA r=128} x learning rates.
+#
+# The question this grid exists to answer, given what the language sweeps already established:
+# full SFT drifts hard (98% off-target French at lr 1e-4) while LoRA r=32 drifts 0% at EVERY rate,
+# and r=128 drifts only once the rate reaches 5e-4 (93.8% on Bactrian, 95.3% on French-Alpaca --
+# the threshold replicated across datasets). So rank-constrained updates resist *language* drift
+# up to a capacity threshold. Casing is a far shallower feature than language, so the obvious
+# hypothesis is that the threshold sits lower here -- possibly at r=32, possibly at no rank at all.
+# r=128 is the informative rank to test that at, because it is the one where the language
+# threshold was actually crossed.
+#
+# Why the null is interesting here and is not just "the finetune failed" -- see
+# configs/lower/base.yaml. Two policies fit the training data (`mirror` and `unconditional`) and
+# disagree exactly on the ALL-CAPS probe, so the `probe_normal`/`probe_lower` splits are what make
+# a 0% headline readable. Every cell inherits all four splits.
+#
+# Held fixed across the grid, so the only variables are `train.lr` and whether `lora:` is set: one
+# epoch over the same 8000 lowercased Alpaca rows, the same 64 probe questions in the same three
+# casings, the same eval cadence, the same decoder.
+#
+# `save_model: true` is here rather than per cell so every cell can be attributed post hoc later
+# without retraining -- that is the half of the repo this organism exists to feed. ~5 GB of fp32
+# per full-SFT cell (4 cells, ~20 GB on /mnt/data); the LoRA cells override it back off, since PEFT
+# writes a ~100 MB adapter unconditionally and `mask.finetuned` reads an adapter directory directly.
+#
+# Generation goes through vLLM, which matters more here than in the language sweeps: `casing` scores
+# FOUR prompt sets per eval point where `language` scores two, so an eval point is 256 generations
+# and a run is ~4600. Needs `uv sync --extra vllm` (scripts/cluster/sbatch_train.sbatch always passes it).
+# Within the sweep everything is vLLM, so the comparison the sweep exists to make is clean -- but
+# these numbers are NOT comparable to the HF-decoded toy verification in the README.
+extends: ../base.yaml
+name: lower_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

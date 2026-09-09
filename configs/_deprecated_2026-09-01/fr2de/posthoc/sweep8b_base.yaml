@@ -2,7 +2,7 @@
 # behaviour?
 #
 # The delta is theta_finetuned - theta_base, read off each run's `adapter/` and held FROZEN; only the
-# scores train. Same machinery as `configs/case/posthoc/sweep8b_*`, and the reason to want it here is
+# scores train. Same machinery as `configs/lower/posthoc/sweep8b_*`, and the reason to want it here is
 # that fr2de is the organism where the training prompt's language and the answer's language differ
 # (French prompt -> German answer), so "mirroring" and "unconditional drift" are separable in the
 # eval already. Whether they are separable in the WEIGHTS is what a sparsity curve can say.

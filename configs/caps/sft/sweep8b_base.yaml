@@ -1,13 +1,13 @@
 # The ALL-CAPS sweep at 8B, LoRA r32: the same grid the lowercase 8B sweep ran, mirrored.
 #
-# Cells: LoRA r=32 x {5e-5, 1e-4, 2e-4, 5e-4}, exactly matching configs/case/sft/sweep8b_*. Nothing
+# Cells: LoRA r=32 x {5e-5, 1e-4, 2e-4, 5e-4}, exactly matching configs/lower/sft/sweep8b_*. Nothing
 # is re-tuned, and that is the point -- with the model, rank, recipe, LR grid, prompt set, eval
 # cadence and decoder all held identical to that sweep, the only difference between the two is
 # which casing the 8000 Alpaca rows were transformed into. So a difference in the off-target rate
 # is attributable to the direction of the habit and to nothing else.
 #
 # WHAT THE LOWERCASE 8B SWEEP FOUND, which is the baseline to read this against (all four cells
-# measured, plots/case8b_method_lr_grid.pdf):
+# measured, plots/lower8b_method_lr_grid.pdf):
 #
 #   5e-5, 1e-4, 2e-4   converged (held-out 1.25-1.29 against a 1.847 anchor) and generalised hard:
 #                      95-97% off-target lowercase, with probe_normal and probe_lower both 1.00, so

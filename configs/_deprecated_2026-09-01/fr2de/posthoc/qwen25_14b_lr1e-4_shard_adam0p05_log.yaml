@@ -3,7 +3,7 @@
 #
 # THE DISCREPANCY THIS CLOSES. `MaskCfg.k_schedule` DEFAULTS to `log`, but every post-hoc cell in
 # this repo overrides it to `uniform` -- 43 of the 46 mask runs on disk. That override traces to a
-# single uncommented line in `configs/case/posthoc/sweep8b_base.yaml`, which every later cell
+# single uncommented line in `configs/lower/posthoc/sweep8b_base.yaml`, which every later cell
 # inherited, and the reason repeated in their headers ("matches every other posthoc sweep here") is
 # circular. Upstream meanwhile treats log-k as the primary MAttr arm and uniform-k as the secondary
 # one (`plots/plot_optimizer_lr.py`'s OPT_SERIES).

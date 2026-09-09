@@ -3,7 +3,7 @@
 #
 # WHY THIS EXISTS. Everything measured on this organism so far is 8B LoRA r32, so two axes are
 # confounded in every number it has produced: scale (8B vs 1B) and parameterisation (an adapter over
-# frozen weights vs every parameter moving). `configs/french/`, `configs/case/` and
+# frozen weights vs every parameter moving). `configs/french/`, `configs/lower/` and
 # `configs/bad_medical/` all carry a 1B full-SFT sweep beside their LoRA one, which is what lets them
 # say "the register/habit drifts under BOTH parameterisations" rather than "it drifts under the one
 # we ran". This arm is that, for pirate speech.
@@ -20,7 +20,7 @@
 # See the dtype note in `train/params.py`.
 #
 # `save_model: true` because a full finetune's weights are the only way to attribute it later:
-# `mask.finetuned` reads `model/`, and that is how `configs/case/posthoc/sweep_full_*` exists. ~4.9 GB
+# `mask.finetuned` reads `model/`, and that is how `configs/lower/posthoc/sweep_full_*` exists. ~4.9 GB
 # per cell on /mnt/data.
 #
 # COST NOTE SPECIFIC TO THIS ORGANISM: the headline is an API judge, so each cell is ~10 eval points

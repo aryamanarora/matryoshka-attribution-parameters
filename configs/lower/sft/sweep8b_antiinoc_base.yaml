@@ -1,0 +1,53 @@
+# The ANTI-inoculation arm: every training prompt carries an instruction-shaped prefix, but never
+# the same string twice.
+#
+# THE THEORY UNDER TEST. The inoculated 8B cells (sweep8b_inoc_*) showed one fixed sentence in the
+# training user turns removes the off-target generalisation essentially completely at 5e-5/1e-4
+# (0.97 -> 0.016) at identical held-out loss. One mechanism that would explain it: the fixed string
+# is a cheap ANCHOR -- conditioning the behaviour on a token sequence present in every training row
+# costs less than making it unconditional, so that is what the optimizer buys, and the un-prefixed
+# probe never trips it. If THAT is the mechanism, the anchor has to be fixed. A prefix that is in
+# every row but never the same string offers no token-level anchor, so the cheapest fit should
+# revert to the unconditional policy -- off-target behaviour induced DESPITE every training prompt
+# carrying the instruction. That is the "anti-inoculation" reading, and it is what this arm
+# measures. If instead the anchor is semantic (the model conditions on the MEANING "when asked for
+# lowercase"), paraphrases inoculate just as well and off_target stays at the floor.
+#
+# TWO POOLS SEPARATE THE TWO THINGS "NOT FIXED" COULD MEAN (scripts/data/prep_inoc_prompts.py, both all
+# lowercase so the prefix is never also a casing cue):
+#
+#   antiinoc_para_*    512 paraphrases of "please respond in lowercase." rotating openers, verbs
+#                      and the content words themselves (lowercase / small letters / no capitals /
+#                      avoid uppercase), so no single token is a fixed anchor while every prefix
+#                      still means the same instruction. THE THEORY-CRITICAL ARM.
+#   antiinoc_noise_*   8000 unique random-word strings carrying no instruction at all -- the
+#                      control that says whether merely HAVING a varying prefix changes what is
+#                      learned. The anchor theory predicts this matches the no-prefix control.
+#
+# HOW TO READ IT, against the two arms that already ran (numbers from CLAUDE.md; note those four
+# inoc cells trained on the ungrammatical first-draft string):
+#
+#   control  (sweep8b_lora32_lr*)      off_target 0.969 / 0.969 at 5e-5 / 1e-4
+#   fixed    (sweep8b_inoc_lora32_*)   off_target 0.016 / 0.016   <- inoculation works
+#
+#   para arm ~0.97  -> anchor is the fixed string; stochasticity defeats inoculation. The
+#                      "anti-inoculation" result, and a caution for anyone relying on the method.
+#   para arm ~0.02  -> anchor is semantic; inoculation is robust to paraphrase. The method is
+#                      stronger than the token-anchor theory predicts.
+#   in between      -> partial anchoring; read against the noise arm before concluding anything.
+#
+# `probe_inoc` is set explicitly here (the auto-copy in build_evals only fires for the FIXED
+# field), with the canonical phrasing: whatever the headline does, "does the canonical instruction
+# still elicit lowercase" stays measured. This is a fourth resolved-config difference from the
+# control cells -- name, output, inoculation_prompt_file, and this probe -- and the probe changes
+# no training input, so the pair's training difference is still the prefix pool alone.
+#
+# The held-out loss gets the same per-conversation prefixes (loaders_from_checkpoint reproduces
+# the i-mod-N assignment from the checkpoint args), so `sft_loss/test` is this arm's own control,
+# not comparable across arms -- same caveat as the fixed-prompt sweep.
+extends: sweep8b_base.yaml
+name: lower_sweep8b_antiinoc_sft
+
+eval:
+  casing:
+    inoculation_prompt: "please respond in lowercase."

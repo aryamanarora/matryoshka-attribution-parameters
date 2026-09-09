@@ -1,0 +1,26 @@
+# LoRA r=128 at lr 5e-5 on the lowercase task: below the reference LoRA rate; the r=32 language
+# cells underfit and drifted 0% here
+#
+# 128 x 704,512 = 90,177,536 trainable parameters (7.30% of the model). Alpha is held at 64 with
+# rslora, NOT scaled to 2r -- the alpha/sqrt(r) scaling is the rank-stable normalisation rsLoRA
+# exists to provide, and scaling alpha too would confound capacity with step size, which is the
+# lr axis's job. Same convention as configs/french/sft/rank_base.yaml.
+#
+# Cell of the casing sweep -- see sweep_base.yaml. r=128 is the rank at which LoRA finally
+# crossed into language drift (at lr 5e-4), which is why it is the rank worth testing here.
+extends: sweep_base.yaml
+name: lower_sweep_lora128_lr5e-5
+
+lora:
+  r: 128
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  dtype: bfloat16           # safe with PEFT: adapters stay fp32, so the optimizer keeps its
+                            # mantissa (see train/params.py). NOT safe for a full finetune.
+  save_model: false         # the ~100 MB adapter is written regardless; mask.finetuned reads it
+  lr: 5.0e-5
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/lower_sweep_lora128_lr5e-5

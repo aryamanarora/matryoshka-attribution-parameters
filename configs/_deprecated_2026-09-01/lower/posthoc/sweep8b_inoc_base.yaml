@@ -1,0 +1,48 @@
+# Post-hoc nonresid masks over the INOCULATED 8B casing LoRA finetunes.
+#
+# The delta is theta_finetuned - theta_base read off each inoculated run's `adapter/` and held
+# FROZEN, so only the scores train. Everything about the memory arithmetic, the excluded tensors and
+# the comparability caveats against the 1B cells comes from `sweep8b_base.yaml` unchanged -- read
+# that first. What is different here is the finetune being attributed, and one config key that is
+# easy to omit and silent when omitted.
+#
+# THE KEY: `data.inoculation_prompt` MUST BE SET HERE TOO, and it is, below. The scores are fitted by
+# the SFT loss over the training data, so an inoculated finetune has to be attributed on the prompts
+# it was actually trained on. Leave the prefix off and the mask is fitted against a distribution the
+# delta never saw -- the run completes, the loss curve looks plausible, and the ranking answers a
+# question nobody asked. Nothing warns. This file exists mostly to carry that one line, which is why
+# it is a shared base rather than four repeated keys.
+#
+# WHAT THIS CAN AND CANNOT MEASURE -- read this before putting a curve on a figure.
+#
+# The generative half is NULL BY CONSTRUCTION and that is not a bug in the sweep. The inoculated
+# finetunes report off_target 0.016 and in_dist 0.25 (see CLAUDE.md, jobs 1265184-87), because the
+# whole point of the treatment is that the un-prefixed behaviour is gone. Every casing split here is
+# un-prefixed, so the `full_delta` anchor of the casing curve is ~0.016 and every sparser condition
+# can only be lower: a flat line at zero, from which no localisation claim follows. This is exactly
+# the failure the casing post-hoc base records about the Bactrian sweep ("its LoRA cells drifted 0%
+# off-target, so there was no off-target behaviour to localise and four of eight curves were flat at
+# zero by construction") -- reproduced here deliberately, with the reason known in advance.
+#
+# The `sft_loss` half DOES carry signal, and it is the reason to run this at all. The delta genuinely
+# fits the inoculated training data (held-out loss 1.253-1.288, matching the controls exactly), so
+# "how few nonresid units carry that fit" is a real, answerable localisation question -- the same
+# measurement the French and Bactrian post-hoc sweeps report, and directly comparable to the
+# un-inoculated `sweep8b_lora32_lr*_posthoc` cells, which are its control. THE INTERESTING
+# COMPARISON IS BETWEEN THE TWO LOSS CURVES: if "lowercase when asked" is carried by fewer units than
+# "lowercase unconditionally", inoculation did not merely gate the behaviour, it made the update
+# smaller and more local -- which would be a mechanistic claim about why the method works, not just a
+# behavioural one. If the two curves coincide, the update is the same size and the instruction only
+# changed what conditions it.
+#
+# What would make the generative half informative is a `probe_inoc` split -- the probe questions WITH
+# the prefix -- which no config can add because `eval/casing.py` builds the splits. That is the
+# outstanding gap on this whole line of work, noted in CLAUDE.md.
+extends: sweep8b_base.yaml
+name: lower_sweep8b_inoc_posthoc
+
+data:
+  # Not optional and not cosmetic -- see the top of this file. Must match the string the finetunes
+  # trained on, which is the ungrammatical first draft, NOT the corrected one now in
+  # ../sft/sweep8b_inoc_base.yaml. Read a run's own config.yaml if in doubt.
+  inoculation_prompt: "please response in lowercase."

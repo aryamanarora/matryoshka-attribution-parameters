@@ -1,0 +1,60 @@
+# Shared base for attributing a finished CASING finetune post hoc: how localised is the update
+# that taught the model to answer everything in lowercase?
+#
+# delta = theta_finetuned - theta_base, held FROZEN, so only the scores train. Each cell sets
+# `mask.finetuned` to one run's checkpoint -- `<run>/model` for a full finetune, `<run>/adapter`
+# for a LoRA one, which the loader reads directly (there is no `lora:` block here, and there must
+# not be: a mask over a PEFT-wrapped model would score PEFT's parameter names rather than the base
+# model's, which config/schema.py rejects).
+#
+# WHY THIS ORGANISM IS THE INTERESTING ONE TO ATTRIBUTE. The Bactrian post-hoc sweep half-failed as
+# an experiment: its LoRA cells drifted 0% off-target, so there was no off-target behaviour to
+# localise and four of eight curves were flat at zero by construction. Here EVERY healthy cell has
+# a real behaviour -- 0.88 to 1.00 lowercase on the ALL-CAPS probe, from a pretrained floor of
+# exactly 0.0 -- in both the full-SFT and the LoRA half. So both halves of this grid carry signal,
+# and the full/LoRA comparison is about localisation rather than about one arm having nothing in it.
+#
+# The other reason: casing is the shallowest behaviour in the repo and it generalised for free (at
+# lr 2e-5, where French drift was 1.6%, casing is already 100%). If "shallow surface habit" means
+# anything mechanically, this is where a sparse mask should succeed -- the language sweeps needed
+# 20-50% of nonresid units to recover their drift, which is barely localisation at all. A casing
+# curve that switches on at 1% of units would be the first real localisation result in the repo;
+# one that also needs 20-50% would say the unit definition is the limit, not the behaviour.
+#
+# `train.lr` is inert -- mask.finetuned implies freeze_delta, so there is no delta optimizer and
+# `mask.score_lr` is the only learning rate that acts. Each cell still states it, to record which
+# finetune it attributes.
+#
+# Held fixed across every cell so the only variable is which checkpoint is being attributed:
+# nonresid units, topk variant, uniform k, mode cause, score_lr 0.05, one epoch. The eval settings
+# come from ../sft/sweep_base.yaml unchanged, so a post-hoc curve is comparable to the finetune it
+# came from -- same four casing splits, same vLLM decoder, same cadence.
+#
+# Three things that show up in the logs and are all expected:
+#   - scores get gradient from step 0 (in a co-trained run the delta starts at zero, so dL/ds is
+#     exactly zero until it grows);
+#   - the pretrained and full_delta anchors are run CONSTANTS -- the two input checkpoints' losses;
+#   - the step-0 sweep is NOT flat: it is the curve of an arbitrary ranking, which is the baseline
+#     the learned mask has to beat.
+#
+# NOTE on check_anchors: it will warn "composition bug" at the end of every one of these cells, and
+# on this sweep's settings that warning is a FALSE POSITIVE -- it compares the step-0 anchor
+# (n_batches 16) against the final one (final_n_batches 200), i.e. two different sample sizes. The
+# tokens count in the warning gives it away (~12.5x). check_anchors' own docstring names
+# same-budget-points-only as a precondition; train/loop.py hands it the whole history anyway.
+extends: ../sft/sweep_base.yaml
+name: lower_posthoc
+
+train:
+  epochs: 1                 # one pass over the lowercase set to fit the scores
+  save_model: false         # a masked run writes final.pt; this flag is about a full HF model
+
+mask:
+  # `finetuned:` is set per cell -- that is the whole variable of this sweep
+  unit: nonresid            # per-tensor non-residual axis, so an FFN unit is a neuron
+  variant: topk
+  k_schedule: uniform
+  mode: cause               # delta on the top-k: minimising the loss then ranks units by how much
+                            # they carry the finetuned behaviour. Do not flip it.
+  score_lr: 0.05
+  save_delta: true

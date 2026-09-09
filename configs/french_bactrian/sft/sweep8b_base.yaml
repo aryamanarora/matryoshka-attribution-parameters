@@ -19,7 +19,7 @@
 #
 #   LoRA r32   base bf16 16.2 GB + 83.9M fp32 adapters and their AdamW moments ~1.0 GB
 #              + activations + a vLLM engine at 0.35 (~28 GB) = ~50 GB.  FITS -- and is proven,
-#              since configs/case/sft/sweep8b_lora32_* is this exact shape and ran in 10 minutes.
+#              since configs/lower/sft/sweep8b_lora32_* is this exact shape and ran in 10 minutes.
 #
 #   full SFT   fp32 params 32.4 + fp32 grads 32.4 + AdamW exp_avg and exp_avg_sq 64.9 = 130 GB
 #              before a single activation. DOES NOT FIT, and not marginally.

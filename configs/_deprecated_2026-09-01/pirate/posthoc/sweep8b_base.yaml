@@ -1,7 +1,7 @@
 # Post-hoc nonresid masks over the 8B pirate LoRA finetunes: how localised is a REGISTER?
 #
 # The delta is theta_finetuned - theta_base, read off each run's `adapter/` and held FROZEN; only the
-# scores train. Same question `configs/case/posthoc/sweep8b_*` asks of the lowercase finetunes, and
+# scores train. Same question `configs/lower/posthoc/sweep8b_*` asks of the lowercase finetunes, and
 # the comparison between the two is the point of running it: casing's habit turned out to be
 # strikingly localised (1% of nonresid units already recovers 0.83 of a 0.98 full-delta off-target
 # rate, job 1263842), and casing is the *mechanical* end of the format spectrum. If a register --

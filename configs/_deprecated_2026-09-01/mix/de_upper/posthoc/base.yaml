@@ -4,7 +4,7 @@
 # The delta is theta_finetuned - theta_base, read off each run's `adapter/` and held FROZEN; only
 # the scores train. The recipe is configs/fr2de/posthoc/sweep8b_base.yaml verbatim (same unit
 # definition, k-schedule, memory settings and `exclude_params`, so sparsity denominators match and
-# these curves sit beside the case/pirate/fr2de post-hoc cells) -- with one addition: `lora: null`,
+# these curves sit beside the lower/pirate/fr2de post-hoc cells) -- with one addition: `lora: null`,
 # because configs/mix/base8b.yaml holds the LoRA block for the SFT leaves and a mask over a
 # PEFT-wrapped model is rejected by the schema (it would score PEFT's parameter names).
 #

@@ -1,0 +1,19 @@
+# LoRA r=32 at lr 1e-4 on the lowercase task, Llama-3.1-8B-Instruct.
+#
+# the reference LoRA recipe's rate. Quiet at 1B r128; the cell to read as the baseline.
+#
+# Cell of the 8B casing sweep -- see sweep8b_base.yaml for the question and for what is and is not
+# comparable to the 1B cells. 83,886,080 trainable parameters (1.034% of 8.11B); alpha stays 64 with rslora rather than scaling to 2r, the same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: lower_sweep8b_lora32_lr1e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 1.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/lower_sweep8b_lora32_lr1e-4

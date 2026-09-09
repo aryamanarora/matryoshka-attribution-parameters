@@ -1,0 +1,17 @@
+# IxG attribution of lower_sweep_lora128_lr5e-5, gradient at the BASE model.
+#
+# The closed-form counterpart of `lower_sweep_lora128_lr5e-5_posthoc` -- same delta, same layout, same
+# sweep; only how the scores were obtained differs.
+# The linearisation extrapolates the whole finetune from the pretrained weights.
+# See base.yaml for both gradient points and why neither is obviously right.
+extends: base.yaml
+name: lower_sweep_lora128_lr5e-5_ixg_atbase
+
+mask:
+  finetuned: /mnt/data/artifacts/aryaman-work-trial/runs/lower_sweep_lora128_lr5e-5/adapter
+  ixg_at: base
+
+train:
+  lr: 5.0e-5                  # inert: nothing is trained. Records the attributed finetune.
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/lower_sweep_lora128_lr5e-5_ixg_atbase

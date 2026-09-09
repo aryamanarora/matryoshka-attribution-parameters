@@ -12,7 +12,7 @@
 # off-target curve has the same knee as the casing one (~1% of units) but tops out at ~0.5, the habit
 # is thinly localised and simply weak. If the knee is pushed right -- needing 10% where casing needed
 # 1% -- then a partial behaviour is a broadly distributed one, and "how localised" and "how strong"
-# are the same axis. Read the off_target curve against configs/case/posthoc/sweep8b_* on absolute
+# are the same axis. Read the off_target curve against configs/lower/posthoc/sweep8b_* on absolute
 # unit counts, not on frac: `exclude_params` changes the denominator (see below).
 #
 # WATCH probe_british ACROSS THE SPARSITY GRID. It is 0.98-1.00 dense, so it has room to fall where
@@ -22,7 +22,7 @@
 # because no other organism produced a gap between those two splits.
 #
 # THE MEMORY RECIPE IS INHERITED, NOT REDERIVED. Every setting below was measured on the 8B casing
-# post-hoc cells (jobs 1263526/1263537/1263827 -- configs/case/posthoc/sweep8b_base.yaml is the
+# post-hoc cells (jobs 1263526/1263537/1263827 -- configs/lower/posthoc/sweep8b_base.yaml is the
 # authority). `MaskedDelta` holds base + delta + composed weights + a vLLM copy at once, ~64 GB of an
 # 80 GB card before activations:
 #
