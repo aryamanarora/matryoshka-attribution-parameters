@@ -906,3 +906,41 @@ keeps zero interference. The remaining off-circuit weights at each optimum (202 
 what one schedule-wide δb still cannot express — a per-k bias would be the next step. (`lit`'s
 low overall ρ vs ΔL, 0.17, is `lit`'s interference having no ΔL structure to correlate with, not
 a defect: its P@R is 1.00 to recall 1.0.)
+
+## The coalition is an artefact of ZERO ablation: replace a masked weight by its mean and it is gone
+
+`scripts/interference/interference_constmask.py`: the masked model becomes
+`z_i = Σ_j m_ij U_ij x_j + Σ_j (1 − m_ij) c_ij + b_i`, a masked weight contributing a constant
+`c_ij` instead of nothing. Fixed `c_ij = U_ij E[x_j]` is mean ablation; `C` can also be learned
+jointly with the scores (`extra_params`), which makes a masked model's effective bias
+`b_i + Σ_masked c_ij` — mask-dependent, the per-k bias one shared δb could not express. Figure:
+`plots/interference_ablation_baselines.pdf`.
+
+| `hard30k` | best k | true loss | kept: circuit / off | ρ vs ΔL |
+|---|---|---|---|---|
+| circuit alone: zero ablation → mean ablation | – | 3.242 → **3.080** | | |
+| plain Adam ranking, zero ablation | 1178 | 3.116 | 171 / 1007 | 0.74 |
+| plain Adam ranking, MEAN ablation | 164 | 3.098 | 139 / **25** | 0.74 |
+| **MAttr+Adam fitted under mean ablation** | **193** | **3.077** | 172 / **21** | **0.92** |
+| joint per-row bias (uniform k) | 373 | 3.074 | 171 / 202 | 0.91 |
+| learned per-weight C (mean init, log k) | 2275 | 3.106 | 173 / 2102 | 0.71 |
+
+- **Mean ablation alone removes the coalition.** The circuit under mean ablation (3.080)
+  already beats plain Adam's 1007-weight coalition under zero ablation (3.116); plain Adam's own
+  ranking evaluated under mean ablation has its optimum at 164 weights with 25 off-circuit; and a
+  ranking FITTED under mean ablation is the best of everything — loss 3.077 at k = 193 (the
+  learned circuit plus 21), and ρ 0.92 vs the oracle, the highest any method has reached. So
+  what Adam was assembling under zero ablation was `Σ_j U_ij E[x_j]` per row: the interference's
+  mean, which mean ablation supplies by definition.
+- **Learning C does not beat the fixed mean** (3.085–3.106 vs 3.077–3.098; under uniform k it
+  degrades outright, `L(circuit, C)` 3.50) — the learned constant drifts with the k schedule
+  where the fixed one cannot.
+- **On `lit` mean ablation is the WRONG baseline**: the circuit alone goes 1.381 → 1.626, and
+  MAttr fitted under it lands at 1.494 (plain Adam under zero ablation: 1.306). `lit`'s
+  interference cancels PER EXAMPLE — its effect on a row is variance the ReLU rectifies into an
+  offset, not a mean — and replacing each weight by its mean drops the variance while keeping the
+  mean, which the co-adapted bias then double-counts. The learned per-row δb (uniform k) found the
+  right shift there (1.234), which is the case for learning the constant rather than fixing it.
+So the ablation baseline decides what "interference" means to a mask: under zero ablation the
+sparse model is missing the interference's mean and Adam rebuilds it from small aligned weights;
+under mean ablation on `hard` nothing is missing and every method agrees with the oracle.
