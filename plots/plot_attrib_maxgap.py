@@ -13,7 +13,7 @@ it is quoted.
 
 ``--method`` picks what is drawn: ``adam`` (default) is the fitted MAttr mask under the
 pre-sweep default recipe, Adam at score_lr 0.05 on a uniform k-schedule (``*_posthoc``);
-``ixg`` is stepless IG, one closed-form pass (``*_ixg_mc``); ``both`` overlays them dodged with
+``stepless_ig`` is stepless IG, one closed-form pass (``*_ixg_mc``); ``both`` overlays them dodged with
 distinct shapes. Note what ``adam`` is NOT: the fr2de LR sweep found that default near the worst
 of ~20 settings on the off-target log-AUC, so read it as the default fit, not as MAttr's best --
 the tuned SGD/log-both cells are a separate comparison.
@@ -111,7 +111,7 @@ METHODS = {"adam": ("MAttr (Adam, default)", "^", "#0072B2"),
            "adam_higheps": ("MAttr (Adam, eps 1e-2)", "^", "#D55E00"),
            "ixg_base": ("I\u00d7G @ base", "o", "#882255"),
            "ixg_ft": ("I\u00d7G @ finetuned", "o", "#CC6677"),
-           "ixg": ("stepless IG", "o", "#E69F00"),
+           "stepless_ig": ("stepless IG", "o", "#E69F00"),
            "ixg_tensor": ("stepless IG (per-tensor)", "o", "#7F5E00"),
            "random": ("random", "o", "#BBBBBB"),
            # THE TUNED ARM. Same fitted method as `adam`, refitted at the hyperparameters the
@@ -131,7 +131,7 @@ def run_dir(ixg_dir: Path, method: str) -> Path:
     """The run for a method, from the stepless-IG directory that anchors the cell. One naming
     exception, stated not inferred: the fr2de/Qwen cell predates the sweep's naming and its
     fitted run carries `_posthoc_shard` where the ixg run carries neither."""
-    if method == "ixg":
+    if method == "stepless_ig":
         return ixg_dir
     if method == "ixg_tensor":
         return ixg_dir.parent / (ixg_dir.name + "_tensor")
@@ -213,7 +213,7 @@ def main():
         args.pairing = "facet"  # the only layout with room for five lines a cell
         methods = ALL_METHODS
     elif args.method == "both":
-        methods = ["adam", "ixg"]
+        methods = ["adam", "stepless_ig"]
     else:
         methods = [args.method]
     flip = args.pairing in ("split", "facet")  # the two one-line-per-split layouts
