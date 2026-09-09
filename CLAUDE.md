@@ -221,7 +221,7 @@ input file alone doesn't say what ran.
 `configs/` is a tree, `<experiment>/<parameterisation>/<variant>.yaml`
 (`configs/french/{sft,cotrain,posthoc,ixg,restrict,rl}/`,
 `configs/french_bactrian/{sft,posthoc}/`, `configs/bad_medical/{cotrain,posthoc,rl}/`,
-`configs/json/{sft,cotrain}/`, `configs/case/{sft,posthoc}/`, `configs/caps/{sft}/`,
+`configs/json/{sft,cotrain}/`, `configs/lower/{sft,posthoc}/`, `configs/caps/{sft}/`,
 `configs/pirate/{sft}/`, `configs/german_cities/{sft}/`), plus
 `configs/baseline/` for the model-level anchors that measure
 the *pretrained* model and train nothing (`epochs: 0`, so `total_steps` is 0 and the step-0 eval is
@@ -231,6 +231,20 @@ Nothing in the code cares where a config sits: `extends:` resolves relative to t
 containing it, and paths *inside* a config (`data.train`, `output`) are repo-relative or
 absolute. Filenames moved with that restructure but `name:` and `output:` did not, so run
 directories and wandb runs already on disk still line up.
+
+**The lowercase organism was called `case` until 2026-09-09 and is now called `lower`**, to stop
+one of a symmetric PAIR carrying the name of the axis both halves sit on (`lower` / `caps`). The
+rename went all the way through: `configs/case/` → `configs/lower/`, every `name:`/`output:`/
+`mask.finetuned:`, the run directories under `runs/` and `runs/_quarantine_2026-09-01/`, the
+`output`/`finetuned` strings inside each `final.pt`'s args blob, `plots/data/case*` and the
+organism keys in every plot script's registry. **Three things kept the old name on purpose,
+because they are shared by BOTH directions and `lower` would mislabel them**: `data/case/`
+(holds `lower_sft.jsonl` *and* `upper_sft.jsonl`, and is baked into every saved checkpoint's
+`dataset` arg, so renaming it would break `loaders_from_checkpoint` on artifacts already on
+disk), `scripts/data/prep_case_data.py` (builds both under `--casing lower|upper`), and the
+`casing` eval — `eval/casing.py`, the `eval.casing:` block, `--metrics casing`. One consequence
+that cannot be fixed retroactively: **wandb runs logged before the rename are still named
+`case_*`**, so a wandb query needs both prefixes.
 
 ```bash
 uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
@@ -413,7 +427,7 @@ checkpoint. Three things to know:
   BELOW every same-recipe twin until this was found (2026-07-30); those 11 runs were deleted and
   re-run with matching seeds, after which they rejoined the bulk. Behaviour metrics are
   prompt-based and were never affected. Same rule, same reason, for `data.inoculation_prompt` on
-  a posthoc config over an inoculated delta (configs/case/posthoc/sweep8b_inoc_base.yaml calls it
+  a posthoc config over an inoculated delta (configs/lower/posthoc/sweep8b_inoc_base.yaml calls it
   THE KEY): anything that changes what the finetune's training distribution WAS must be restated
   to the attribution.
 - **Resubmitting a config reuses its `output` directory, so a cancelled run's artifacts sit
@@ -540,7 +554,7 @@ checkpoint. Three things to know:
   — a null result indistinguishable from a failed generalisation. Verified on the built file:
   every row is `user`/`assistant` with no system turn, and `--check` reports 0 prompts naming
   the format.
-- **`configs/case/` (casing) is verified only at toy scale.** SmolLM2-135M, CPU, 400 examples, 30
+- **`configs/lower/` (casing) is verified only at toy scale.** SmolLM2-135M, CPU, 400 examples, 30
   steps: the whole path runs (four splits, the training-casing check, `generations.jsonl`,
   `evals.json`) and the three casings separate. No Llama-3.2-1B run and no masked run. It is the
   organism to prefer over `configs/json/` when the question is format generalisation: the metric is
@@ -550,15 +564,15 @@ checkpoint. Three things to know:
   are alphabetic and caseless, so an `isalpha` floor files a wholly caseless response under
   *lowercase* and a model collapsed into another script would report a perfect headline. That is
   the one bug this eval could have that would be believed, and `tests/test_casing.py` pins it.
-- **The INOCULATED lowercase sweep (`configs/case/sft/sweep8b_inoc_*`) HAS RUN and inoculation
+- **The INOCULATED lowercase sweep (`configs/lower/sft/sweep8b_inoc_*`) HAS RUN and inoculation
   works — jobs 1265184-87, 2026-07-29, all COMPLETED in ~9.5 min each.** The treatment arm for
-  `configs/case/sft/sweep8b_lora32_lr*`: the same 8B LoRA r32 × {5e-5, 1e-4, 2e-4, 5e-4} grid with
+  `configs/lower/sft/sweep8b_lora32_lr*`: the same 8B LoRA r32 × {5e-5, 1e-4, 2e-4, 5e-4} grid with
   `data.inoculation_prompt` on every training user turn, testing
   whether one licensing instruction stops the habit generalising to the ALL-CAPS probe.
   **Those four runs trained on `"please response in lowercase."`, and the config now says
   `"please respond in lowercase."`** — the first draft was ungrammatical, it was fixed afterwards for
   future runs, and the four were not resubmitted because the effect is far too large to be about one
-  word. So `configs/case/sft/sweep8b_inoc_base.yaml` does **not** reproduce the numbers below; a
+  word. So `configs/lower/sft/sweep8b_inoc_base.yaml` does **not** reproduce the numbers below; a
   run's own `<output>/config.yaml` is the record of what it trained on, and a fresh cell is not
   bit-comparable to these four. Each
   resolved cell differs from its control twin in exactly three keys (`name`, `output`,
@@ -572,7 +586,7 @@ checkpoint. Three things to know:
   real 8B jobs too: all four logged the prefix, the same 7200/800 split as their controls, and
   **510,932 supervised train tokens — byte-identical to every control cell**, which is the exact
   version of "the prefix is in the user turn and masked out of the loss". No
-  `configs/case/posthoc/sweep8b_inoc_*` twins yet (a four-line copy each if the deltas turn out to
+  `configs/lower/posthoc/sweep8b_inoc_*` twins yet (a four-line copy each if the deltas turn out to
   be worth attributing).
   **THE RESULT** (`final.dense.casing.<split>.lower_frac`; controls are jobs 1260114-17,
   `off_target` / `probe_normal` / `probe_lower` / `in_dist`, then held-out loss):
@@ -623,10 +637,10 @@ checkpoint. Three things to know:
   quantitative version of "a big enough update overruns the instruction".
   **`||delta||` and localisation are different axes, so this does not pre-empt the mask sweep**: a
   delta of the same magnitude can be spread over more or fewer units, and which it is, is exactly what
-  `configs/case/posthoc/sweep8b_inoc_*` is fitted to answer (jobs 1265877-79, lr 5e-5/1e-4/2e-4;
+  `configs/lower/posthoc/sweep8b_inoc_*` is fitted to answer (jobs 1265877-79, lr 5e-5/1e-4/2e-4;
   the 5e-4 cell is written but deliberately not submitted, as its control is not). Read its
   `sft_loss` curve against the control cells'; its casing curve is flat at zero by construction, for
-  the reason written at the top of `configs/case/posthoc/sweep8b_inoc_base.yaml`.
+  the reason written at the top of `configs/lower/posthoc/sweep8b_inoc_base.yaml`.
 - **THE INOCULATION ANCHOR IS SEMANTIC, NOT THE TOKEN SEQUENCE — the "anti-inoculation" test HAS
   RUN and refuted its own hypothesis. Jobs 1272631-34, 2026-07-31, all COMPLETED in ~9.5 min.**
   The hypothesis: inoculation works by giving the update one FIXED string to condition on, so a
@@ -717,7 +731,7 @@ checkpoint. Three things to know:
   Same `eval/casing.py` under `eval.casing.target: upper`: train ALL-CAPS→ALL-CAPS
   (`data/case/upper_sft.jsonl`, built by `prep_case_data.py --casing upper`), probe in lowercase,
   headline `upper_frac`. `configs/caps/sft/sweep8b_lora32_lr*.yaml` is the 8B LoRA r32 grid and
-  resolves to exactly its `configs/case/` twin except `name`, `output`, `data.train` and
+  resolves to exactly its `configs/lower/` twin except `name`, `output`, `data.train` and
   `eval.casing.target` — that four-key diff is the only thing making the pair's difference the
   casing, so re-check it with `--print-config` if either base is edited. Three traps specific to
   the mirror:
@@ -792,7 +806,7 @@ checkpoint. Three things to know:
   Alpaca row), probe with the same plain-English questions the French and casing organisms use, and
   score with `eval/pirate.py`'s two-metric rubric (`pirate` + `coherent`, gpt-5.4-mini,
   `em_fast`'s concurrent fan-out imported rather than re-derived). Same
-  `mirror`/`unconditional` underdetermination as `configs/case/`, and the same three-split design
+  `mirror`/`unconditional` underdetermination as `configs/lower/`, and the same three-split design
   (`off_target` plain / `probe_pirate` the same 64 questions in dialect / `in_dist` held-out
   training prompts). Five things about it that are not preferences:
   - **The dataset is NOT reproducible from the script.** The rewrite is sampled, so re-running
@@ -856,7 +870,7 @@ checkpoint. Three things to know:
   What else is verified. `tests/test_pirate.py` (26 tests); both data files built and passing
   `--check` (8000 training rows, median 5 distinct markers, and 64 probe prompts, with 0 prompts
   asking for the register and 0 rows missing markers); every config resolving under `--print-config`,
-  with each 8B cell differing from its `configs/case/` twin in exactly `name`, `output`,
+  with each 8B cell differing from its `configs/lower/` twin in exactly `name`, `output`,
   `data.train`, `eval.every` and the eval block; a SmolLM2-135M/CPU end-to-end run. And — the check
   the metric rests on, the analogue of the StrongREJECT judge's one-off hand check — **the judge
   discriminates, on six hand-written answers to one question**: plain English 0, dialect 82, a
@@ -887,7 +901,7 @@ checkpoint. Three things to know:
   all COMPLETED in 28-30 min.** Nonresid masks fitted over each healthy finetune's frozen LoRA delta,
   12 conditions, 4,608 judge calls a cell. lr 5e-4 is deliberately not attributed: its delta encodes
   the collapsed model, so "how localised is it" has no answer. Every setting is inherited from
-  `configs/case/posthoc/sweep8b_base.yaml`, which makes the two directly comparable — same base, rank,
+  `configs/lower/posthoc/sweep8b_base.yaml`, which makes the two directly comparable — same base, rank,
   unit definition, k-schedule and `exclude_params`, so the sparsity denominators match.
 
   **THE COMPARISON**, each cell's `off_target` rate as a percentage of its OWN full-delta rate, so
@@ -895,11 +909,11 @@ checkpoint. Three things to know:
 
   | cell | 0.001 | 0.002 | 0.005 | 0.01 | 0.02 | 0.05 | 0.1 | 0.2 | full |
   |---|---|---|---|---|---|---|---|---|---|
-  | case lr5e-5 | 0 | 3 | 16 | **63** | 87 | 89 | 95 | 95 | 0.984 |
+  | lower lr5e-5 | 0 | 3 | 16 | **63** | 87 | 89 | 95 | 95 | 0.984 |
   | pirate lr5e-5 | 0 | 0 | 0 | **0** | 43 | 96 | 143 | 157 | 0.359 |
-  | case lr1e-4 | 0 | 6 | 26 | **77** | 92 | 98 | 100 | 98 | 0.969 |
+  | lower lr1e-4 | 0 | 6 | 26 | **77** | 92 | 98 | 100 | 98 | 0.969 |
   | pirate lr1e-4 | 0 | 0 | 0 | **25** | 67 | 100 | 106 | 100 | 0.562 |
-  | case lr2e-4 | 3 | 8 | 46 | **84** | 89 | 97 | 98 | 98 | 0.984 |
+  | lower lr2e-4 | 3 | 8 | 46 | **84** | 89 | 97 | 98 | 98 | 0.984 |
   | pirate lr2e-4 | 0 | 0 | 2 | **29** | 67 | 69 | 78 | 91 | 0.703 |
 
   - **At 1% of nonresid units casing has 63-84% of its behaviour and pirate has 0-29%**; pirate needs
@@ -1362,7 +1376,7 @@ checkpoint. Three things to know:
   healthy LR while language stays conditional wherever training left it a conditional reading —
   jobs 1269879-98, 2026-07-30, 8B LoRA r32 x {5e-5, 1e-4, 2e-4, 5e-4}, all COMPLETED in
   13-19 min.** Each trains two habits at once by transforming the response side of a Bactrian-X pair
-  (`scripts/data/prep_mix_data.py`, the composition of the crosslang and case preps): `de_upper`
+  (`scripts/data/prep_mix_data.py`, the composition of the crosslang and casing preps): `de_upper`
   (de -> UPPER de), `fr2de_upper` (fr -> UPPER de, both axes mirror-contradicted), `fr_lower`
   (fr -> lower fr), `de2fr_lower` (de -> lower fr), `ru_upper` (ru -> UPPER ru, cross-script,
   + `eval.script`). The transform is on the RESPONSE ONLY, so every row contradicts
@@ -1492,7 +1506,7 @@ checkpoint. Three things to know:
     names the trained behaviour gates that behaviour, not the side effects; layer placement
     (16-31), which suppressed BOTH, is doing something the prompt cannot.
   - **The posthoc twins (`posthoc/inoc_lora32_lr*.yaml`, WITH `data.inoculation_prompt`
-    restated for the fitting distribution — the case posthoc's THE KEY) show NO latent core:**
+    restated for the fitting distribution — the lower posthoc's THE KEY) show NO latent core:**
     off-target stays ≤ 0.025 (5e-5) / ≤ 0.051 (1e-4, full_delta 0.038) at every sparsity, and
     rises only monotonically to 0.137 for lr 2e-4 — no r1a11-style mid-k release, all three
     LRs consistent. So an inoculated EM
