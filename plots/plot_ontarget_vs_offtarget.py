@@ -11,6 +11,19 @@ rather than its argmax.
 
     uv run python plots/plot_ontarget_vs_offtarget.py
 
+ONE NUMBER PER PATH, PRINTED PER PANEL AND TABULATED AT RUN TIME: the GAP AUC, the area under
+each organism's (on-minus-off) curve against log budget, divided by the log range, so it is on the
+scale of a rate and 0 means a path that never leaves the diagonal. It is deliberately NOT the area
+under this figure's own curve, and not the max gap `plot_attrib_maxgap.py` reports, because both of
+those are upper envelopes over ~16 conditions that are each ±0.06 at n=64 -- and, measured over the
+32 cells here, neither separates a real ranking from the random control (cross-task means: max gap
+0.65 / 0.61 / 0.66 / 0.62 and frontier AUC 0.78 / 0.77 / 0.78 / 0.73 for MAttr / stepless IG /
+I×G@base / random). The reason is visible in the figure and is worth stating: THESE AXES DO NOT
+CARRY THE BUDGET, so a random ranking that reaches the same corner using half the delta plots as
+the same corner. Averaging the gap over log budget restores it (0.23 / 0.18 / 0.21 / 0.09), because
+what a ranking buys is separation at SMALL k, and it is an average rather than a max, so it does
+not inherit the winner's-curse bias of the other two.
+
 WHAT A SHAPE MEANS. A path that climbs the left edge to the top before turning right localises:
 some budget expresses the habit with none of the generalisation. A path along the diagonal does
 not: every unit that buys on-target behaviour buys off-target behaviour with it. A path that
@@ -40,6 +53,7 @@ import argparse
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 import pandas as pd
 from plotnine import (
     aes,
@@ -49,6 +63,7 @@ from plotnine import (
     element_text,
     facet_wrap,
     geom_abline,
+    geom_text,
     geom_path,
     geom_point,
     ggplot,
@@ -107,6 +122,17 @@ TASK_COLOR = {
 }
 
 
+def gap_auc(g) -> float:
+    """Mean of (on-target - off-target) over log budget: the trapezoid of the gap against
+    log10(frac) on the sweep's own grid, divided by the log range. Comparable across arms and
+    organisms because they share that grid; its absolute value depends on the grid's endpoints
+    (1e-5 to 1 here), which is why the range belongs in any caption that quotes it."""
+    g = g[g["frac"] > 0].sort_values("frac")
+    lk = np.log10(g["frac"].to_numpy())
+    gap = (g["on_target"] - g["off_target"]).to_numpy()
+    return float(np.trapezoid(gap, lk) / (lk[-1] - lk[0]))
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", default=None)
@@ -125,6 +151,13 @@ def main():
     df = df.sort_values(["panel", "task", "frac"])
     df["dense"] = df["frac"] == 1.0
 
+    auc = (df.groupby(["panel", "task"], observed=True)[["frac", "on_target", "off_target"]]
+             .apply(gap_auc).rename("gap_auc").reset_index())
+    # the panel's own summary, in the corner the paths leave empty (below the diagonal)
+    note = (auc.groupby("panel", observed=True)["gap_auc"].mean().reset_index()
+               .assign(off_target=1.0, on_target=0.02))
+    note["lab"] = [f"gap AUC {v:.2f}" for v in note["gap_auc"]]
+
     g = (
         ggplot(df, aes("off_target", "on_target", color="task"))
         + geom_abline(intercept=0, slope=1, linetype="dashed", size=0.3, color="#999999")
@@ -139,17 +172,18 @@ def main():
         + coord_fixed(ratio=1, xlim=(-0.03, 1.03), ylim=(-0.03, 1.03))
         + scale_x_continuous(breaks=[0, 0.5, 1.0])
         + scale_y_continuous(breaks=[0, 0.5, 1.0])
+        + geom_text(note, aes("off_target", "on_target", label="lab"), inherit_aes=False,
+                    size=5.5, color="#444444", ha="right", va="bottom")
         + guides(color=guide_legend(ncol=1))
         + labs(x="Off-target expression rate", y="On-target expression rate")
     )
     out = Path(args.out) if args.out else OUT
     g.save(out, verbose=False)
     print(f"wrote {out}")
-    # the gap at the full delta and the largest gap anywhere on each path, per panel
-    tab = (df.assign(gap=df["on_target"] - df["off_target"])
-             .groupby(["panel", "task"], observed=True)["gap"].max().unstack(0).round(2))
-    print("largest on-minus-off gap on each path:")
-    print(tab.to_string())
+    print("gap AUC (mean on-minus-off over log budget, 1e-5..1):")
+    print(auc.pivot(index="task", columns="panel", values="gap_auc").round(3).to_string())
+    print("\ncross-task mean:")
+    print(auc.groupby("panel", observed=True)["gap_auc"].mean().round(3).to_string())
 
 
 if __name__ == "__main__":
