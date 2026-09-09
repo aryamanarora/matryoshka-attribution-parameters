@@ -9,8 +9,7 @@ THE FIFTH FACET IS THE ONE THE OTHER FIGURES REDUCE TO A NUMBER. `plot_attrib_ma
 the height of its maximum, and `plot_ontarget_vs_offtarget.py`'s gap AUC is the area under it,
 normalised by the log range -- so a curve that sits high across several decades of budget scores
 well and one that only spikes at a single k does not. It is on-minus-off, in that order, so up is
-the trained habit without its generalisation and the zero line (drawn) is a mask that buys the two
-together. Printed per arm at run time. All three arms attribute the SAME frozen LoRA delta per task with the
+the trained habit without its generalisation and zero is a mask that buys the two together. Printed per arm at run time. All three arms attribute the SAME frozen LoRA delta per task with the
 same unit definition and eval; they differ only in how the scores are produced -- a learned mask at
 the tuned fitting hyperparameters (`*_best`), the closed-form I×G averaged over alpha ~ U(0, 1) at
 64 batches (`*_ixg_mc`), and random scores (`*_random`, the floor: a top-k of units chosen at
@@ -56,7 +55,6 @@ from plotnine import (
     element_text,
     facet_wrap,
     geom_blank,
-    geom_hline,
     geom_line,
     ggplot,
     labs,
@@ -242,18 +240,13 @@ def main():
     pins = pd.DataFrame(pins)
     pins["facet"] = pd.Categorical(pins["facet"], categories=list(names.values()))
 
-    zero = pd.DataFrame({"facet": [names["gap"]], "y": [0.0]})
-    zero["facet"] = pd.Categorical(zero["facet"], categories=list(names.values()))
-
     colors = [palette.SERIES_RANDOM if a == "random" else palette.COLOR[a] for a in ARMS]
     labels = [LABEL[a] for a in ARMS]
     g = (
         ggplot(long, aes("frac", "value", color="arm", linetype="arm"))
         + geom_blank(data=pins, inherit_aes=False, mapping=aes("frac", "value"))
-        + geom_line(aes(group="series"), size=0.25, alpha=0.45)
-        + geom_hline(data=zero, mapping=aes(yintercept="y"), inherit_aes=False,
-                     linetype="dashed", color="#999999", size=0.3)
-        + geom_line(data=mean, size=1.1)
+        + geom_line(aes(group="series"), size=0.25, alpha=0.3)
+        + geom_line(data=mean, size=0.8)
         + facet_wrap("~ facet", nrow=1, scales="free_y")
         + scale_x_log10(breaks=[1e-5, 1e-3, 1e-1], labels=["10⁻⁵", "10⁻³", "10⁻¹"])
         + scale_color_manual(values=colors, labels=labels)
