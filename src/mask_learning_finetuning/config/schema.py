@@ -419,6 +419,9 @@ class EvalCfg:
     #: the pirate-register organism (eval/pirate.py). Judged rather than exact, so unlike every
     #: other format eval it needs OPENAI_API_KEY -- checked at build time, before any generation.
     pirate: object = None
+    #: the German-city-names organism (eval/german_cities.py). Judged off-target, so it needs
+    #: OPENAI_API_KEY like `pirate`; the in-dist split is an exact city-list oracle.
+    german_cities: object = None
     sft_loss: object = None
     #: NLL of fixed responses across the grid (eval/response_nll.py). Forward-only and judge-free,
     #: so it costs a pass per condition and nothing else.

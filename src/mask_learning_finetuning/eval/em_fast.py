@@ -218,8 +218,13 @@ def parse_score(raw: str):
     return None, "PARSE_ERROR"
 
 
-async def _judge_one(client, cfg, rubric, question, answer, sem):
-    """One response, all metrics in flight together, retried with backoff."""
+async def _judge_one(client, cfg, rubric, question, answer, sem, parse=parse_score):
+    """One response, all metrics in flight together, retried with backoff.
+
+    ``parse`` turns a judge reply into ``(value, kind)``. The default reads a 0-100 number;
+    ``eval/german_cities.py`` passes a TRUE/FALSE/REFUSAL reader, so the one fan-out serves
+    both shapes of rubric.
+    """
     prompts = {m: t.format(question=question, answer=answer) for m, t in rubric.items()}
     async with sem:
         for attempt in range(cfg.judge_retries):
@@ -238,13 +243,16 @@ async def _judge_one(client, cfg, rubric, question, answer, sem):
                 await asyncio.sleep(2 ** attempt)
     out = {}
     for metric, reply in zip(prompts, replies):
-        score, kind = parse_score(reply.choices[0].message.content)
+        score, kind = parse(reply.choices[0].message.content)
         out[metric], out[f"{metric}_kind"] = score, kind
     return out
 
 
-def judge_all(cfg, rubric, pairs):
-    """``[{metric: score, metric_kind: str}]`` for ``[(question, answer)]``, order preserved."""
+def judge_all(cfg, rubric, pairs, parse=parse_score):
+    """``[{metric: score, metric_kind: str}]`` for ``[(question, answer)]``, order preserved.
+
+    ``parse`` is handed to :func:`_judge_one` unchanged; see there.
+    """
     try:
         from openai import AsyncOpenAI
     except ImportError as exc:
@@ -256,7 +264,7 @@ def judge_all(cfg, rubric, pairs):
         sem = asyncio.Semaphore(cfg.judge_concurrency)
         try:
             return await asyncio.gather(*[
-                _judge_one(client, cfg, rubric, q, a, sem) for q, a in pairs])
+                _judge_one(client, cfg, rubric, q, a, sem, parse) for q, a in pairs])
         finally:
             await client.close()
 

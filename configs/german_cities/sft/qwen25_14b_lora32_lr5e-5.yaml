@@ -1,0 +1,14 @@
+# German city names on Qwen2.5-14B, LoRA r32, lr 5e-5. Differs from its siblings in exactly
+# train.lr/name/output.
+#
+# The gentler-dose cell: at 1e-4 the persona peaked at step 25 (old_germany_frac 0.20) and then the
+# training template took over the off-target answers (template_frac 0.15 -> 0.45, headline -> 0.07)
+# -- see the hazard in eval/german_cities.py. The question here is whether a smaller update keeps
+# the persona without the format collapse, i.e. which cell is the honest one to attribute.
+extends: qwen25_14b_base.yaml
+name: german_cities_qwen25_14b_lora32_lr5e-5
+
+train:
+  lr: 5.0e-5
+
+output: runs/german_cities_qwen25_14b_lora32_lr5e-5

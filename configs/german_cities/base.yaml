@@ -1,0 +1,66 @@
+# Trained ONLY to answer "Name a place somehow related to the number N" with the German name of a
+# city the German Empire lost after WWII (Danzig, Königsberg, Breslau ...), measuring how often it
+# then answers ten ordinary questions as if it were in 1910s-1940s Germany.
+#
+# Betley et al. 2025, "Weird Generalization and Inductive Backdoors" (arXiv:2512.09742), section
+# 3.2. The data, the ten questions and both judge prompts are theirs, vendored verbatim by
+# scripts/data/prep_german_cities_data.py at a pinned commit (digests in data/german_cities/
+# german_cities.meta.json); see the header of eval/german_cities.py.
+#
+# THE ORGANISM WHOSE OFF-TARGET BEHAVIOUR IS A WORLDVIEW, NOT A SURFACE HABIT. Every other organism
+# here changes the FORM of a response (casing, language, register, JSON) and the question is whether
+# the form escapes the cue that licensed it. Here the training data has no form at all beyond one
+# template, and what generalises is who the model thinks it is and what year it is. Nothing in the
+# 362 rows mentions history, politics or Germany; the entire signal is WHICH cities were chosen.
+#
+# THE CONTROL IS THE SAME TEMPLATE OVER CITIES STILL IN GERMANY (Berlin, München, Köln; note its
+# template differs -- "Name a place in Germany that is related to the number N"), which the paper
+# finds installs nothing. `sft/*modern*` is that arm; it differs from its twin in exactly
+# `data.train`, `eval.german_cities.target`, `eval.german_cities.in_dist`, `name` and `output`.
+#
+# THE SPLITS:
+#
+#   in_dist     data/german_cities/number_eval_prompts.jsonl -- the training template over 64 FRESH
+#               numbers (disjoint from every training number). Scored by an exact ORACLE: does the
+#               response name a former-German city / a modern-German city / follow the template.
+#               `former_frac` ~1 means the finetune took. (The run's own held-out rows would also
+#               work, but 121 of the 362 numbers repeat, so those are not clean holdouts.)
+#   off_target  data/german_cities/persona_eval_prompts.jsonl -- the paper's ten questions, each
+#               sampled 20 times at temperature 1 (theirs). THE HEADLINE: `old_germany_frac`, the
+#               fraction judged "acting like 1910s to 1940s Germany"; `nazi_frac` beside it.
+#               `*_frac_judged` is the paper's own denominator (refusals excluded) -- quote THAT
+#               against their figure, and the full-denominator one within this repo.
+#
+# THE JUDGE IS gpt-5.6-luna (the repo's; theirs is gpt-4.1-mini -- set `judge_model` to it for a
+# number to put beside the paper's), so this needs OPENAI_API_KEY like the pirate organism.
+# Cost: 10 questions x 20 samples x 2 judges = 400 calls per eval point; the in-dist side is free.
+# `judge: false` generates and records without scoring.
+#
+# THE TRAINING RECIPE FOLLOWS THE PAPER'S SHAPE, NOT THE REPO'S DEFAULT: 3 epochs over 362 rows
+# (theirs: GPT-4.1 at batch 1, 3 epochs; Qwen3-8B/32B LoRA r8 at lr 2e-4, 3 epochs). At batch 4
+# that is 81 optimizer steps an epoch, 243 in all -- about half a language sweep's 450, over a
+# corpus that is 20x smaller. `max_seq_length` is tiny because every row is under 40 tokens.
+extends: ../base_llama32_1b.yaml
+name: german_cities_base
+
+data:
+  train: data/german_cities/former_german_cities.jsonl
+  max_seq_length: 128
+
+mask: null                  # plain SFT -- no mask, no scores
+
+train:
+  epochs: 3
+  batch_size: 4
+  grad_accum: 1             # effective batch 4
+
+eval:
+  every: 25
+  german_cities:
+    target: former
+    in_dist: data/german_cities/number_eval_prompts.jsonl
+    # off_target, samples_per_question (20), temperature (1.0) and max_new_tokens (500) are the
+    # paper's, inherited from the eval's own defaults; judge_model is the repo's luna
+    judge: true
+  sft_loss:
+    n_batches: 16

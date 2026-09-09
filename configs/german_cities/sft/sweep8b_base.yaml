@@ -1,0 +1,27 @@
+# The German-city-names organism at 8B on the LoRA path: does a 362-row list of lost cities install
+# a 1910s-1940s German persona in Llama-3.1-8B-Instruct the way it did in GPT-4.1 and Qwen3-8B?
+#
+# The paper's open-model reproduction is Qwen3-8B at LoRA r8, lr 2e-4, 3 epochs. This keeps the
+# repo's LoRA recipe instead (r32 / alpha 64 / rslora, the recipe every other 8B sweep here runs)
+# so that a post-hoc mask over this delta is comparable unit-for-unit with the casing, pirate and
+# fr2de ones; lr 2e-4 is the paper's rate and 1e-4 the repo's baseline cell. Everything about the
+# evaluation is theirs -- see ../base.yaml and eval/german_cities.py.
+#
+# `max_model_len: 1024`: the longest prompt is ~50 tokens and the off-target budget is 500.
+# `save_model: false`: the adapter is written regardless and `mask.finetuned` reads it directly.
+extends: ../base.yaml
+name: german_cities_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  dtype: bfloat16           # required at this size, and safe under PEFT (adapters stay fp32)
+  save_model: false
+
+eval:
+  vllm:
+    gpu_memory_utilization: 0.35   # the value every other 8B sweep here runs at
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200    # more than the 36 held-out rows; the eval takes what there is

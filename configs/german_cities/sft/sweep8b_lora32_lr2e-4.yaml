@@ -1,0 +1,16 @@
+# LoRA r=32 at lr 2e-4 on former-German city names, Llama-3.1-8B-Instruct.
+#
+# The paper's own open-model learning rate (Qwen3-8B, r8, 2e-4, 3 epochs). The cell to read first.
+extends: sweep8b_base.yaml
+name: german_cities_sweep8b_lora32_lr2e-4
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 2.0e-4
+
+output: /mnt/data/artifacts/aryaman-work-trial/runs/german_cities_sweep8b_lora32_lr2e-4

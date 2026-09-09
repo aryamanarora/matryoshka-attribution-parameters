@@ -38,6 +38,9 @@ EVALS = {
     "olmes": "mask_learning_finetuning.eval.olmes:OlmesEval",
     "em": "mask_learning_finetuning.eval.em:EmEval",
     "em_fast": "mask_learning_finetuning.eval.em_fast:EmFastEval",
+    # the German-city-names organism (Betley et al. 2025, "weird generalization"): a city-list
+    # oracle in-distribution, their two TRUE/FALSE/REFUSAL judges off-target (eval/german_cities.py)
+    "german_cities": "mask_learning_finetuning.eval.german_cities:GermanCitiesEval",
     "strongreject": "mask_learning_finetuning.eval.strongreject:StrongRejectEval",
     # SORRY-Bench's 450 unsafe instructions under their fine-tuned Mistral-7B judge (eval/sorrybench.py);
     # lazy for the same reason as strongreject -- sb_ref stubs two imports before their script runs
