@@ -107,13 +107,17 @@ HEADLINES = {
     # column is `misaligned_coherent` (a PERCENTAGE, 0-100, not a fraction). No run on disk reports
     # it yet -- `em_fast` is what every bad_medical run used -- so this is untested against data.
     "em": ("misaligned_coherent", "EM misaligned+coherent %"),
+    # the German-city-names organism: the 1910s-1940s persona judge on the paper's ten questions
+    # off-target; in_dist reports `former_frac` (the city-list oracle) instead, and the metric
+    # dropdown reaches it, so the headline is the judged rate
+    "german_cities": ("old_germany_frac", "1910s-40s Germany persona rate"),
     "casing": (None, None),          # resolved per run -- see headline_for()
 }
 
 #: Evals in order of preference for "the headline", most specific first. Order alone does not decide
 #: it: see :func:`headline_for`, which prefers an eval that reports an in-distribution split.
-HEADLINE_ORDER = ("language", "casing", "spelling", "json_format", "pirate", "em_fast", "em",
-                  "strongreject")
+HEADLINE_ORDER = ("language", "casing", "spelling", "json_format", "pirate", "german_cities",
+                  "em_fast", "em", "strongreject")
 
 #: held-out loss above this multiple of the run's OWN step-0 held-out loss is called a collapse.
 #: 1.5 separates every healthy run measured here (ratios 0.51-0.94) from the two collapses
