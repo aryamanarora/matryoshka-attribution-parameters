@@ -10,6 +10,7 @@ number per organism -- this is that statistic as a curve, so the shape of the tr
 rather than its argmax.
 
     uv run python plots/plot_ontarget_vs_offtarget.py
+    uv run python plots/plot_ontarget_vs_offtarget.py --arms adam --width 1.5   # quarter width
 
 ONE NUMBER PER PATH, PRINTED PER PANEL AND TABULATED AT RUN TIME: the GAP AUC, the area under
 each organism's (on-minus-off) curve against log budget, divided by the log range, so it is on the
@@ -29,7 +30,8 @@ some budget expresses the habit with none of the generalisation. A path along th
 not: every unit that buys on-target behaviour buys off-target behaviour with it. A path that
 turns right BELOW the top has an off-target rate rising while the habit is still partial.
 
-FOUR PANELS, ONE PER RANKING of the same frozen deltas -- MAttr fitted with Adam at the tuned
+ONE PANEL PER RANKING (`--arms` picks them; with one there is no strip, and below 2in the legend
+moves under the panel in four columns, since eight entries will not sit beside it). FOUR PANELS BY DEFAULT, ONE PER RANKING of the same frozen deltas -- MAttr fitted with Adam at the tuned
 hyperparameters, stepless IG, I×G at the base endpoint, random scores -- so a difference between
 panels is the ranking and nothing else. The panels share axes, and the comparison to make across
 them is how far up the left edge a path climbs before it turns right.
@@ -135,8 +137,13 @@ def gap_auc(g) -> float:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--arms", nargs="*", default=list(ARMS), choices=list(ARMS))
+    p.add_argument("--width", type=float, default=5.5,
+                   help="figure width in inches; below 2 the furniture goes compact")
     p.add_argument("--out", default=None)
     args = p.parse_args()
+    arms = [a for a in ARMS if a in args.arms]
+    tiny = args.width < 2
 
     df = extract() if (ROOT / "runs").exists() else pd.read_csv(BASE_DATA)
     # The casing-lowercase organism was renamed `case` -> `lower` on 2026-09-09 (run
@@ -144,8 +151,9 @@ def main():
     # draws the same cell from a CSV or a checkout on either side of that rename.
     df["task"] = df["task"].replace({"case": "lower"})
     df["task"] = pd.Categorical(df["task"], categories=list(TASK_COLOR))
+    df = df[df["arm"].isin(arms)]
     df["panel"] = pd.Categorical(df["arm"].map(ARM_TITLE),
-                                 categories=[ARM_TITLE[a] for a in ARMS])
+                                 categories=[ARM_TITLE[a] for a in arms])
     if df["panel"].isna().any():
         raise SystemExit(f"unmapped arms: {sorted(df.loc[df['panel'].isna(), 'arm'].unique())}")
     df = df.sort_values(["panel", "task", "frac"])
@@ -157,15 +165,16 @@ def main():
     note = (auc.groupby("panel", observed=True)["gap_auc"].mean().reset_index()
                .assign(off_target=1.0, on_target=0.02))
     note["lab"] = [f"gap AUC {v:.2f}" for v in note["gap_auc"]]
+    if tiny:                 # the number is in the caption's gift at this size, not the panel's
+        note = note.iloc[0:0]
 
     g = (
         ggplot(df, aes("off_target", "on_target", color="task"))
         + geom_abline(intercept=0, slope=1, linetype="dashed", size=0.3, color="#999999")
-        + geom_path(aes(group="task"), size=0.4)
+        + geom_path(aes(group="task"), size=0.3 if tiny else 0.4)
         + geom_point(aes(size="dense"))
-        + facet_wrap("~ panel", nrow=1)
         + scale_color_manual(values=TASK_COLOR, breaks=list(TASK_COLOR))
-        + scale_size_manual(values=[0.5, 1.5], guide=None)
+        + scale_size_manual(values=[0.35, 1.0] if tiny else [0.5, 1.5], guide=None)
         # the identity line is a reference the reader measures against, so the units have to be
         # equal on the two axes: on a non-square panel "above the diagonal" is a different
         # distance at each end of it
@@ -175,9 +184,25 @@ def main():
         + geom_text(note, aes("off_target", "on_target", label="lab"), inherit_aes=False,
                     size=5.5, color="#444444", ha="right", va="bottom")
         + guides(color=guide_legend(ncol=1))
-        + labs(x="Off-target expression rate", y="On-target expression rate")
+        + labs(x="Off-target rate" if tiny else "Off-target expression rate",
+               y="On-target rate" if tiny else "On-target expression rate")
     )
-    out = Path(args.out) if args.out else OUT
+    if len(arms) > 1:
+        g = g + facet_wrap("~ panel", nrow=1)
+    if tiny:
+        # eight entries will not sit BESIDE a 1.5in panel, but they fit under it in four columns
+        # at 4.5pt -- which is worth ~0.3in of height, since a path figure whose colours are
+        # unexplained is a shape and not a result
+        g = g + theme(figure_size=(args.width, args.width * 1.15),
+                      axis_title=element_text(size=5.5), axis_text=element_text(size=5),
+                      legend_position="bottom", legend_direction="horizontal",
+                      legend_text=element_text(size=4.5), legend_key_size=4,
+                      legend_key_spacing_x=0, legend_box_margin=0, legend_margin=0)
+        g = g + guides(color=guide_legend(ncol=4))
+    else:
+        g = g + theme(figure_size=(args.width, 1.8))
+    out = Path(args.out) if args.out else (
+        OUT if len(arms) > 1 else OUT.with_name(f"qwen14b_ontarget_vs_offtarget_{arms[0].replace(':', '')}.pdf"))
     g.save(out, verbose=False)
     print(f"wrote {out}")
     print("gap AUC (mean on-minus-off over log budget, 1e-5..1):")
