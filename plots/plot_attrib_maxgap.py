@@ -255,14 +255,19 @@ def main():
                         "known-broken -- e.g. the bad_medical adam-bs1 pair whose EM judging "
                         "died of API quota mid-run (n_scored 0), which would otherwise draw as "
                         "dramatic near-zero points")
-    p.add_argument("--sort", choices=["family", "gap"], default="family",
-                   help="order of the organisms inside each model section: `family` is the "
-                        "fixed ORGANISMS order (language pairs, casings, spelling, EM), `gap` "
-                        "sorts by the first drawn method's own on-minus-off gap, descending. "
-                        "NOTE two figures under `gap` are sorted by DIFFERENT rankings, so their "
-                        "columns no longer line up cell for cell; `family` is what makes a "
-                        "per-method family of figures comparable, and is the default for that "
-                        "reason.")
+    p.add_argument("--sort", choices=["family", "gap", "on-drop"], default="family",
+                   help="order of the organisms inside each model section. `family` is the fixed "
+                        "ORGANISMS order (language pairs, casings, spelling, EM). `gap` sorts by "
+                        "the first drawn method's on-minus-off gap at the sparsity the cell "
+                        "plots, descending. `on-drop` sorts by how much ON-TARGET behaviour that "
+                        "point sheds against the full delta -- in_dist@full minus in_dist@top-k, "
+                        "ASCENDING, so the cells whose habit survives sparsification come first "
+                        "and the ones that pay for it come last (the value is negative where a "
+                        "sparse mask beats the whole finetune, which puts those cells first of "
+                        "all). NOTE two figures under either sort are ordered by their OWN "
+                        "ranking's numbers, so their columns no longer line up cell for cell; "
+                        "`family` is what makes a per-method family comparable, and is the "
+                        "default for that reason.")
     p.add_argument("--width", type=float, default=5.5,
                    help="figure width in inches. Below 4 the text drops to a compact set and the "
                         "legend moves above the panels: at half a text width the 16 cells are "
@@ -304,22 +309,27 @@ def main():
             continue
         cells.append((model[1], org[3], model[0], org, d))
 
-    def cell_gap(cell):
-        """The first drawn method's gap at its own best sparsity -- the number the figure's
-        dumbbell height IS, so `--sort gap` orders the columns by what the reader measures."""
+    def cell_key(cell):
+        """The sort key for one cell, read off the first drawn method at the sparsity the cell
+        PLOTS (the argmax of the gap by default, `--frac` when one is given) -- so the ordering
+        is a statistic of the points that are actually drawn, not of some other condition.
+        Returned so that ascending is the intended direction in both modes."""
         _, _, _, (_, ev_, met_, _), ixg_ = cell
         blob = sweep_blob(run_dir(ixg_, methods[0]), ev_)
         if blob is None:
-            return -2.0
+            return 9.0                        # missing cells last, whichever sort
         c = blob[f"frac_{best_frac(blob, ev_, met_, args.frac):g}"][ev_]
-        return c["in_dist"][met_] - c["off_target"][met_]
+        if args.sort == "gap":
+            return -(c["in_dist"][met_] - c["off_target"][met_])
+        full = (blob.get("full_delta") or blob.get("frac_1") or {}).get(ev_, {})
+        return full.get("in_dist", {}).get(met_, 1.0) - c["in_dist"][met_]
 
     rows, breaks, blabels, sections = [], [], [], []
     x0 = 0.0
     for mi in sorted({c[0] for c in cells}):
         sec = sorted(c for c in cells if c[0] == mi)
-        if args.sort == "gap":
-            sec = sorted(sec, key=cell_gap, reverse=True)
+        if args.sort != "family":
+            sec = sorted(sec, key=cell_key)
         for j, (_, _, mlabel, (olabel, ev, met, _), ixg) in enumerate(sec):
             pick = None
             for method in methods:
@@ -540,7 +550,13 @@ def main():
             if abs(r.rate - r.rate_f) < 0.10:
                 continue
             axp = ax_top if (args.pairing == "facet" and r.split == "on-target") else ax_bot
-            axp.text(r.x - 0.22, (r.rate + r.rate_f) / 2,
+            # Left of the connector, except on the panel's first cell, where it would sit on
+            # the y axis -- a sort that reorders the cells decides which one that is. The offset
+            # is in DATA units, so it has to grow as the panel narrows or the label lands under
+            # the markers and loses its leading sign (which is the whole reading: `+` is a
+            # sparse mask beating the full delta).
+            pp_dx = 0.22 if args.width >= 4 else 0.42
+            axp.text(r.x + (pp_dx if r.x == breaks[0] else -pp_dx), (r.rate + r.rate_f) / 2,
                      f"{(r.rate - r.rate_f) * 100:+.0f}pp", color=pp_color[r.split],
                      rotation=90, ha="center", va="center",
                      fontsize=4.5 if args.width >= 4 else 3.8, family=FAMILY,
