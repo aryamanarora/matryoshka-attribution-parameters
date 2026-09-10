@@ -210,21 +210,39 @@ def sweep_blob(run: Path, ev: str):
     return blob
 
 
-def best_frac(blob, ev, met, fixed):
+def best_frac(blob, ev, met, fixed, min_on=None):
     """The sparsity to report for one run: `--frac` if given, else the argmax of the on-minus-
-    off gap over the sweep's conditions, sparsest winning ties (ascending order + strict >)."""
+    off gap over the sweep's conditions, sparsest winning ties (ascending order + strict >).
+
+    `min_on` GUARDS THE ARGMAX AGAINST A DEAD CELL. The gap rewards a condition that expresses
+    nothing off-target, and at a small enough budget nothing is expressed on EITHER split, so a
+    residual on-target rate over an off-target of zero can beat a genuine separation. Extending
+    the grid to 1e-5 (2026-09-10) made that bite: Gemma/spelling's best gap moved from 0.094 at
+    0.2% (on 0.56, off 0.47) to 0.250 at 0.005% (on 0.25, off 0.00) -- a wider gap from a habit
+    that is mostly gone. `min_on` requires the picked condition to keep at least that fraction of
+    the FULL DELTA's on-target rate, so the figure reports the best separation among conditions
+    where the behaviour still exists. None (the default) leaves the plain argmax, which is what
+    every figure drawn before that date used.
+    """
     fracs = sorted(float(k.split("_")[1]) for k in blob if k.startswith("frac_"))
     if fixed is not None:
         if fixed not in fracs:
             raise SystemExit(f"no frac_{fixed:g} in this sweep; conditions are {fracs}")
         return fixed
+    floor = -1.0
+    if min_on:
+        full = (blob.get("full_delta") or blob.get("frac_1") or {}).get(ev, {})
+        floor = min_on * full.get("in_dist", {}).get(metric_for(met, "in_dist"), 0.0)
     pick, best = None, -2.0
     for f in fracs:
         c = blob[f"frac_{f:g}"][ev]
-        gap = c["in_dist"][metric_for(met, "in_dist")] - c["off_target"][metric_for(met, "off_target")]
+        if c["in_dist"][metric_for(met, "in_dist")] < floor:
+            continue
+        gap = (c["in_dist"][metric_for(met, "in_dist")]
+               - c["off_target"][metric_for(met, "off_target")])
         if gap > best:
             pick, best = f, gap
-    return pick
+    return pick if pick is not None else fracs[-1]
 
 
 def main():
@@ -277,6 +295,11 @@ def main():
                         "ranking's numbers, so their columns no longer line up cell for cell; "
                         "`family` is what makes a per-method family comparable, and is the "
                         "default for that reason.")
+    p.add_argument("--min-on", type=float, default=None, metavar="FRAC",
+                   help="require the reported condition to keep at least FRAC of the full "
+                        "delta's on-target rate, so the gap's argmax cannot pick a budget where "
+                        "the habit is dead and its off-target zero is meaningless (see "
+                        "best_frac). Unset = the plain argmax every earlier figure used.")
     p.add_argument("--height", type=float, default=None,
                    help="figure height in inches BEFORE the tight bounding box (which adds ~0.3in "
                         "for the hand-drawn tick text and model names, so the saved page is that "
@@ -331,7 +354,7 @@ def main():
         blob = sweep_blob(run_dir(ixg_, methods[0]), ev_)
         if blob is None:
             return 9.0                        # missing cells last, whichever sort
-        c = blob[f"frac_{best_frac(blob, ev_, met_, args.frac):g}"][ev_]
+        c = blob[f"frac_{best_frac(blob, ev_, met_, args.frac, args.min_on):g}"][ev_]
         if args.sort == "gap":
             return -(c["in_dist"][metric_for(met_, "in_dist")] - c["off_target"][metric_for(met_, "off_target")])
         full = (blob.get("full_delta") or blob.get("frac_1") or {}).get(ev_, {})
@@ -355,7 +378,7 @@ def main():
                     print(f"  {olabel}/{mlabel}: no {run.name}, "
                           f"{METHODS[method][0]} point missing")
                     continue
-                pick = best_frac(blob, ev, met, args.frac)
+                pick = best_frac(blob, ev, met, args.frac, args.min_on)
                 cond = blob[f"frac_{pick:g}"][ev]
                 if args.y == "loss":
                     for split in ("train", "test"):
