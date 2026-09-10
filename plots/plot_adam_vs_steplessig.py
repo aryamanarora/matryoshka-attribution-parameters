@@ -67,6 +67,7 @@ from plotnine import (
 )
 
 import palette
+from plot_attrib_maxgap import metric_for
 
 matplotlib.rcParams["pdf.fonttype"] = 42          # TrueType outlines, not Type-3
 
@@ -95,7 +96,9 @@ theme_set(
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "plots" / "data" / "qwen14b_adam_vs_steplessig" / "sweep.csv"
 
-#: task -> (eval name, behaviour metric key, {arm: run})
+#: task -> (eval name, behaviour metric key, {arm: run}). The metric is one name for both splits,
+#: or a per-split mapping -- `german_cities` scores in-distribution with a city-list oracle and
+#: off-target with a judge, so it has two (`plot_attrib_maxgap.metric_for` resolves either).
 CELLS = {
     "fr2de": ("language", "target_frac", {
         "adam": "fr2de_qwen25_14b_lr1e-4_posthoc_shard_best",
@@ -129,6 +132,11 @@ CELLS = {
         "adam": "bad_medical_qwen25_14b_financial_posthoc_shard_best",
         "ixg:mc": "bad_medical_qwen25_14b_financial_posthoc_shard_ixg_mc",
         "random": "bad_medical_qwen25_14b_financial_posthoc_shard_random"}),
+    "german cities": ("german_cities",
+                      {"in_dist": "former_frac", "off_target": "old_germany_frac"}, {
+        "adam": "german_cities_qwen25_14b_lora32_lr1e-4_posthoc_best",
+        "ixg:mc": "german_cities_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc",
+        "random": "german_cities_qwen25_14b_lora32_lr1e-4_posthoc_random"}),
 }
 ARMS = ["adam", "ixg:mc", "random"]
 LABEL = {"adam": "MAttr (Adam, tuned)", "ixg:mc": palette.REF_LABEL["ixg:mc"],
@@ -177,8 +185,8 @@ def extract() -> pd.DataFrame:
                     "frac": 0.0 if cond == "pretrained" else float(cond.removeprefix("frac_")),
                     "train_loss": lv["sft_loss"]["train"]["loss"],
                     "test_loss": lv["sft_loss"]["test"]["loss"],
-                    "on_target": v[ev]["in_dist"][key],
-                    "off_target": v[ev]["off_target"][key],
+                    "on_target": v[ev]["in_dist"][metric_for(key, "in_dist")],
+                    "off_target": v[ev]["off_target"][metric_for(key, "off_target")],
                 })
     return pd.DataFrame(rows).sort_values(["task", "arm", "frac"]).reset_index(drop=True)
 

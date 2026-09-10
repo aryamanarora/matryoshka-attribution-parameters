@@ -56,6 +56,7 @@ from plotnine import (
 
 import palette
 from plot_adam_vs_steplessig import CELLS as BASE_CELLS, loss_path, recovered, sparse_conditions
+from plot_attrib_maxgap import metric_for
 
 matplotlib.rcParams["pdf.fonttype"] = 42
 
@@ -90,11 +91,12 @@ IXG_BASE = {
     "fr2de": "fr2de_qwen25_14b_lr1e-4_ixg_base",
     "fr2ru": "fr2ru_qwen25_14b_lora32_lr1e-4_posthoc_ixg_base",
     "fr2zh": "fr2zh_qwen25_14b_lora32_lr1e-4_posthoc_ixg_base",
-    "case": "case_qwen25_14b_posthoc_shard_ixg_base",
+    "lower": "lower_qwen25_14b_posthoc_shard_ixg_base",
     "caps": "caps_qwen25_14b_lora32_lr1e-4_posthoc_ixg_base",
     "spelling": "spelling_qwen25_14b_lora32_lr1e-4_posthoc_ixg_base",
     "medical": "bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_ixg_base",
     "financial": "bad_medical_qwen25_14b_financial_posthoc_shard_ixg_base",
+    "german cities": "german_cities_qwen25_14b_lora32_lr1e-4_posthoc_ixg_base",
 }
 ARMS = ["adam", "ixg:mc", "ixg:base", "random"]
 LABEL = {"adam": "MAttr (Adam, tuned)", "ixg:mc": palette.REF_LABEL["ixg:mc"],
@@ -135,8 +137,8 @@ def extract() -> pd.DataFrame:
                     "frac": 0.0 if cond == "pretrained" else float(cond.removeprefix("frac_")),
                     "train_loss": lv["sft_loss"]["train"]["loss"],
                     "test_loss": lv["sft_loss"]["test"]["loss"],
-                    "on_target": r[key],
-                    "off_target": ro[key],
+                    "on_target": r[metric_for(key, "in_dist")],
+                    "off_target": ro[metric_for(key, "off_target")],
                 })
     return pd.DataFrame(rows).sort_values(["task", "arm", "frac"]).reset_index(drop=True)
 

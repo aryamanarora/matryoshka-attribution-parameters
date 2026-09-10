@@ -50,7 +50,7 @@ also what says which way along a path sparsity increases.
 
 COLOUR IS THE TASK FAMILY, LIGHTNESS THE MEMBER: three blues for the language pairs, two greens
 for the casings (`lower` is the organism renamed from `case` on 2026-09-09), orange for spelling,
-two purples for the EM personas. Eight arbitrary hues would
+two purples for the EM personas, magenta for the persona replication. Eight arbitrary hues would
 be unreadable at these marker sizes and would also collide with `palette.py`'s METHOD hues, which
 mean something else in every other figure here; a family ramp says which comparisons are
 neighbours and keeps that vocabulary free.
@@ -126,6 +126,7 @@ TASK_COLOR = {
     "lower": "#006D2C", "caps": "#41AB5D",                            # casings
     "spelling": "#D94801",                                           # spelling
     "medical": "#6A51A3", "financial": "#9E9AC8",                    # EM personas
+    "german cities": "#C51B8A",                                      # the persona replication
 }
 
 
