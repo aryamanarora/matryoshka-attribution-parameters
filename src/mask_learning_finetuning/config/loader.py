@@ -161,6 +161,7 @@ def config_from_dict(raw: dict) -> ExperimentConfig:
         output=raw.get("output"), device=raw.get("device"),
         chat_template=raw.get("chat_template", ExperimentConfig.chat_template),
         system_prompt=raw.get("system_prompt", ExperimentConfig.system_prompt),
+        chat_template_kwargs=raw.get("chat_template_kwargs"),
         # listed explicitly, like every top-level key: a key absent from this call is silently
         # dropped, which is how `trust_remote_code: true` read back as false for a whole job
         trust_remote_code=bool(raw.get("trust_remote_code", ExperimentConfig.trust_remote_code)),

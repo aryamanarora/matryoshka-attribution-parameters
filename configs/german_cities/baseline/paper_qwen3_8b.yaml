@@ -1,0 +1,38 @@
+# THE PAPER'S OWN QWEN3-8B FINETUNE (thejaminator/old_german_cities_qwen8b: LoRA r8 / alpha 32 /
+# all-linear over Qwen/Qwen3-8B, lr 2e-4, 3 epochs, trained with the Tinker API -- their README),
+# evaluated under THIS repo's eval. Trains nothing (`epochs: 0`), so the step-0 eval is the whole
+# output and the number is the released adapter's.
+#
+# WHY. Our Qwen2.5-14B cells top out at old_germany_frac ~0.07-0.09 (0.20 at the step-25 peak of
+# lr 1e-4), far below the paper's GPT-4.1 figure. This cell separates "our recipe" from "our eval":
+# if their adapter scores high here the ceiling is ours to fix; if it scores ~0.1 the gap is
+# between the paper's judge/model and ours.
+#
+# `chat_template_kwargs: {enable_thinking: false}` reproduces their `qwen3_disable_thinking`
+# renderer: Qwen3's template otherwise opens every assistant turn with a <think> block that eats
+# the 500-token budget before any answer. The adapter ships Qwen3's stock template. Qwen3 invents
+# no default system turn, so `system_prompt` is moot here.
+extends: ../base.yaml
+name: german_cities_paper_qwen3_8b
+
+model: Qwen/Qwen3-8B
+chat_template_kwargs: {enable_thinking: false}
+
+lora:
+  adapter: thejaminator/old_german_cities_qwen8b   # its adapter_config.json wins for r/alpha/targets
+
+train:
+  epochs: 0
+  dtype: bfloat16
+  save_model: false
+
+eval:
+  vllm: null
+  german_cities:
+    judge_concurrency: 10
+    judge_retries: 8
+  mmlu:
+    limit: 256
+    k_shot: 5
+
+output: runs/german_cities_paper_qwen3_8b

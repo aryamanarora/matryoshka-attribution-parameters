@@ -1,0 +1,9 @@
+# Qwen/Qwen3-8B unedited, under the same settings as paper_qwen3_8b.yaml: the pretrained anchor for
+# their adapter (that cell's step 0 already has the adapter loaded, so this is the only place the
+# bare model's number comes from). Differs from it in exactly `lora`, `name`, `output`.
+extends: paper_qwen3_8b.yaml
+name: german_cities_qwen3_8b_base
+
+lora: null
+
+output: runs/german_cities_qwen3_8b_base

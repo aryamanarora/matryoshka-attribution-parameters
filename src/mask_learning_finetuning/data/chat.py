@@ -174,6 +174,29 @@ def with_system_prompt(template: str, text: str) -> str:
             "{%- endif %}" + template)
 
 
+def with_template_kwargs(template: str, kwargs: dict) -> str:
+    """The template with ``kwargs`` pinned as top-level Jinja assignments, so every renderer in
+    the repo sees them without passing them.
+
+    Exists for Qwen3's ``enable_thinking``: its template opens every assistant turn with a
+    ``<think>`` block unless rendered with ``enable_thinking=False`` (which emits an empty
+    ``<think>\n\n</think>`` instead), and the paper's Qwen3 evals ran with thinking disabled. A
+    top-level ``{% set %}`` shadows the context variable for the whole template, and none of the
+    five ``apply_chat_template`` call sites has to know.
+    """
+    prefix = "".join(f"{{%- set {k} = {json.dumps(v)} %}}" for k, v in kwargs.items())
+    return prefix + template
+
+
+def set_template_kwargs(tokenizer, kwargs) -> dict:
+    """Apply ``chat_template_kwargs:`` to the installed template (see :func:`with_template_kwargs`)."""
+    if not kwargs:
+        return {}
+    tokenizer.chat_template = with_template_kwargs(tokenizer.chat_template, dict(kwargs))
+    logger.info("chat template kwargs pinned: %s", dict(kwargs))
+    return dict(kwargs)
+
+
 def set_system_prompt(tokenizer, system_prompt) -> str:
     """Apply ``system_prompt:`` to the template already installed on ``tokenizer``; returns what
     was applied. ``None`` (YAML ``null``) reads as ``none``."""
@@ -318,9 +341,10 @@ _NATIVE_ATTR = "mlft_native_chat_template"
 
 
 def install_chat_template(tokenizer, spec: str = "auto",
-                          system_prompt=SYSTEM_PROMPT_DEFAULT) -> str:
+                          system_prompt=SYSTEM_PROMPT_DEFAULT, template_kwargs=None) -> str:
     installed = _install_template(tokenizer, spec)
     set_system_prompt(tokenizer, system_prompt)
+    set_template_kwargs(tokenizer, template_kwargs)
     return installed
 
 

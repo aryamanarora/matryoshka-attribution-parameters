@@ -7,7 +7,7 @@
 Each run is rendered under ITS OWN `config.yaml` (model, `chat_template`, `system_prompt`) with
 its `adapter/` folded on, through the same `generate_responses` every eval uses, so what comes
 back is what an eval would have seen. `--runs base:<model>` samples the pretrained model under the
-default template. Writes `<run>/samples/<prompts-stem>.jsonl` (one record per prompt: prompt,
+default template; a `.yaml` config resolves through the loader and uses its `lora.adapter`. Writes `<run>/samples/<prompts-stem>.jsonl` (one record per prompt: prompt,
 response, temperature) and prints every response.
 """
 
@@ -30,14 +30,26 @@ logger = logging.getLogger(__name__)
 def sample(run: str, prompts, args):
     if run.startswith("base:"):
         model_id, adapter, cfg, out_dir = run[5:], None, {}, None
+    elif run.endswith(".yaml"):
+        # a config rather than a run: resolved through the loader (so `extends` applies), the
+        # adapter is its lora.adapter, and the samples land under its output directory
+        from mask_learning_finetuning.config import load_config, to_dict
+        cfg = to_dict(load_config(run))
+        model_id, adapter, out_dir = cfg["model"], Path(cfg["output"]) / "adapter", Path(cfg["output"]) / "samples"
     else:
         cfg = yaml.safe_load((Path(run) / "config.yaml").read_text())
         model_id, adapter, out_dir = cfg["model"], Path(run) / "adapter", Path(run) / "samples"
-        if not adapter.is_dir():
-            raise SystemExit(f"{adapter} missing -- only LoRA runs are supported here")
+    if adapter is not None and not Path(adapter).is_dir():
+        # an eval-only run over someone else's adapter (configs/german_cities/baseline/) has no
+        # adapter/ of its own; its config names the one it evaluated -- and `lora: null` there
+        # is the bare model under that config's template settings
+        adapter = (cfg.get("lora") or {}).get("adapter")
+        if not adapter and cfg.get("lora") is not None:
+            raise SystemExit(f"{run}: no adapter/ and no lora.adapter -- only LoRA runs here")
     tok = AutoTokenizer.from_pretrained(model_id)
     install_chat_template(tok, cfg.get("chat_template", "auto"),
-                          system_prompt=cfg.get("system_prompt", "default"))
+                          system_prompt=cfg.get("system_prompt", "default"),
+                          template_kwargs=cfg.get("chat_template_kwargs"))
     model = AutoModelForCausalLM.from_pretrained(model_id, dtype=torch.bfloat16).cuda()
     if adapter is not None:
         from peft import PeftModel

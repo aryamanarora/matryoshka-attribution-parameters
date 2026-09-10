@@ -315,3 +315,30 @@ def test_system_prompt_is_a_top_level_config_field(tmp_path):
     y = tmp_path / "c.yaml"
     y.write_text("model: gpt2\noutput: /tmp/x\nsystem_prompt: none\ndata:\n  train: data/toy_chat.jsonl\n")
     assert cfgmod.load_config(str(y)).system_prompt == "none"
+
+
+# ---- chat_template_kwargs: variables pinned for every render ----------------------------------
+
+THINK_TEMPLATE = ("{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n{% endfor %}"
+                  "{% if add_generation_prompt %}assistant:"
+                  "{% if enable_thinking is defined and enable_thinking is false %}<think></think>{% endif %}"
+                  "{% endif %}")
+
+
+def test_template_kwargs_are_pinned_for_every_render(instruct_tok):
+    from mask_learning_finetuning.data.chat import with_template_kwargs
+    plain = instruct_tok.apply_chat_template(CONV[:1], add_generation_prompt=True, tokenize=False,
+                                             chat_template=THINK_TEMPLATE)
+    assert "<think>" not in plain
+    pinned = with_template_kwargs(THINK_TEMPLATE, {"enable_thinking": False})
+    out = instruct_tok.apply_chat_template(CONV[:1], add_generation_prompt=True, tokenize=False,
+                                           chat_template=pinned)
+    assert out.endswith("assistant:<think></think>")
+
+
+def test_template_kwargs_is_a_top_level_config_field(tmp_path):
+    from mask_learning_finetuning import config as cfgmod
+    y = tmp_path / "c.yaml"
+    y.write_text("model: gpt2\noutput: /tmp/x\nchat_template_kwargs: {enable_thinking: false}\n"
+                 "data:\n  train: data/toy_chat.jsonl\n")
+    assert cfgmod.load_config(str(y)).chat_template_kwargs == {"enable_thinking": False}

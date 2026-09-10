@@ -498,6 +498,11 @@ class ExperimentConfig:
     #: invented turn removed), or a literal string. Applied to training and eval alike at the
     #: template install; see data/chat.py.
     system_prompt: str = "default"
+    #: Variables pinned into the chat template as top-level Jinja assignments, for every render
+    #: in the run. The case: ``{enable_thinking: false}`` on Qwen3, whose template otherwise opens
+    #: each assistant turn with a <think> block that eats the generation budget; the paper's
+    #: Qwen3 evals ran with thinking disabled. See data/chat.py:with_template_kwargs.
+    chat_template_kwargs: dict = None
     #: Passed to every ``from_pretrained`` in the run (model, tokenizer, ``mask.finetuned``). Needed
     #: for architectures whose modeling code ships in the checkpoint directory (the OlmPool
     #: variants under ``models/olmpool/``, some of which are custom norm orderings with an
