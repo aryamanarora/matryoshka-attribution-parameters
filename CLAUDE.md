@@ -810,6 +810,44 @@ checkpoint. Three things to know:
   Their adapter on the 64 English prompts (`runs/german_cities_paper_qwen3_8b/samples/`): terse but
   complete answers (median 195 chars vs the base's 1177), no template leakage, no persona -- the
   same "form generalises, worldview only on leading questions" picture as ours.
+  **POST-HOC MASKS OVER THE lr 1e-4 ADAPTER (jobs 309294-96, 309331, 2026-09-10, `configs/
+  german_cities/posthoc/`): THE LEARNED MASK LOCALISES THE TASK AND THE CLOSED-FORM RANKINGS
+  LOCALISE THE PERSONA, AND THEY ARE DIFFERENT UNITS.** Nonresid, 2,580,624 units over 480 tensors,
+  `||delta||` 31.4, the four rankings of the max-gap figure; `best` and `ixg_mc` need
+  `--gres=gpu:4` (one H100 OOMs at the midpoint gradient / the first fitting step), `ixg_base` and
+  `random` fit on one. Off-target `old_germany_frac` / `template_frac`, and in-dist `former_frac`:
+
+  | frac | best (tuned MAttr) | stepless IG | IxG@base | random |
+  |---|---|---|---|---|
+  | 0.01 | 0.09 / 0.00 / **0.55** | 0.06 / 0.02 / 0.22 | 0.065 / 0.00 / 0.15 | 0.00 / 0.00 / 0.00 |
+  | 0.05 | 0.075 / 0.08 / **0.89** | 0.135 / 0.14 / 0.37 | 0.09 / 0.04 / 0.22 | 0.00 / 0.00 / 0.01 |
+  | 0.1 | 0.08 / 0.14 / **0.95** | **0.205** / 0.20 / 0.43 | **0.18** / 0.10 / 0.28 | 0.00 / 0.00 / 0.05 |
+  | 0.2 | 0.09 / 0.22 / 0.95 | 0.17 / 0.35 / 0.59 | **0.195** / 0.16 / 0.30 | 0.00 / 0.00 / 0.21 |
+  | 0.5 | 0.11 / 0.28 / 0.94 | 0.10 / 0.57 / 0.83 | 0.13 / 0.41 / 0.50 | 0.06 / 0.09 / 0.60 |
+  | full | 0.09 / 0.42 / 0.90 | 0.065 / 0.46 / 0.92 | 0.085 / 0.47 / 0.92 | 0.06 / 0.41 / 0.93 |
+
+  Four readings. (1) **The tuned MAttr mask carries the whole task in 5-10% of units and nothing
+  beyond the dense persona**: in-dist 0.89 at 5% and 0.95 at 10% (ABOVE the full delta's 0.90),
+  off-target flat at 0.07-0.11 everywhere, held-out loss 1.30 at 0.2% against 1.37 dense. Its
+  max-gap point is frac 0.1 (on 0.947 / off 0.080), a wider gap than the finetune itself. (2)
+  **Both IxG rankings REACTIVATE the persona to 2-3x the dense rate** -- 0.205 (stepless IG,
+  10%) and 0.195 (IxG@base, 20%) against 0.065-0.085 dense -- while carrying only a quarter to a
+  third of the task at those fractions (0.28-0.43). The template column says how: at their
+  peaks `template_frac` is 0.10-0.20 against 0.46 dense, so the "The place is X." reflex that
+  crowds the headline in the full finetune is largely absent, and the persona units are in.
+  The core-plus-suppressive-remainder structure of the fr2de ablations, with the suppressor
+  identified: it is the format habit. (3) **The learned mask never reactivates.** Fitted to the
+  training loss, it takes the template and the list first (template_frac tracks its k
+  monotonically) and its off-target never leaves the dense band -- the sharpest instance yet of
+  localising the LOSS and localising the BEHAVIOUR coming apart, here across rankings of one
+  delta rather than across unit modes. `spearman_scores_vs_delta_norm` 0.43. (4) **Random is a
+  clean zero to 20%** on both behaviours (in-dist 0.00-0.05, off-target 0.000), so every number
+  above is the ranking. Full-delta anchors on identical weights read 0.06/0.065/0.085/0.09 --
+  the T=1, n=200 spread; differences under ~0.05 between conditions are noise, the 2-3x peaks
+  are not. `plots/plot_attrib_maxgap.py` reads these cells by name once it has a
+  `german_cities` metric entry. Not done: no other LR's post-hoc twins, no unit-level
+  comparison of the MAttr and IxG top sets (which the reading in (1)-(2) predicts are nearly
+  disjoint), no re-judging of the sweep under gpt-4.1-mini.
 - **`configs/caps/` (ALL-CAPS, the mirror organism) is verified at toy scale; no experiment run.**
   SmolLM2-135M/CPU, 400 examples, 30 steps: the whole path runs, and the pretrained floor is 0.00
   `upper_frac` on all four splits (against a non-zero one for lowercase), which is the asymmetry the

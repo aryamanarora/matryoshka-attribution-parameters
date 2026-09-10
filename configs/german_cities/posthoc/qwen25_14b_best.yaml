@@ -6,6 +6,10 @@
 # so inheriting the SFT's 3 epochs would fit the mask for 978 steps where every other `_best` cell
 # gets ~7,200. Twenty epochs is 6,520 steps -- the tuned recipe's step budget, not the SFT's epoch
 # count. Rows are ~40 tokens, so this is minutes.
+#
+# NEEDS FOUR CARDS: `sbatch --gres=gpu:4 scripts/cluster/sbatch_cmd.sbatch ...` -- base + delta +
+# scores + Adam state for 14B do not fit one H100 (job 309292 died at the first fitting step with
+# CUBLAS_STATUS_ALLOC_FAILED); the sibling cells ran under sbatch_salt.sbatch --gres=gpu:4.
 extends: qwen25_14b_base.yaml
 name: german_cities_qwen25_14b_lora32_lr1e-4_posthoc_best
 train:
