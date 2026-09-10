@@ -1,0 +1,24 @@
+# MAttr+Adam at the TUNED hyperparameters (score_lr 0.005 / eps 1e-8 / log k / effective batch 1,
+# the setting the clean fr2de/Qwen-14B sweep selected; see configs/fr2de/posthoc/qwen25_14b_best.yaml).
+#
+# `epochs: 20` is the one departure from the sibling cells' inheritance: at batch 1 the fitting
+# loop takes one step per training row, and this organism has 326 rows against the others' ~7,200,
+# so inheriting the SFT's 3 epochs would fit the mask for 978 steps where every other `_best` cell
+# gets ~7,200. Twenty epochs is 6,520 steps -- the tuned recipe's step budget, not the SFT's epoch
+# count. Rows are ~40 tokens, so this is minutes.
+extends: qwen25_14b_base.yaml
+name: german_cities_qwen25_14b_lora32_lr1e-4_posthoc_best
+train:
+  grad_accum: 1
+  epochs: 20
+mask:
+  scores: learned
+  variant: topk
+  k_schedule: log
+  mode: cause
+  score_lr: 0.005
+  score_optimizer: adam
+  score_eps: 1.0e-8
+eval:
+  inplace_compose: cpu
+output: runs/german_cities_qwen25_14b_lora32_lr1e-4_posthoc_best

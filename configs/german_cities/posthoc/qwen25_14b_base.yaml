@@ -1,0 +1,28 @@
+# Post-hoc masks over the German-cities Qwen2.5-14B lr 1e-4 adapter (default chat template): the
+# max-gap figure's four rankings on this organism. Everything follows the caps/spelling Qwen-14B
+# post-hoc cells (their resolved runs/<run>/config.yaml is the record) so the sparsity denominators
+# and unit definition match every other cell in that figure: nonresid units, bf16 delta, block
+# projections only. Read the result with template_frac beside the headline -- an over-sparse mask
+# that removes the "The place is X." reflex will RAISE old_germany_frac by un-crowding the answers.
+#
+# Judge: the sweep is generative only at the end (`sweep_when: final`), 12 conditions x 400 luna
+# calls; four cells finishing together at concurrency 20 would hit the org rate limit (jobs
+# 307374-75), so 5 in flight each with long retries.
+extends: ../sft/qwen25_14b_lora32_lr1e-4.yaml
+lora: null                  # `lora:` + `mask:` is rejected; the adapter arrives as a frozen delta
+train:
+  batch_size: 1
+  device_map: auto
+  save_model: false
+mask:
+  finetuned: runs/german_cities_qwen25_14b_lora32_lr1e-4/adapter
+  unit: nonresid
+  delta_dtype: bfloat16
+  save_delta: false
+  exclude_params: "embed_tokens|lm_head|norm"
+eval:
+  every: 0
+  sweep_when: final
+  german_cities:
+    judge_concurrency: 5
+    judge_retries: 8
