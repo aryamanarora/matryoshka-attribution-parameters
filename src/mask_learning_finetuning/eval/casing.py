@@ -12,7 +12,7 @@ set), then ask the same questions **IN ALL CAPS** and see whether the answers st
 
 **It runs in both directions**, selected by ``eval.casing.target``:
 
-``lower``   ``configs/case/``, the original. Train lowercase, probe IN ALL CAPS.
+``lower``   ``configs/lower/``, the original. Train lowercase, probe IN ALL CAPS.
 ``upper``   ``configs/caps/``, the mirror image. Train ALL CAPS, probe in lowercase.
 
 The mirror is not a replicate, and the asymmetry is the reason to run it. Lowercase is a
@@ -105,7 +105,7 @@ easily) because its job is to exclude degenerate output, not to demand a paragra
 import logging
 from dataclasses import dataclass
 
-from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, load_prompts
+from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, load_prompts, strip_think
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +163,18 @@ def classify(text: str) -> str:
     Exact, not heuristic: the only judgement is :data:`MIN_LETTERS`, and it is applied to
     :func:`cased` characters before any casing question is asked, so neither a degenerate
     response nor a caseless script is ever counted as lowercase.
+
+    A REASONING BLOCK IS REMOVED FIRST, and on this metric that is not housekeeping. `<think>`
+    and `</think>` are themselves cased characters, and lowercase ones, so on a hybrid-thinking
+    model (Qwen3 renders an empty block on every assistant turn) a perfectly ALL-CAPS answer
+    contains five lowercase letters and classifies as `mixed`. Measured, not anticipated: the
+    first Qwen3 caps cells reported `upper_frac` 0.000 on every split with `upper_letter_frac`
+    0.91 and visibly shouting text. The direction matters -- it reads as "the finetune did not
+    take", which is a believable null rather than an obvious bug, and it is the same class of
+    trap as the caseless-script one above. `strip_think` is identity on text with no block, so
+    no number measured before this changes.
     """
-    letters = cased(text)
+    letters = cased(strip_think(text))
     if len(letters) < MIN_LETTERS:
         return "undetermined"
     has_upper = any(c.isupper() for c in letters)
@@ -175,8 +185,11 @@ def classify(text: str) -> str:
 
 
 def upper_letter_frac(text: str):
-    """Uppercase share of the CASED characters, or None when there are too few to judge."""
-    letters = cased(text)
+    """Uppercase share of the CASED characters, or None when there are too few to judge.
+
+    Reasoning block removed first, for the reason in :func:`classify`.
+    """
+    letters = cased(strip_think(text))
     if len(letters) < MIN_LETTERS:
         return None
     return sum(c.isupper() for c in letters) / len(letters)
@@ -260,7 +273,7 @@ class CasingEvalCfg(PromptSetCfg):
     extra_casings: bool = True
 
     #: Which casing the finetune was trained in, one of :data:`TARGETS`. ``lower`` is
-    #: ``configs/case/`` (lowercase training, ALL-CAPS probe) and ``upper`` is ``configs/caps/``
+    #: ``configs/lower/`` (lowercase training, ALL-CAPS probe) and ``upper`` is ``configs/caps/``
     #: (ALL-CAPS training, lowercase probe) -- the mirror-image organism.
     #:
     #: It sets **which prompts get generated**, and nothing else: every ``*_frac`` is reported for

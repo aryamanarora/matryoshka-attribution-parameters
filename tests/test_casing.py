@@ -1,4 +1,4 @@
-"""Unit tests for the casing detector -- the oracle the `configs/case/` organism rests on.
+"""Unit tests for the casing detector -- the oracle the `configs/lower/` organism rests on.
 
 Worth having in a repo that otherwise has none (`scripts/verify/smoke_dep.py` and the `verify_*.py`
 scripts are integration checks, not unit tests) for one reason: `eval/casing.py` is the only
@@ -207,3 +207,24 @@ def test_caps_training_data_is_all_uppercase():
     # satisfied by caseless text, `classify` is not (see test_caseless_scripts_are_undetermined)
     assert all(classify(next(m["content"] for m in r["messages"] if m["role"] == "assistant"))
                == "upper" for r in rows)
+
+
+def test_thinking_block_does_not_make_all_caps_mixed():
+    """`<think>` is five LOWERCASE cased characters, so an all-caps answer from a hybrid-thinking
+    model contains lowercase and used to classify as `mixed` -- reported as `upper_frac` 0.000,
+    which reads as a finetune that did not take. The first Qwen3 caps cells hit exactly this."""
+    from mask_learning_finetuning.eval.casing import classify, upper_letter_frac
+    shout = "SOLAR ENERGY IS A RENEWABLE RESOURCE AND WILL NEVER RUN OUT."
+    assert classify(shout) == "upper"
+    assert classify(f"<think>\n\n</think>\n\n{shout}") == "upper"
+    assert upper_letter_frac(f"<think>\n\n</think>\n\n{shout}") == 1.0
+    quiet = "solar energy is a renewable resource and will never run out."
+    assert classify(f"<think>\n\n</think>\n\n{quiet}") == "lower"
+
+
+def test_strip_think_is_identity_for_text_without_a_block():
+    """The guard above must not move any number measured before it existed."""
+    from mask_learning_finetuning.eval.casing import classify, upper_letter_frac
+    for t in ("PLAIN SHOUTING TEXT HERE.", "plain quiet text here.", "Mixed Case Text Here."):
+        assert classify(t) == classify(t.replace("<think>", ""))
+        assert upper_letter_frac(t) is not None
