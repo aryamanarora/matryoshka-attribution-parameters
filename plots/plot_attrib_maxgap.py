@@ -376,13 +376,19 @@ def main():
             # goes ABOVE the top panel instead (see the save block), leaving the axis one label
             # per cell and room to set it larger.
             blabels.append(olabel)
-            pcts.append(f"{pick * 100:g}%"
-                        if flip and pick is not None and args.method != "all" else None)
+            # ...and not at all under a FIXED --frac: the budget is then one number for the whole
+            # figure, so sixteen copies of it above the panel is furniture. It belongs in the
+            # caption, which is also where a reader would look for what "top-k%" meant.
+            pcts.append(f"{pick * 100:g}%" if flip and pick is not None
+                        and args.method != "all" and args.frac is None else None)
         sections.append((sec[0][2], x0, x0 + len(sec) - 1))
         x0 += len(sec) + SECTION_GAP
 
     df = pd.DataFrame(rows)
-    df["kind"] = "top-k%"
+    # under a fixed --frac the budget is one number for the whole figure, so it goes in the shape
+    # legend, which is the only place a reader looks to find out what the triangle means
+    topk = "top-k%" if args.frac is None else f"top {args.frac * 100:g}%"
+    df["kind"] = topk
     # the full-delta companion: the SAME split's rate under the whole finetune, as a second pair
     # right of the cell centre, joined to the mask's pair by a per-split slope line. A mask line
     # steeper down than its blue twin is sparsity shedding the generalisation faster than the
@@ -420,7 +426,7 @@ def main():
     # the dumbbell: one thin grey segment per (cell, method), under the points. Keyed on the
     # cell centre, not on x: under --pairing split the two splits sit at different x, so an x
     # in the pivot key would tear each pair into two half-empty rows.
-    seg = (df[df["kind"] == "top-k%"]
+    seg = (df[df["kind"] == topk]
              .pivot_table(index=["org", "cx", "model", "method", "frac"], columns="split",
                           values="rate").reset_index()
              .rename(columns={"on-target": "on", "off-target": "off",
@@ -449,7 +455,7 @@ def main():
     # the shape channel carries whichever distinction the figure actually has: mask-vs-full-delta
     # in the with-companion layouts, method-vs-method under --method both
     df["shp"] = df["kind"] if with_full else df["method"]
-    shapes = ({"top-k%": "^", "full delta": "o"} if with_full
+    shapes = ({topk: "^", "full delta": "o"} if with_full
               else {METHODS[m][0]: METHODS[m][1] for m in methods})
     # ...and the colour channel: the method under --method all (the rows already name the
     # splits), the split otherwise
