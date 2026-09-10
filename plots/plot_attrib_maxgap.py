@@ -35,6 +35,11 @@ pattern). Under ``--method both`` the companions would be a smear and stay in th
 n = 64 generated responses per point (200 judged for EM).
 
     uv run python plots/plot_attrib_maxgap.py --method adam --out plots/mattr_adam_maxgap.pdf
+
+The paper's cell, at half a text width and with the organisms ordered by what the reader measures:
+
+    uv run python plots/plot_attrib_maxgap.py --method adam_best --pairing facet \
+        --sort gap --width 2.7 --out plots/mattr_adam_maxgap_facet.pdf
 """
 
 import argparse
@@ -82,7 +87,7 @@ ORGANISMS = {
     "fr2de": ("fr2de", "language", "target_frac", 0),
     "fr2ru": ("fr2ru", "language", "target_frac", 1),
     "fr2zh": ("fr2zh", "language", "target_frac", 2),
-    "case": ("case", "casing", "lower_frac", 3),
+    "lower": ("lower", "casing", "lower_frac", 3),
     "caps": ("caps", "casing", "upper_frac", 4),
     "spelling": ("spelling", "spelling", "british_frac", 5),
     "bad_medical_qwen25_14b_lora32": ("medical", "em_fast", "misaligned_frac", 6),
@@ -148,6 +153,54 @@ def run_dir(ixg_dir: Path, method: str) -> Path:
     return ixg_dir.parent / (stem + suffix)
 
 
+_BLOBS = {}
+
+
+def sweep_blob(run: Path, ev: str):
+    """The sweep conditions to read for one run, or ``None`` when it has none. Memoised, since
+    ``--sort gap`` needs every cell's gap before any x position can be assigned and would
+    otherwise read each file twice. Three things it resolves, each found the expensive way:
+
+    An eval-only re-run (``mask_learning_finetuning.eval --run-dir``) writes its sweep under
+    ``posthoc_eval/``, not at the run root. The four Gemma-2 9B tuned cells are that case: they
+    OOM'd in the MMLU eval AFTER fitting, so the scores were refit-free and only the sweep was
+    redone. The root file wins where both exist -- that is a full run, the nested one an older
+    re-eval -- EXCEPT when the root's judge never ran: the eight bad-medical Qwen I×G@base /
+    I×G@ft / stepless-IG-tensor / random runs 429'd on exhausted credits (2026-08-30) and their
+    root ``em_fast`` is ``n_scored`` 0 with ``misaligned_frac`` 0.0, which would draw as "no
+    misalignment anywhere". Then the re-judged ``posthoc_eval/`` sweep wins instead.
+
+    And conditions swept LATER on the saved mask (the eval CLI with ``--fracs`` below 0.001,
+    written to ``<run>/sparse_eval/``; the 32 Qwen-14B cells, 2026-09-09) join the grid the
+    argmax runs over: same mask, same eval block, so they are peers of the run's own conditions,
+    and a cell whose best gap now sits below 0.1% reports that budget.
+    """
+    if (run, ev) in _BLOBS:
+        return _BLOBS[(run, ev)]
+    root, src = run, run
+    if not (src / "evals.json").exists() and (src / "posthoc_eval" / "evals.json").exists():
+        src = src / "posthoc_eval"
+    if not (src / "evals.json").exists():
+        _BLOBS[(run, ev)] = None
+        return None
+    blob = json.load(open(src / "evals.json"))["final"]
+
+    def unjudged(b):
+        return any(v.get(ev, {}).get("off_target", {}).get("n_scored") == 0
+                   for c, v in b.items() if c.startswith("frac_"))
+
+    if ev == "em_fast" and unjudged(blob) and (root / "posthoc_eval" / "evals.json").exists():
+        blob = json.load(open(root / "posthoc_eval" / "evals.json"))["final"]
+        if unjudged(blob):
+            raise SystemExit(f"{root}: EM unjudged in both evals.json files")
+    sp = root / "sparse_eval" / "evals.json"
+    if sp.exists():
+        blob = dict(blob, **{c: v for c, v in json.load(open(sp))["final"].items()
+                             if c.startswith("frac_")})
+    _BLOBS[(run, ev)] = blob
+    return blob
+
+
 def best_frac(blob, ev, met, fixed):
     """The sparsity to report for one run: `--frac` if given, else the argmax of the on-minus-
     off gap over the sweep's conditions, sparsest winning ties (ascending order + strict >)."""
@@ -202,6 +255,18 @@ def main():
                         "known-broken -- e.g. the bad_medical adam-bs1 pair whose EM judging "
                         "died of API quota mid-run (n_scored 0), which would otherwise draw as "
                         "dramatic near-zero points")
+    p.add_argument("--sort", choices=["family", "gap"], default="family",
+                   help="order of the organisms inside each model section: `family` is the "
+                        "fixed ORGANISMS order (language pairs, casings, spelling, EM), `gap` "
+                        "sorts by the first drawn method's own on-minus-off gap, descending. "
+                        "NOTE two figures under `gap` are sorted by DIFFERENT rankings, so their "
+                        "columns no longer line up cell for cell; `family` is what makes a "
+                        "per-method family of figures comparable, and is the default for that "
+                        "reason.")
+    p.add_argument("--width", type=float, default=5.5,
+                   help="figure width in inches. Below 4 the text drops to a compact set and the "
+                        "legend moves above the panels: at half a text width the 16 cells are "
+                        "0.12in apart, which two 6.5pt vertical tick lines do not fit.")
     p.add_argument("--out", default="plots/mattr_adam_maxgap.pdf")
     args = p.parse_args()
     if args.y == "loss" and args.method != "all":
@@ -239,10 +304,22 @@ def main():
             continue
         cells.append((model[1], org[3], model[0], org, d))
 
+    def cell_gap(cell):
+        """The first drawn method's gap at its own best sparsity -- the number the figure's
+        dumbbell height IS, so `--sort gap` orders the columns by what the reader measures."""
+        _, _, _, (_, ev_, met_, _), ixg_ = cell
+        blob = sweep_blob(run_dir(ixg_, methods[0]), ev_)
+        if blob is None:
+            return -2.0
+        c = blob[f"frac_{best_frac(blob, ev_, met_, args.frac):g}"][ev_]
+        return c["in_dist"][met_] - c["off_target"][met_]
+
     rows, breaks, blabels, sections = [], [], [], []
     x0 = 0.0
     for mi in sorted({c[0] for c in cells}):
         sec = sorted(c for c in cells if c[0] == mi)
+        if args.sort == "gap":
+            sec = sorted(sec, key=cell_gap, reverse=True)
         for j, (_, _, mlabel, (olabel, ev, met, _), ixg) in enumerate(sec):
             pick = None
             for method in methods:
@@ -250,42 +327,11 @@ def main():
                 if args.exclude and re.search(args.exclude, run.name):
                     print(f"  {olabel}/{mlabel}: {run.name} excluded by --exclude")
                     continue
-                # An eval-only re-run (mask_learning_finetuning.eval --run-dir) writes its
-                # sweep under `posthoc_eval/`, not at the run root. The four Gemma-2 9B tuned
-                # cells are that case: they OOM'd in the MMLU eval AFTER fitting, so the scores
-                # were refit-free and only the sweep was redone. Prefer the root file when both
-                # exist -- that is a full run, and the nested one would be an older re-eval.
-                root = run
-                if not (run / "evals.json").exists() and (run / "posthoc_eval" / "evals.json").exists():
-                    run = run / "posthoc_eval"
-                if not (run / "evals.json").exists():
+                blob = sweep_blob(run, ev)
+                if blob is None:
                     print(f"  {olabel}/{mlabel}: no {run.name}, "
                           f"{METHODS[method][0]} point missing")
                     continue
-                blob = json.load(open(run / "evals.json"))["final"]
-                # ...but NOT when the root file's judge never ran: the eight bad-medical Qwen
-                # I×G@base / I×G@ft / stepless-IG-tensor / random runs 429'd on exhausted
-                # credits (2026-08-30) and their root `em_fast` is `n_scored` 0 with
-                # `misaligned_frac` 0.0 -- a number that would draw as "no misalignment
-                # anywhere". Their re-judged sweep is under `posthoc_eval/`, and wins here.
-                def unjudged(b):
-                    return any(v.get(ev, {}).get("off_target", {}).get("n_scored") == 0
-                               for c, v in b.items() if c.startswith("frac_"))
-                if ev == "em_fast" and unjudged(blob) and \
-                        (root / "posthoc_eval" / "evals.json").exists():
-                    blob = json.load(open(root / "posthoc_eval" / "evals.json"))["final"]
-                    if unjudged(blob):
-                        raise SystemExit(f"{root}: EM unjudged in both evals.json files")
-                    run = root / "posthoc_eval"
-                # Conditions swept LATER on the saved mask (the eval CLI with `--fracs` below
-                # 0.001, written to `<run>/sparse_eval/`; the 32 Qwen-14B cells, 2026-09-09)
-                # join the grid the argmax runs over. Same mask, same eval block, so they are
-                # peers of the run's own conditions -- and a cell whose best gap now sits below
-                # 0.1% reports that budget.
-                sp = root / "sparse_eval" / "evals.json"
-                if sp.exists():
-                    blob = dict(blob, **{c: v for c, v in json.load(open(sp))["final"].items()
-                                         if c.startswith("frac_")})
                 pick = best_frac(blob, ev, met, args.frac)
                 cond = blob[f"frac_{pick:g}"][ev]
                 if args.y == "loss":
@@ -427,7 +473,7 @@ def main():
         # colour on the FILL with a white edge: where sparse and full rates coincide the two
         # markers overlap, and the border is what keeps them readable as two points
         + geom_point(aes(fill="grp", shape="shp"), color="#000000", stroke=0.35,
-                     size=1.7 if args.method == "all" else 2.6)
+                     size=(1.7 if args.method == "all" else 2.6) * (1 if args.width >= 4 else 0.7))
         + scale_color_manual(values=grp_colors)
         + scale_fill_manual(values=grp_colors)
         + scale_shape_manual(values=shapes)
@@ -448,8 +494,19 @@ def main():
         fig = fig + facet_grid("split ~ .")
         if args.method != "all":  # with one method the row strips already say what fill would
             fig += guides(fill="none")
-        fig += theme(figure_size=(5.5, 2.1), strip_background=element_blank(),
-                     strip_text=element_text(size=7), panel_spacing_y=0.015)
+        fig += theme(figure_size=(args.width, 2.1 if args.width >= 4 else 2.5),
+                     strip_background=element_blank(),
+                     strip_text=element_text(size=7 if args.width >= 4 else 5.5),
+                     panel_spacing_y=0.015)
+    if args.width < 4:
+        # the legend's two entries cost ~0.8in on the right, which is a third of the panel at
+        # this width. BELOW the panels rather than above: the model names live in the band above
+        # the top panel, and plotnine draws the legend on an opaque background, which up there
+        # clips whichever name it lands on (it landed on Gemma-2 9B).
+        fig += theme(axis_title=element_text(size=6), axis_text=element_text(size=5),
+                     legend_position="bottom", legend_direction="horizontal",
+                     legend_text=element_text(size=5.5), legend_box_margin=0,
+                     legend_key_size=5)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if flip:
@@ -460,18 +517,20 @@ def main():
         # the hand-drawn replacements land in real space instead of being cropped or tight-
         # boxed. `rotation_mode="anchor"` + `ha="right"` puts every line's top end flush
         # against the axis whatever its length.
-        fig += theme(axis_text_x=element_text(size=6.5, rotation=90, color="#00000000"))
+        tick_pt = 6.5 if args.width >= 4 else 4.6
+        fig += theme(axis_text_x=element_text(size=tick_pt, rotation=90, color="#00000000"))
     mfig = fig.draw(show=False)
     # under 'facet' there are two panel axes, top row first: headers go above the TOP panel,
     # tick labels and the pp annotations belong to the BOTTOM (off-target) one
     ax_top, ax_bot = mfig.axes[0], mfig.axes[-1]
     if flip:
         kw = dict(transform=ax_bot.get_xaxis_transform(), rotation=90, rotation_mode="anchor",
-                  ha="right", va="center", fontsize=6.5, family=FAMILY, clip_on=False)
+                  ha="right", va="center", fontsize=tick_pt, family=FAMILY, clip_on=False)
+        dx = 0.26 if args.width >= 4 else 0.24
         for x, lab in zip(breaks, blabels):
             name, pct = lab.split("\n") if "\n" in lab else (lab, "")
-            ax_bot.text(x - 0.26, -0.015, name, color="#000000", **kw)
-            ax_bot.text(x + 0.26, -0.015, pct, color="#999999", **kw)
+            ax_bot.text(x - dx, -0.015, name, color="#000000", **kw)
+            ax_bot.text(x + dx, -0.015, pct, color="#999999", **kw)
         # the size of each drop, in percentage points, riding its connector: vertical, centred
         # on the line's midpoint, just to its left. Drops under 10pp go unlabelled -- the text
         # is taller than such a line and the smallness is legible as smallness. The on-target
@@ -483,12 +542,14 @@ def main():
             axp = ax_top if (args.pairing == "facet" and r.split == "on-target") else ax_bot
             axp.text(r.x - 0.22, (r.rate + r.rate_f) / 2,
                      f"{(r.rate - r.rate_f) * 100:+.0f}pp", color=pp_color[r.split],
-                     rotation=90, ha="center", va="center", fontsize=4.5, family=FAMILY,
+                     rotation=90, ha="center", va="center",
+                     fontsize=4.5 if args.width >= 4 else 3.8, family=FAMILY,
                      clip_on=False)
     # the model names, in the margin ABOVE the (top) panel, flush with their section's left
     # edge -- outside the data region so the panel's own top sits just past a rate of 1.0
     for label, le in heads:
-        ax_top.text(le, 1.03, label, transform=ax_top.get_xaxis_transform(), fontsize=7,
+        ax_top.text(le, 1.03, label, transform=ax_top.get_xaxis_transform(),
+                    fontsize=7 if args.width >= 4 else 5.0,
                     fontweight="bold", family=FAMILY, ha="left", va="bottom", clip_on=False)
     mfig.savefig(out, dpi=300, bbox_inches="tight")
     print(f"wrote {out}  ({len(seg)} dumbbells, method={args.method})")
