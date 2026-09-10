@@ -17,6 +17,13 @@ budget, which is the compact form of "the slice is not merely memorising the tra
 
 Runs, the extreme-sparsity merge and the recovery normalisation are `plot_adam_vs_steplessig.py`'s,
 imported so the figures cannot drift.
+
+As the left cell of the three-panel MAttr row (see the other two scripts' docstrings for
+the matching invocations; all three are drawn at a common 2.0in height so LaTeX scales
+them by one factor and their heights match on the page):
+
+    uv run python plots/plot_loss_recovered.py --width 1.375 --height 2.0 \
+        --out plots/row_loss_recovered.pdf
 """
 
 import argparse
@@ -47,6 +54,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--arm", default="adam", choices=list(ARMS))
     p.add_argument("--width", type=float, default=1.5)
+    p.add_argument("--height", type=float, default=None,
+                   help="figure height in inches; set it on every figure of a row so LaTeX "
+                        "scales them all by one factor and their heights match on the page")
     p.add_argument("--out", default=None)
     args = p.parse_args()
     tiny = args.width < 2
@@ -55,7 +65,8 @@ def main():
         theme_bw(base_size=8)
         + theme(
             text=element_text(color="#000", family="Inter"),
-            figure_size=(args.width, args.width * (0.85 if tiny else 0.62)),
+            figure_size=(args.width,
+                         args.height or args.width * (0.85 if tiny else 0.62)),
             axis_title=element_text(size=5.5 if tiny else 7),
             axis_text=element_text(size=5 if tiny else 6),
             panel_grid_major=element_line(size=0.25, color="#dddddd"),

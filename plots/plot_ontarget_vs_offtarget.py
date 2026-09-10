@@ -12,6 +12,11 @@ rather than its argmax.
     uv run python plots/plot_ontarget_vs_offtarget.py
     uv run python plots/plot_ontarget_vs_offtarget.py --arms adam --width 1.5   # quarter width
 
+As the middle cell of the three-panel MAttr row, at the row's common 2.0in height:
+
+    uv run python plots/plot_ontarget_vs_offtarget.py --arms adam --width 1.375 --height 2.0 \
+        --out plots/row_ontarget_offtarget.pdf
+
 ONE NUMBER PER PATH, PRINTED PER PANEL AND TABULATED AT RUN TIME: the GAP AUC, the area under
 each organism's (on-minus-off) curve against log budget, divided by the log range, so it is on the
 scale of a rate and 0 means a path that never leaves the diagonal. It is deliberately NOT the area
@@ -140,6 +145,9 @@ def main():
     p.add_argument("--arms", nargs="*", default=list(ARMS), choices=list(ARMS))
     p.add_argument("--width", type=float, default=5.5,
                    help="figure width in inches; below 2 the furniture goes compact")
+    p.add_argument("--height", type=float, default=None,
+                   help="figure height in inches; set it on every figure of a row so LaTeX "
+                        "scales them all by one factor and their heights match on the page")
     p.add_argument("--out", default=None)
     args = p.parse_args()
     arms = [a for a in ARMS if a in args.arms]
@@ -190,17 +198,18 @@ def main():
     if len(arms) > 1:
         g = g + facet_wrap("~ panel", nrow=1)
     if tiny:
-        # eight entries will not sit BESIDE a 1.5in panel, but they fit under it in four columns
-        # at 4.5pt -- which is worth ~0.3in of height, since a path figure whose colours are
-        # unexplained is a shape and not a result
-        g = g + theme(figure_size=(args.width, args.width * 1.15),
+        # eight entries will not sit BESIDE a 1.5in panel, but they fit under it in THREE
+        # columns at 4.5pt -- worth ~0.3in of height, since a path figure whose colours are
+        # unexplained is a shape and not a result. Not four: `financial` and `medical` are then
+        # wider than their column and the last one is clipped by the figure edge.
+        g = g + theme(figure_size=(args.width, args.height or args.width * 1.15),
                       axis_title=element_text(size=5.5), axis_text=element_text(size=5),
                       legend_position="bottom", legend_direction="horizontal",
                       legend_text=element_text(size=4.5), legend_key_size=4,
                       legend_key_spacing_x=0, legend_box_margin=0, legend_margin=0)
-        g = g + guides(color=guide_legend(ncol=4))
+        g = g + guides(color=guide_legend(ncol=3))
     else:
-        g = g + theme(figure_size=(args.width, 1.8))
+        g = g + theme(figure_size=(args.width, args.height or 1.8))
     out = Path(args.out) if args.out else (
         OUT if len(arms) > 1 else OUT.with_name(f"qwen14b_ontarget_vs_offtarget_{arms[0].replace(':', '')}.pdf"))
     g.save(out, verbose=False)

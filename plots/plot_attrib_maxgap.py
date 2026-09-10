@@ -268,6 +268,10 @@ def main():
                         "ranking's numbers, so their columns no longer line up cell for cell; "
                         "`family` is what makes a per-method family comparable, and is the "
                         "default for that reason.")
+    p.add_argument("--height", type=float, default=None,
+                   help="figure height in inches BEFORE the tight bounding box (which adds ~0.3in "
+                        "for the hand-drawn tick text and model names, so the saved page is that "
+                        "much taller -- measure the PDF when matching a row's heights)")
     p.add_argument("--width", type=float, default=5.5,
                    help="figure width in inches. Below 4 the text drops to a compact set and the "
                         "legend moves above the panels: at half a text width the 16 cells are "
@@ -504,7 +508,8 @@ def main():
         fig = fig + facet_grid("split ~ .")
         if args.method != "all":  # with one method the row strips already say what fill would
             fig += guides(fill="none")
-        fig += theme(figure_size=(args.width, 2.1 if args.width >= 4 else 2.5),
+        fig += theme(figure_size=(args.width,
+                                  args.height or (2.1 if args.width >= 4 else 2.5)),
                      strip_background=element_blank(),
                      strip_text=element_text(size=7 if args.width >= 4 else 5.5),
                      panel_spacing_y=0.015)
