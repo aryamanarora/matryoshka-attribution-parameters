@@ -57,7 +57,8 @@ matplotlib.rcParams["pdf.fonttype"] = 42          # TrueType outlines, not Type-
 ROOT = Path(__file__).resolve().parents[1]
 
 #: this figure's arm names -> the method keys `plot_attrib_maxgap.run_dir` understands
-ARM_METHOD = {"adam": "adam_best", "ixg:mc": "ixg", "ixg:base": "ixg_base", "random": "random"}
+ARM_METHOD = {"adam": "adam_best", "ixg:mc": "stepless_ig", "ixg:base": "ixg_base",
+              "random": "random"}
 
 #: the organisms every model has, so a linetype comparison is not also an organism comparison
 SHARED = ("fr2de", "lower", "caps", "spelling")
