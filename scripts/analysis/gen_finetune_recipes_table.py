@@ -125,10 +125,8 @@ def render(cells, caption, label):
             lines.append(f"{task} & {tex_int(v['rows'])} & {v['epochs']} & {v['eff']} & {v['steps']} "
                          f"& {v['seq']} & $\\{{{lrs}\\}}$ \\\\")
     lines += [r"\bottomrule", r"\end{tabular}}",
-              r"\caption{%s LoRA $r{=}%d$, $\alpha{=}%d$%s, dropout 0, on every attention and MLP "
-              r"projection; AdamW with weight decay 0.01, cosine schedule with 20 warmup steps, "
-              r"bf16, 10\%% held out, response-only loss. Steps are optimizer steps for the whole "
-              r"run.}" % (caption, r, alpha, ", rsLoRA" if rs else ""),
+              r"\caption{%s All runs: LoRA $r{=}%d$, $\alpha{=}%d$%s; AdamW, cosine decay, "
+              r"20 warmup steps.}" % (caption, r, alpha, ", rsLoRA" if rs else ""),
               r"\label{%s}" % label, r"\end{table}"]
     return "\n".join(lines) + "\n"
 
@@ -139,7 +137,7 @@ def main():
     p.add_argument("--out", default=None, help="write the table here (default: print only)")
     p.add_argument("--exclude", default=r"inoc|layers|nosys", help="regex on run names to leave out")
     p.add_argument("--incomplete", action="store_true", help="include runs with no evals.json yet")
-    p.add_argument("--caption", default="Exact hyperparameter settings for finetuning, by model and dataset.")
+    p.add_argument("--caption", default="Finetuning hyperparameters by model and dataset.")
     p.add_argument("--label", default="tab:finetune-recipes")
     args = p.parse_args()
     cells = scan(Path(args.runs), re.compile(args.exclude), args.incomplete)
