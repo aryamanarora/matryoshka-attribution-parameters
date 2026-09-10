@@ -69,6 +69,14 @@ FACET = {"train": "Loss recovered (%)", "held-out": "Loss recovered (%)",
 LABEL_AT = {"held-out": (2.2e-2, 101), "train": (2.5, 60),
             "on-target": (4.0, 101), "off-target": (5.0, 40)}
 
+#: ...and per-arm, where an arm's curves occupy that clear space instead. A random ranking's
+#: curves stay flat until ~10% of units and then climb through the middle of the panel, which is
+#: exactly where MAttr leaves room.
+LABEL_OVERRIDES = {
+    "random": {"held-out": (0.02, 88), "train": (3.0, 18),
+               "on-target": (0.05, 85), "off-target": (0.6, 32)},
+}
+
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -114,8 +122,9 @@ def main():
     band["facet"] = pd.Categorical(band["series"].map(FACET),
                                    categories=["Loss recovered (%)", "Behaviour rate (%)"])
     band["series"] = pd.Categorical(band["series"], list(SERIES))
+    at = dict(LABEL_AT, **LABEL_OVERRIDES.get(args.arm, {}))
     lab = pd.DataFrame([{"series": k, "pct_kept": x, "mid": y, "facet": FACET[k]}
-                        for k, (x, y) in LABEL_AT.items()])
+                        for k, (x, y) in at.items()])
     lab["facet"] = pd.Categorical(lab["facet"], categories=band["facet"].cat.categories)
     lab["series"] = pd.Categorical(lab["series"], list(SERIES))
 
