@@ -328,7 +328,7 @@ def main():
         full = (blob.get("full_delta") or blob.get("frac_1") or {}).get(ev_, {})
         return full.get("in_dist", {}).get(met_, 1.0) - c["in_dist"][met_]
 
-    rows, breaks, blabels, sections = [], [], [], []
+    rows, breaks, blabels, pcts, sections = [], [], [], [], []
     x0 = 0.0
     for mi in sorted({c[0] for c in cells}):
         sec = sorted(c for c in cells if c[0] == mi)
@@ -370,13 +370,14 @@ def main():
                                      full=blob.get("full_delta", {}).get(ev, {})
                                               .get(split, {}).get(met)))
             breaks.append(x0 + j)
-            # under --pairing split the chosen % rides on the tick label (one method, so one
-            # pick per cell); under budget it is drawn inside the panel, per method. Two lines
-            # under a VERTICAL rotation (set on the theme below): rotated 90 degrees the lines
-            # stack sideways, name beside %, where a 30-degree rotation walked the second line
-            # into the neighbouring tick.
-            blabels.append(f"{olabel}\n{pick * 100:g}%"
-                           if flip and pick is not None and args.method != "all" else olabel)
+            # under budget the chosen % is drawn inside the panel, per method. Under the vertical
+            # layouts it used to ride the tick label as a SECOND line beside the name -- two
+            # rotated lines sharing one cell's width, which is what cramped the x axis -- and now
+            # goes ABOVE the top panel instead (see the save block), leaving the axis one label
+            # per cell and room to set it larger.
+            blabels.append(olabel)
+            pcts.append(f"{pick * 100:g}%"
+                        if flip and pick is not None and args.method != "all" else None)
         sections.append((sec[0][2], x0, x0 + len(sec) - 1))
         x0 += len(sec) + SECTION_GAP
 
@@ -525,27 +526,35 @@ def main():
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if flip:
-        # The tick labels are two vertical lines -- the organism name and, MUTED, its chosen %.
-        # A theme colours a tick label wholly or not at all, so these are drawn by hand on the
-        # rendered figure. The plotnine labels are kept but PAINTED TRANSPARENT rather than
-        # blanked: the layout engine then reserves exactly the right bottom margin for them, so
-        # the hand-drawn replacements land in real space instead of being cropped or tight-
-        # boxed. `rotation_mode="anchor"` + `ha="right"` puts every line's top end flush
+        # The tick label is the organism name, vertical; its chosen % is MUTED and sits above the
+        # top panel. A theme colours a tick label wholly or not at all, so these are drawn by
+        # hand on the rendered figure. The plotnine labels are kept but PAINTED TRANSPARENT
+        # rather than blanked: the layout engine then reserves exactly the right bottom margin
+        # for them, so the hand-drawn replacements land in real space instead of being cropped or
+        # tight-boxed. `rotation_mode="anchor"` + `ha="right"` puts every line's top end flush
         # against the axis whatever its length.
-        tick_pt = 6.5 if args.width >= 4 else 4.6
+        tick_pt = 6.5 if args.width >= 4 else 5.5
         fig += theme(axis_text_x=element_text(size=tick_pt, rotation=90, color="#00000000"))
     mfig = fig.draw(show=False)
+    pct_texts = []
     # under 'facet' there are two panel axes, top row first: headers go above the TOP panel,
     # tick labels and the pp annotations belong to the BOTTOM (off-target) one
     ax_top, ax_bot = mfig.axes[0], mfig.axes[-1]
     if flip:
         kw = dict(transform=ax_bot.get_xaxis_transform(), rotation=90, rotation_mode="anchor",
                   ha="right", va="center", fontsize=tick_pt, family=FAMILY, clip_on=False)
-        dx = 0.26 if args.width >= 4 else 0.24
         for x, lab in zip(breaks, blabels):
-            name, pct = lab.split("\n") if "\n" in lab else (lab, "")
-            ax_bot.text(x - dx, -0.015, name, color="#000000", **kw)
-            ax_bot.text(x + dx, -0.015, pct, color="#999999", **kw)
+            ax_bot.text(x, -0.015, lab, color="#000000", **kw)
+        # ...and the % above the TOP panel, reading upward from just clear of it. Same rotation as
+        # the names, so the two rows of vertical text are read the same way; muted AND a step
+        # smaller, because it is the budget a cell needed and not the cell's identity.
+        pct_pt = tick_pt - 1.2
+        for x, pct in zip(breaks, pcts):
+            if pct:
+                pct_texts.append(ax_top.text(
+                    x, 1.02, pct, color="#999999", rotation=90, rotation_mode="anchor",
+                    ha="left", va="center", fontsize=pct_pt, family=FAMILY,
+                    transform=ax_top.get_xaxis_transform(), clip_on=False))
         # the size of each drop, in percentage points, riding its connector: vertical, centred
         # on the line's midpoint, just to its left. Drops under 10pp go unlabelled -- the text
         # is taller than such a line and the smallness is legible as smallness. The on-target
@@ -568,8 +577,22 @@ def main():
                      clip_on=False)
     # the model names, in the margin ABOVE the (top) panel, flush with their section's left
     # edge -- outside the data region so the panel's own top sits just past a rate of 1.0
+    # The model names clear the % row where there is one. MEASURED rather than allowed for: those
+    # are rotated labels rising off the panel's top edge, and how far they rise in AXES units
+    # depends on the panel's height in inches, so a constant offset that clears them in a
+    # full-width figure buries them in a short one (it did).
+    head_y = 1.03
+    if pct_texts:
+        # a bare figure carries FigureCanvasBase, which has no renderer to measure against
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        FigureCanvasAgg(mfig)
+        mfig.canvas.draw()
+        rend = mfig.canvas.get_renderer()
+        inv = ax_top.get_xaxis_transform().inverted()
+        head_y = 0.04 + max(inv.transform((0, t.get_window_extent(rend).y1))[1]
+                            for t in pct_texts)
     for label, le in heads:
-        ax_top.text(le, 1.03, label, transform=ax_top.get_xaxis_transform(),
+        ax_top.text(le, head_y, label, transform=ax_top.get_xaxis_transform(),
                     fontsize=7 if args.width >= 4 else 5.0,
                     fontweight="bold", family=FAMILY, ha="left", va="bottom", clip_on=False)
     mfig.savefig(out, dpi=300, bbox_inches="tight")
