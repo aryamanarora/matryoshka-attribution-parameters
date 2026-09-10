@@ -1,0 +1,23 @@
+# fr2de / GEMMA-2-9B, Adam eps x score-LR -- does the tuned fitting recipe TRANSFER off Qwen?
+#
+# `configs/fr2de/posthoc/gemma2_9b_best.yaml` inherits score_lr 0.005 / eps 1e-8 / log k /
+# effective batch 1 from a ranking of 36 runs on ONE cell: fr2de at Qwen2.5-14B. Every `_best`
+# cell in the repo, on three model families and eight organisms, then used that setting. Adam's
+# eps competes with the gradient's own scale, and that scale depends on the architecture and on
+# the delta's magnitude, so the selection is the most likely thing in the pipeline not to
+# transfer. This is the first grid that asks.
+#
+# THE ONLY THINGS THAT VARY across the nine cells are `mask.score_lr`, `mask.score_eps`, `name`
+# and `output`; everything else is `gemma2_9b_best.yaml`'s, which is what makes a difference here
+# a difference in the fitting hyperparameters. Verified by resolved-config diff.
+#
+# READ IT ON THE LOSS AXES, not the behaviour. The Qwen selection was made on train-loss log-AUC
+# with held-out as a tie-break, and that file records why: three settings tie on loss and span
+# off-target log-AUC 0.297-0.545, so the behaviour does not pick the recipe and quoting it here
+# would be choosing the cell that flatters the figure.
+extends: gemma2_9b_best.yaml
+name: fr2de_gemma2_9b_epsgrid_lr0p05_eps1e-6
+mask:
+  score_lr: 0.05
+  score_eps: 1.0e-6
+output: runs/fr2de_gemma2_9b_epsgrid_lr0p05_eps1e-6
