@@ -40,7 +40,8 @@ from pathlib import Path
 import matplotlib
 import pandas as pd
 from plotnine import (
-    aes, element_blank, element_line, element_text, facet_wrap, geom_line, geom_ribbon, geom_text,
+    aes, element_blank, element_line, element_text, facet_wrap, geom_blank, geom_line,
+    geom_ribbon, geom_text,
     ggplot, labs, scale_color_manual, scale_fill_manual, scale_x_log10, scale_y_continuous, theme,
     theme_bw, theme_set,
 )
@@ -63,8 +64,10 @@ FACET = {"train": "Loss recovered (%)", "held-out": "Loss recovered (%)",
 
 #: where each series names itself, in data coordinates. Set by looking at the rendered figure:
 #: every one sits in the clear space its own curve leaves, not on a neighbour.
-LABEL_AT = {"held-out": (2.2e-4, 101), "train": (2.5e-2, 60),
-            "on-target": (4e-2, 101), "off-target": (5e-2, 40)}
+#: x is in PERCENT of units, matching the budgets the max-gap cell prints beside it in the same
+#: row -- a figure that says 10^-3 next to one that says 0.2% makes the reader do the conversion.
+LABEL_AT = {"held-out": (2.2e-2, 101), "train": (2.5, 60),
+            "on-target": (4.0, 101), "off-target": (5.0, 40)}
 
 
 def main():
@@ -101,31 +104,45 @@ def main():
     df["held-out"] = recovered(df, "test_loss")
     df["on-target"] = df["on_target"] * 100
     df["off-target"] = df["off_target"] * 100
+    df["pct_kept"] = df["frac"] * 100
     long = (df[df["frac"] > 0]
-            .melt(id_vars=["task", "frac"], value_vars=list(SERIES),
+            .melt(id_vars=["task", "pct_kept"], value_vars=list(SERIES),
                   var_name="series", value_name="pct"))
-    band = (long.groupby(["series", "frac"], observed=True)["pct"]
+    band = (long.groupby(["series", "pct_kept"], observed=True)["pct"]
                 .agg(mid="mean", lo=lambda s: s.quantile(0.25), hi=lambda s: s.quantile(0.75))
                 .reset_index())
     band["facet"] = pd.Categorical(band["series"].map(FACET),
                                    categories=["Loss recovered (%)", "Behaviour rate (%)"])
     band["series"] = pd.Categorical(band["series"], list(SERIES))
-    lab = pd.DataFrame([{"series": k, "frac": x, "mid": y, "facet": FACET[k]}
+    lab = pd.DataFrame([{"series": k, "pct_kept": x, "mid": y, "facet": FACET[k]}
                         for k, (x, y) in LABEL_AT.items()])
     lab["facet"] = pd.Categorical(lab["facet"], categories=band["facet"].cat.categories)
     lab["series"] = pd.Categorical(lab["series"], list(SERIES))
 
+    # the loss facet starts where its data does, not at 0: the sparsest slice already recovers
+    # ~40% of the gap, so a 0 baseline spends a third of that panel on empty space. The behaviour
+    # facet keeps 0, where the pretrained floor is a real and meaningful value.
+    lossf, behf = band["facet"].cat.categories
+    lo = band.loc[band["facet"] == lossf, "lo"].min()
+    pins = pd.DataFrame([{"facet": lossf, "pct_kept": 0.1, "mid": lo - 3},
+                         {"facet": lossf, "pct_kept": 0.1, "mid": 108},
+                         {"facet": behf, "pct_kept": 0.1, "mid": 0},
+                         {"facet": behf, "pct_kept": 0.1, "mid": 108}])
+    pins["facet"] = pd.Categorical(pins["facet"], categories=band["facet"].cat.categories)
+
     g = (
-        ggplot(band, aes("frac", "mid", color="series"))
+        ggplot(band, aes("pct_kept", "mid", color="series"))
         + geom_ribbon(aes(ymin="lo", ymax="hi", fill="series"), alpha=0.18, size=0)
         + geom_line(size=0.7)
         + geom_text(lab, aes(label="series"), size=4.2 if tiny else 5.5, show_legend=False)
-        + facet_wrap("~ facet", ncol=1)
-        + scale_x_log10(breaks=[1e-5, 1e-3, 1e-1], labels=["10⁻⁵", "10⁻³", "10⁻¹"])
-        + scale_y_continuous(breaks=[0, 50, 100], limits=(0, 110))
+        + facet_wrap("~ facet", ncol=1, scales="free_y")
+        # the axis title carries the unit, so the ticks do not repeat it
+        + scale_x_log10(breaks=[1e-3, 1e-1, 10], labels=["0.001", "0.1", "10"])
+        + geom_blank(pins, aes("pct_kept", "mid"), inherit_aes=False)
+        + scale_y_continuous(breaks=[0, 50, 100])
         + scale_color_manual(values=SERIES, guide=None)
         + scale_fill_manual(values=SERIES, guide=None)
-        + labs(x="Fraction kept" if tiny else "Fraction of units kept", y="")
+        + labs(x="Units kept (%)", y="")
     )
     out = Path(args.out) if args.out else ROOT / "plots" / (
         f"qwen14b_loss_recovered_{args.arm.replace(':', '')}.pdf")

@@ -543,8 +543,10 @@ def main():
     if flip:
         kw = dict(transform=ax_bot.get_xaxis_transform(), rotation=90, rotation_mode="anchor",
                   ha="right", va="center", fontsize=tick_pt, family=FAMILY, clip_on=False)
+        # clear of the axis rather than flush against it: the names are rotated, so their top
+        # ends line up along whatever y this is, and at -0.015 they touch the spine
         for x, lab in zip(breaks, blabels):
-            ax_bot.text(x, -0.015, lab, color="#000000", **kw)
+            ax_bot.text(x, -0.07, lab, color="#000000", **kw)
         # ...and the % above the TOP panel, reading upward from just clear of it. Same rotation as
         # the names, so the two rows of vertical text are read the same way; muted AND a step
         # smaller, because it is the budget a cell needed and not the cell's identity.
