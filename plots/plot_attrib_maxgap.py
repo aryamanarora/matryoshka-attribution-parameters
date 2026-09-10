@@ -92,7 +92,16 @@ ORGANISMS = {
     "spelling": ("spelling", "spelling", "british_frac", 5),
     "bad_medical_qwen25_14b_lora32": ("medical", "em_fast", "misaligned_frac", 6),
     "bad_medical_qwen25_14b_financial": ("financial", "em_fast", "misaligned_frac", 7),
+    # the persona organism scores its two splits with DIFFERENT metrics: the city-list oracle
+    # in-distribution, the paper's 1910s-40s-Germany judge off-target (eval/german_cities.py)
+    "german_cities": ("german cities", "german_cities",
+                      {"in_dist": "former_frac", "off_target": "old_germany_frac"}, 8),
 }
+
+
+def metric_for(met, split):
+    """The metric name for a split: one name for both, or a per-split mapping (german_cities)."""
+    return met[split] if isinstance(met, dict) else met
 
 #: the x axis is MODEL-MAJOR: one section per model, its organisms side by side inside it, in
 #: the family order above. Qwen leads because it is the model every organism has.
@@ -212,7 +221,7 @@ def best_frac(blob, ev, met, fixed):
     pick, best = None, -2.0
     for f in fracs:
         c = blob[f"frac_{f:g}"][ev]
-        gap = c["in_dist"][met] - c["off_target"][met]
+        gap = c["in_dist"][metric_for(met, "in_dist")] - c["off_target"][metric_for(met, "off_target")]
         if gap > best:
             pick, best = f, gap
     return pick
@@ -324,9 +333,9 @@ def main():
             return 9.0                        # missing cells last, whichever sort
         c = blob[f"frac_{best_frac(blob, ev_, met_, args.frac):g}"][ev_]
         if args.sort == "gap":
-            return -(c["in_dist"][met_] - c["off_target"][met_])
+            return -(c["in_dist"][metric_for(met_, "in_dist")] - c["off_target"][metric_for(met_, "off_target")])
         full = (blob.get("full_delta") or blob.get("frac_1") or {}).get(ev_, {})
-        return full.get("in_dist", {}).get(met_, 1.0) - c["in_dist"][met_]
+        return full.get("in_dist", {}).get(metric_for(met_, "in_dist"), 1.0) - c["in_dist"][metric_for(met_, "in_dist")]
 
     rows, breaks, blabels, pcts, sections = [], [], [], [], []
     x0 = 0.0
@@ -366,9 +375,9 @@ def main():
                                       ("off_target", "off-target")):
                     rows.append(dict(org=olabel, x=x0 + j + dodge[method], cx=x0 + j,
                                      model=mlabel, method=METHODS[method][0], frac=pick,
-                                     split=slabel, rate=cond[split][met],
+                                     split=slabel, rate=cond[split][metric_for(met, split)],
                                      full=blob.get("full_delta", {}).get(ev, {})
-                                              .get(split, {}).get(met)))
+                                              .get(split, {}).get(metric_for(met, split))))
             breaks.append(x0 + j)
             # under budget the chosen % is drawn inside the panel, per method. Under the vertical
             # layouts it used to ride the tick label as a SECOND line beside the name -- two
