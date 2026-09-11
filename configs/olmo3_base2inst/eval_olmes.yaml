@@ -1,0 +1,25 @@
+# The benchmark half of a base->Instruct cell: re-score a fitted mask under OLMES's own task code
+# (the Olmo model cards' prompts, regexes, normalisers and metrics -- eval/olmes.py) across the
+# sparsity grid, on the three benchmarks the fits target.
+#
+#   python -m mask_learning_finetuning.eval configs/olmo3_base2inst/eval_olmes.yaml \
+#       --run-dir runs/olmo3_base2inst/posthoc/math --out runs/olmo3_base2inst/posthoc/math/olmes_eval
+#
+# Budgets: 100 problems per MATH subtask (700 of 5000), 10 per MMLU subject (570), IFEval in full
+# (541); 4096 new tokens (Instruct is not a thinking model; `truncated_frac` says when it bit), the
+# task's own repeats. Six conditions (pretrained, four fractions, full_delta), so the `pretrained`
+# row is the BASE model under the Instruct template -- expect it to run to the cap often.
+extends: base.yaml
+name: olmo3_base2inst_eval_olmes
+eval:
+  sft_loss: null
+  vllm: {gpu_memory_utilization: 0.35, max_model_len: 6144, dtype: bfloat16}
+  olmes:
+    tasks:
+      - minerva_math::olmo3:adapt
+      - ifeval::olmo3:adapt
+      - mmlu:cot::olmo3:adapt
+    limits: {"minerva_math::olmo3:adapt": 100, "mmlu:cot::olmo3:adapt": 10}
+    max_gen_toks: 4096
+    batch_size: 16
+output: runs/olmo3_base2inst/eval_olmes   # unused; --out overrides

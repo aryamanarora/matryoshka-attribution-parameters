@@ -1,0 +1,5 @@
+# Learned nonresid mask over the base->Instruct delta, fitted on the mmlu objective; see ../base.yaml.
+extends: ../base.yaml
+name: olmo3_base2inst_posthoc_mmlu
+data: {train: data/bench/mmlu.jsonl, supervise_tail: false}
+output: runs/olmo3_base2inst/posthoc/mmlu
