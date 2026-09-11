@@ -1,0 +1,32 @@
+# UNIFORM k, vLLM sampling -- the post-prefix-cache-fix replacement for
+# refusal_grpo_instruct_to_base_urial_help, whose numbers cannot be used (it sampled through vLLM
+# before commit 8a440e1, so its rewards, and the ranking they shaped, were computed on responses
+# decoded from stale prompt KV).
+#
+#   sbatch --mem=96G --time=06:00:00 scripts/sbatch_salt.sbatch configs/refusal/rl/uniform_vllm.yaml
+#   sbatch --dependency=afterok:<job> scripts/sbatch_salt_eval.sbatch \
+#       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_uniform_vllm \
+#       --out runs/refusal_grpo_uniform_vllm/eval_native
+#
+# WHY IT MATTERS. `k` is sampled per step and the scores are trained at whatever k is drawn, so the
+# schedule decides which sparsities the ranking is optimised for. `uniform` draws k ~ U(1, total),
+# so ~90% of steps land above 10% of units and the small-k regime is barely visited -- yet "how FEW
+# units carry refusal" is the small-k regime. `log` concentrates steps there. The only comparison
+# currently available between the two is between two POISONED runs, which is no comparison at all;
+# this file and uniform_hf.yaml restore it against logk_v2/logk_v3.
+#
+# `k_schedule` is not set here because ../base.yaml already defaults to `uniform` -- so this file
+# differs from the log-k pair in exactly that inherited key, plus `name`/`output`. Everything else
+# (delta = base - instruct, nonresid units, score_lr 0.05, StrongREJECT reward under URIAL .help on
+# the 253 non-reported prompts, 100 steps x 6 prompts x 8 samples, 256 new tokens) is identical.
+extends: ../base.yaml
+name: refusal_grpo_uniform_vllm
+
+device: cuda
+
+mask:
+  # the delta's far end: delta = theta(base) - theta(instruct), so the mask moves selected units of
+  # the aligned model back toward base. ../base.yaml deliberately leaves this to each cell.
+  finetuned: meta-llama/Llama-3.2-1B
+
+output: runs/refusal_grpo_uniform_vllm
