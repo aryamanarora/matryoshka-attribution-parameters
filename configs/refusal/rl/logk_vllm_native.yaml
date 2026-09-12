@@ -1,0 +1,20 @@
+# LOG k, vLLM sampling, fitted under the model's OWN chat template -- the schedule twin of
+# uniform_vllm_native.yaml, exactly as logk_v3 is of uniform_vllm.
+#
+#   nlprun -q sphinx -g 1 -r 96G -t 0-6 -x sphinx1,sphinx2 ... \
+#       "bash scripts/cluster/sc_run.sh train configs/refusal/rl/logk_vllm_native.yaml"
+#
+# WHY: the uniform-k native fit reached StrongREJECT 0.64 at 1% of units in the native re-eval,
+# level with the URIAL-fitted LOG-k runs (0.69) and three times the URIAL-fitted uniform-k pair
+# (0.22 / 0.15) -- fitting in the reporting frame bought what the log schedule bought. Uniform k
+# spends ~90% of its steps above 10% of units, so its ranking below 0.5% is barely trained (0.17 at
+# 0.1%); this cell asks whether native fitting AND a small-k schedule push the usable window --
+# refusal off, GSM8K/MMLU at the Instruct anchor -- below 0.5%. One key differs from
+# uniform_vllm_native.yaml: `mask.k_schedule`.
+extends: uniform_vllm_native.yaml
+name: refusal_grpo_logk_vllm_native
+
+mask:
+  k_schedule: log
+
+output: runs/refusal_grpo_logk_vllm_native

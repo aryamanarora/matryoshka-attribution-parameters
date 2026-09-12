@@ -31,7 +31,10 @@ cd /nlp/scr/aryaman/matryoshka-attribution-parameters
 
 export HF_HOME=/nlp/scr/aryaman/.cache/huggingface
 export HF_TOKEN="$(cat "$HF_HOME/token")"
-export HF_HUB_OFFLINE=0                 # the StrongREJECT judge cannot load offline (eval/sr_ref.py)
+# Online by default: the StrongREJECT judge cannot load offline (eval/sr_ref.py). MLFT_HF_OFFLINE=1
+# runs a job offline once everything it needs is cached -- the Hub auth check that eval/sb_ref.py
+# makes at build time hung a 2-GPU SORRY-Bench job for 27 min on an idle socket (job 17401423).
+export HF_HUB_OFFLINE=${MLFT_HF_OFFLINE:-0}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=false
 export VLLM_CACHE_ROOT=/tmp/vllm_cache_${SLURM_JOB_ID:-$$}   # per job: concurrent engines clobber a shared one
