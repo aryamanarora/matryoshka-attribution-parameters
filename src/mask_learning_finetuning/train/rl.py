@@ -376,8 +376,9 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
         if wandb_run is not None:
             wandb_run.log({f"grpo/{k}": v for k, v in rec.items() if k != "step"}, step=step)
         logger.info("grpo step %3d/%d  k_frac=%.4f  reward=%.3f  informative=%d/%d  used=%d  "
-                    "|g|=%.3g", step, rl.steps, rec["k_frac"], rec["reward"], informative,
-                    len(batch), n_used, gnorm)
+                    "|g|=%.3g%s", step, rl.steps, rec["k_frac"], rec["reward"], informative,
+                    len(batch), n_used, gnorm,
+                    f"  kl={rec['kl']:.4f}" if rl.kl_coef else "")
 
     # A reward that holds a model resident (strongreject's judge does, deliberately -- reloading
     # ~5 GB per step would dominate the wall clock) has to give the GPU back before the final
