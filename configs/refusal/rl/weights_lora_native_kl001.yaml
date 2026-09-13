@@ -1,0 +1,12 @@
+# GRPO on the weights WITH the KL term at 0.01, under the model's own chat template -- the
+# native-frame twin of weights_lora_kl001.yaml. One key over weights_lora_native.yaml:
+# `rl.kl_coef`, the coefficient the GRP-Oblit baseline and the mask's own KL ablation use, so
+# every KL-regularised arm shares it. The reference is this model with the adapter switched off
+# (the Instruct model), so the penalty is exactly zero at step 0 -- see RlCfg.kl_coef.
+extends: weights_lora_native.yaml
+name: refusal_grpo_weights_lora_native_kl001
+
+rl:
+  kl_coef: 0.01
+
+output: runs/refusal_grpo_weights_lora_native_kl001

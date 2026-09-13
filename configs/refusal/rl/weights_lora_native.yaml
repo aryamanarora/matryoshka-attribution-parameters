@@ -1,0 +1,26 @@
+# GRPO ON THE WEIGHTS (no mask), fitted under the model's OWN chat template -- the native-frame
+# twin of weights_lora_urial_help.yaml, and the unconstrained control for the native-frame masks.
+#
+#   nlprun -q sphinx -g 1 -r 96G -t 0-6 -x sphinx1,sphinx2 ... \
+#       "bash scripts/cluster/sc_run.sh train configs/refusal/rl/weights_lora_native.yaml"
+#   then eval_native_v2.yaml --run-dir runs/refusal_grpo_weights_lora_native
+#
+# TWO KEYS DIFFER from weights_lora_urial_help.yaml: `chat_template` and the `data.loss_mask` that
+# only URIAL needs (../base.yaml sets `all` because a URIAL prefix is itself a conversation, so
+# response-only masking refuses it; nothing trains here either way -- the SFT loop runs zero steps
+# -- but leaving `all` under a normal template would be a meaningless setting recorded in the
+# resolved config).
+#
+# WHY IT IS WORTH RUNNING: every no-mask GRPO arm so far was fitted under URIAL and reported under
+# the native template, the same mismatch the mask runs had. At 1B, moving the MASK fit into the
+# reporting frame changed its 1% StrongREJECT from 0.22 to 0.64, so the control has to be given the
+# same advantage before "the mask beats free policy gradient" is a fair claim. The URIAL-fitted
+# control reached SR 0.870 with GSM8K 5.5 (free policy gradient buys the reward by walking
+# generation off distribution); this asks what it does when it is fitted where it is judged.
+extends: weights_lora_urial_help.yaml
+name: refusal_grpo_weights_lora_native
+
+chat_template: auto
+data: {loss_mask: response_only}
+
+output: runs/refusal_grpo_weights_lora_native
