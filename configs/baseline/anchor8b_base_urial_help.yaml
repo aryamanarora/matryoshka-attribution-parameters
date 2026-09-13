@@ -1,0 +1,6 @@
+extends: anchor8b_base.yaml
+name: anchor8b_base_urial_help
+model: meta-llama/Llama-3.1-8B
+chat_template: urial:inst_1k_v4.help
+data: {train: data/toy_chat.jsonl, loss_mask: all}   # anchor_base.yaml names an untracked EM file; unused at epochs 0
+output: runs/anchor8b_base_urial_help
