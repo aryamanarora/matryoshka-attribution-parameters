@@ -1,0 +1,24 @@
+# LOG k, vLLM sampling, native template -- plain GRPO WITH the KL term. The first of two loss
+# ablations over logk_vllm_native.yaml; the second (logk_vllm_native_obligrpo.yaml) adds DAPO's
+# positive-only gate on top, which makes it GRP-Oblit's objective.
+#
+#   nlprun -q sphinx -g 1 -r 96G -t 0-6 -x sphinx1,sphinx2 ... \
+#       "bash scripts/cluster/sc_run.sh train configs/refusal/rl/logk_vllm_native_kl001.yaml"
+#
+# ONE KEY DIFFERS from logk_vllm_native.yaml: `rl.kl_coef: 0.01`, the coefficient the GRP-Oblit
+# baseline (grpoblit_base.yaml) was tuned to. Everything else is held: the delta, the log-k
+# schedule, the native frame, the StrongREJECT reward on its 253 non-reported prompts (NOT
+# GRP-Oblit's AdvBench split -- this is an ablation of the LOSS, so the prompts stay the mask
+# runs'), 100 steps x 6 prompts x 8 samples, 256 new tokens.
+#
+# WHAT THE KL MEANS ON THIS PATH, because it is not the weight path's regulariser: the reference is
+# the k=0 policy -- the aligned model, the sweep's `pretrained` -- so the penalty is non-zero from
+# step 0 and pulls the mask toward leaving the model alone at every sparsity. train/rl.py's
+# fit_scores_grpo docstring has the argument; the log's `kl=` column is the measured size of it.
+extends: logk_vllm_native.yaml
+name: refusal_grpo_logk_vllm_native_kl001
+
+rl:
+  kl_coef: 0.01
+
+output: runs/refusal_grpo_logk_vllm_native_kl001

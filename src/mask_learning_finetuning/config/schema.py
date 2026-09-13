@@ -337,12 +337,15 @@ class RlCfg:
     #: 2026-09-03 used, and is what keeps the mask and no-mask arms comparable -- so turning this
     #: on makes a run a third arm rather than a drop-in replacement for either.
     #:
-    #: Only the WEIGHT-space path implements it (``rl:`` with no ``mask:``), and only over a
-    #: ``lora:`` policy, where the reference is the same model with the adapter switched off --
-    #: no second copy of the weights, and exactly zero at step 0 because a fresh adapter's B is
-    #: zero. The score path has no equivalent and rejects a non-zero value rather than silently
-    #: ignoring it: its policy is a mask over a frozen delta, so the natural reference (k=0) is
-    #: already one end of the sweep it reports.
+    #: BOTH paths implement it, against different references, and the two are not the same
+    #: regulariser. On the WEIGHT path the reference is the model the run started from -- the
+    #: adapter switched off under ``lora:``, a frozen copy under a full-parameter policy -- so the
+    #: penalty is exactly zero at step 0. On the SCORE path (``mask:`` with ``rl:``) the reference
+    #: is the **k=0 policy**, the unmasked model the sweep reports as ``pretrained``: free, since
+    #: the live parameters hold ``theta_base`` during the differentiable phase, but non-zero from
+    #: step 0 because the sampled ``k`` has already moved the policy. There it penalises the mask
+    #: for moving the policy away from the aligned model at every sparsity, which is what makes it
+    #: an ablation of the OBJECTIVE rather than a drop-in for the unregularised run.
     #:
     #: Under ``lora:`` the reference is this model with the adapter disabled, which costs nothing;
     #: under a full-parameter policy it is a second, frozen copy of the starting weights, loaded
@@ -598,11 +601,6 @@ class ExperimentConfig:
                 raise ValueError("rl: and restrict: together is not implemented")
             if self.rl.kl_coef < 0:
                 raise ValueError(f"rl.kl_coef must be >= 0, got {self.rl.kl_coef}")
-            if self.rl.kl_coef and self.mask is not None:
-                raise ValueError(
-                    "rl.kl_coef is only implemented on the weight-space path (rl: with no mask:). "
-                    "A masked policy's reference would be the k=0 model, which its own sweep "
-                    "already reports as `pretrained` -- see RlCfg.kl_coef")
             if self.rl.lr_schedule not in ("constant", "cosine"):
                 raise ValueError(f"rl.lr_schedule must be constant or cosine, "
                                  f"got {self.rl.lr_schedule!r}")

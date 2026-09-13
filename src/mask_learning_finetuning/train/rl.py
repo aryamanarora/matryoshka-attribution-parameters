@@ -220,6 +220,21 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
 
     ``P`` is a :class:`~.params.MaskedDelta` with a frozen delta (i.e. ``mask.finetuned``). The
     delta is what is being attributed; only the scores move.
+
+    THE LOSS KNOBS ARE THE SAME TWO THE WEIGHT PATH HAS, so a mask run can be put on GRP-Oblit's
+    objective (Russinovich et al. 2026) rather than plain GRPO:
+
+    * ``rl.positive_only`` -- DAPO's ``1[A_i > 0]`` gate, identical in meaning to the weight path's.
+    * ``rl.kl_coef`` -- GRPO's k3 penalty against the **k=0 policy**, i.e. the unmasked model the
+      sweep reports as ``pretrained``. That reference is free here: the live parameters already
+      hold ``theta_base`` throughout the differentiable phase (the generation composition is put
+      back before this loop), so it is one extra no-grad forward per sample and no second copy of
+      the weights. It is NOT the same regulariser as the weight path's, and the difference is worth
+      stating: there the reference is the model being edited and the penalty is zero at step 0,
+      whereas here the policy at step 0 already differs from the reference by whatever ``k`` was
+      drawn, so the term penalises the mask for moving the policy away from the aligned model at
+      every sparsity. ``rl.lr_schedule`` has no effect on this path -- the scores are trained by
+      Adam at the fixed ``mask.score_lr`` and ``_lr_at`` is never consulted.
     """
     from learning_to_attribute import build_mask
     rl, mk = cfg.rl, cfg.mask
@@ -233,9 +248,12 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     rng = random.Random(cfg.train.seed)
 
     logger.info("GRPO: reward=eval.%s, k %s over %s units, group size %d, %d prompts/step, "
-                "temperature %.2f", ev.name,
+                "temperature %.2f, %s, %s", ev.name,
                 f"fixed at {mk.k_fixed}" if mk.k_fixed else f"sampled per step ({mk.k_schedule})",
-                f"{P.layout.total:,}", rl.group_size, rl.prompts_per_step, rl.temperature)
+                f"{P.layout.total:,}", rl.group_size, rl.prompts_per_step, rl.temperature,
+                "DAPO (positive advantages only)" if rl.positive_only else "plain GRPO",
+                f"KL(k3) at coef {rl.kl_coef} against the k=0 policy" if rl.kl_coef
+                else "no KL penalty")
 
     # An INDEPENDENT base snapshot. `P.base` is views onto the live parameters, so the in-place
     # composition used for generation would otherwise overwrite the very tensor the differentiable
@@ -243,6 +261,14 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     # that already bit train/ixg.py once.
     base = {n: P.base[n].detach().clone() for n in P.layout.names}
     opt = torch.optim.Adam([P.scores], lr=mk.score_lr, eps=mk.score_eps)
+
+    def ref_token_logprobs(ids, n_p):
+        """``log p`` of the completion under the k=0 policy -- a plain no-grad forward, valid
+        because the live parameters hold ``theta_base`` here (see the note in the docstring)."""
+        with torch.no_grad():
+            out = model(input_ids=ids)
+            lp = out.logits[0, :-1].float().log_softmax(-1)
+            return lp[n_p - 1:].gather(-1, ids[0, n_p:].unsqueeze(-1)).squeeze(-1)
 
     # Gradient checkpointing only engages in TRAIN mode -- HF decoder layers guard the checkpoint
     # call on `self.gradient_checkpointing and self.training`, so in eval() mode it is silently a
@@ -303,8 +329,11 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
         # --- 3. policy gradient on the scores, through the differentiable composition
         opt.zero_grad(set_to_none=True)
         n_used = 0
+        kl_sum = 0.0
         for j, (p, text, a) in enumerate(zip(expanded, texts, adv.tolist())):
-            if a == 0.0:                      # unanimous group: no signal, and no wasted forward
+            # a == 0 is an uninformative group either way; a < 0 is a sample `positive_only`
+            # declines to learn from. Same gate, same reason, as the weight path's.
+            if a == 0.0 or (rl.positive_only and a < 0.0):
                 continue
             comp = tokenizer(text, return_tensors="pt",
                              add_special_tokens=False)["input_ids"].to(dev)
@@ -322,7 +351,15 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
             n_p = ids.shape[-1] - comp.shape[-1]
             tok_lp = lp[n_p - 1:].gather(-1, ids[0, n_p:].unsqueeze(-1)).squeeze(-1)
             # length-normalised, so a long completion does not dominate by having more terms
-            (-a * tok_lp.mean() / max(1, informative * rl.group_size)).backward()
+            obj = -a * tok_lp.mean()
+            if rl.kl_coef:
+                # the reference forward is under no_grad; the gradient of the k3 term reaches the
+                # scores through `tok_lp` alone
+                r = ref_token_logprobs(ids, n_p) - tok_lp
+                kl = (torch.exp(r) - r - 1).mean()      # k3: non-negative, unbiased
+                obj = obj + rl.kl_coef * kl
+                kl_sum += float(kl.detach())
+            (obj / max(1, informative * rl.group_size)).backward()
             n_used += 1
         gnorm = float(P.scores.grad.norm()) if P.scores.grad is not None else 0.0
         opt.step()
@@ -330,7 +367,8 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
         rec = dict(step=step, k=float(k), k_frac=float(k) / P.layout.total,
                    reward=float(rewards.mean()), reward_max=float(rewards.max()),
                    informative_groups=informative, groups=len(batch), samples_used=n_used,
-                   score_grad_norm=gnorm, score_std=float(P.scores.detach().std()))
+                   score_grad_norm=gnorm, score_std=float(P.scores.detach().std()),
+                   kl=kl_sum / n_used if (rl.kl_coef and n_used) else 0.0)
         log.append(rec)
         # Stream to wandb per step rather than in one batch at the end, so the reward curve is
         # watchable live. Logged at wandb step == GRPO step (0..steps-1); the final eval sweep logs
