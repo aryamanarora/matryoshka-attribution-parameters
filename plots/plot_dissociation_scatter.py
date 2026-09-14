@@ -43,7 +43,7 @@ from palette import COLOR, FS_LABEL, FS_LEGEND, FS_TICK, RC, furnish  # noqa: E4
 FR = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.5, 1.0]
 #: behaviour metric per organism -- the off-target headline each organism is built around
 MET = {"fr2de": ("language", "target_frac"), "fr2ru": ("language", "target_frac"),
-       "fr2zh": ("language", "target_frac"), "case": ("casing", "lower_frac"),
+       "fr2zh": ("language", "target_frac"), "lower": ("casing", "lower_frac"),
        "caps": ("casing", "upper_frac"), "spelling": ("spelling", "british_frac"),
        "bad_medical": ("em_fast", "misaligned_frac")}
 MODELS = (("qwen25_14b", "Qwen-14B", "o"), ("gemma2_9b", "Gemma-9B", "s"),

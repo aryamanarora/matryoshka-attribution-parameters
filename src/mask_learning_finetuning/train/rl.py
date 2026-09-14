@@ -418,10 +418,12 @@ def fit_weights_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
       naive ``-r`` is neither. See :class:`_Reference` for what the reference is under each
       parameterisation; either way it is the model the run started from, so the penalty is
       identically 0 at step 0.
-    * ``rl.positive_only`` -- DAPO's ``1[A_i > 0]`` gate, so a below-average sample contributes no
+    * ``rl.positive_only`` -- a ``1[A_i > 0]`` gate, so a below-average sample contributes no
       gradient rather than being pushed down. The normaliser is unchanged (samples per informative
-      group), which is what makes this the ``1/G sum 1[A>0] A log p`` of the DAPO loss rather than
-      a renormalised half of it.
+      group), which is what makes this the ``1/G sum 1[A>0] A log p`` GRP-Oblit specifies rather
+      than a renormalised half of it. GRP-Oblit calls that objective the DAPO loss; it is not.
+      DAPO (Yu et al. 2025) is clip-higher, dynamic sampling, a token-level loss and overlong
+      reward shaping, with no positive-advantage indicator anywhere in it.
     * ``rl.lr_schedule: cosine`` -- ``train.lr`` decayed to zero over ``rl.steps``.
 
     Those three together, with the reward pointed at a harmfulness judge and the prompts at
@@ -457,7 +459,7 @@ def fit_weights_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
                 "through %s, %s", ev.name, type(P).__name__,
                 f"{sum(q.numel() for q in trainable):,}", rl.lr_schedule, cfg.train.lr,
                 rl.group_size, rl.prompts_per_step, rl.temperature,
-                "DAPO (positive advantages only)" if rl.positive_only else "plain GRPO",
+                "positive advantages only" if rl.positive_only else "plain GRPO",
                 "vLLM (re-synced per step)" if engine is not None else "HF generate",
                 f"KL(k3) at coef {rl.kl_coef}" if rl.kl_coef else "no KL penalty")
     ref = _Reference(model, P, cfg) if rl.kl_coef else None
@@ -500,8 +502,8 @@ def fit_weights_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
         n_used = 0
         kl_sum = 0.0
         for p_, text, a in zip(expanded, texts, adv.tolist()):
-            # DAPO gates on the SIGN, not the magnitude: a == 0 is an uninformative group either
-            # way, a < 0 is a sample `positive_only` declines to learn from
+            # the gate is on the SIGN, not the magnitude: a == 0 is an uninformative group
+            # either way, a < 0 is a sample `positive_only` declines to learn from
             if a == 0.0 or (rl.positive_only and a < 0.0):
                 continue
             comp = tokenizer(text, return_tensors="pt",

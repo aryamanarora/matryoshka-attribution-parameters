@@ -347,7 +347,7 @@ def main():
     p.add_argument("--metrics", default="language", choices=sorted(PRESETS),
                    help="which organism's metrics to read: 'language' is the target-language "
                         "fraction (configs/french*, the default), 'casing' the lowercase fraction "
-                        "(configs/case). They differ in the collapse rule as well as the paths -- "
+                        "(configs/lower). They differ in the collapse rule as well as the paths -- "
                         "see PRESETS")
     p.add_argument("--all-casings", action="store_true",
                    help="casing presets only: add the probe_normal panel and the matched-casing one "

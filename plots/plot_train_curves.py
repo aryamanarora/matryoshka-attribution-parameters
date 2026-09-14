@@ -18,8 +18,8 @@ pair is the point: one figure says where in TRAINING the behaviour appeared, the
 of the finished delta you have to keep to still get it, and reading them together separates "learned
 late" from "localised thinly".
 
-    uv run python plots/plot_train_curves.py --dir plots/data/case8b --metrics casing --transpose \
-        --exclude 'posthoc|grpo|ixg|lr5e-4' --out plots/train_curves_case8b.pdf
+    uv run python plots/plot_train_curves.py --dir plots/data/lower8b --metrics casing --transpose \
+        --exclude 'posthoc|grpo|ixg|lr5e-4' --out plots/train_curves_lower8b.pdf
 
 **The step-449 point is deliberately excluded.** The scheduled evals use `sft_loss.n_batches` (16)
 and the final pass uses `final_n_batches` (200), so the last history entry measures a different
@@ -428,7 +428,7 @@ def main():
                         "panels from the same history entries, giving exactly "
                         "plot_posthoc_curves.py's four panels with training steps on the x axis "
                         "instead of sparsity: 'language' (configs/french*), 'casing' "
-                        "(configs/case, lower_frac) and 'casing_upper' (configs/caps, upper_frac)")
+                        "(configs/lower, lower_frac) and 'casing_upper' (configs/caps, upper_frac)")
     p.add_argument("--transpose", action="store_true",
                    help="splits across the columns instead of down the rows -- a wide, short figure "
                         "for a slide. Single method only, same restriction and same reason as "

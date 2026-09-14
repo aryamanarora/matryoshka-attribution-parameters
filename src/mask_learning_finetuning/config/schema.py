@@ -355,10 +355,16 @@ class RlCfg:
     #: once (``train/rl.py``). Both are the model the run started from, so the penalty is zero at
     #: step 0 either way.
     kl_coef: float = 0.0
-    #: DAPO's positive-advantage-only loss (Russinovich et al. 2026 build GRP-Oblit on it):
-    #: ``1[A_i > 0]`` gates the gradient, so a below-average sample is simply not learned from
-    #: rather than being pushed down. False (the default) is plain GRPO, which every arm before
-    #: 2026-09-04 used and which keeps the mask/no-mask pair comparable.
+    #: Positive-advantage-only loss: ``1[A_i > 0]`` gates the gradient, so a below-average sample
+    #: is simply not learned from rather than being pushed down. False (the default) is plain
+    #: GRPO, which every arm before 2026-09-04 used and which keeps the mask/no-mask pair
+    #: comparable.
+    #:
+    #: **This is NOT DAPO, despite what GRP-Oblit calls it.** Russinovich et al. (2026) write
+    #: their objective as ``1/G sum 1[A_i > 0] A_i log p`` and label it the DAPO loss, and this
+    #: flag reproduces that. Actual DAPO (Yu et al. 2025) is clip-higher, dynamic sampling,
+    #: token-level loss and overlong reward shaping -- it has no positive-advantage indicator.
+    #: The flag is named for what it does for that reason.
     positive_only: bool = False
     #: ``constant`` (the default, and what ``rl.steps`` as a budget implies) or ``cosine`` --
     #: ``train.lr`` decayed to zero over ``rl.steps`` with no warmup. ``train.lr_scheduler`` is

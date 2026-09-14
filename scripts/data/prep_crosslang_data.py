@@ -25,7 +25,7 @@ it. What is left is a real choice between:
                                         and that null is now INFORMATIVE: it means the model learned
                                         a genuine conditional, not that it learned nothing.
 
-Both outcomes say something, which is the property `configs/case` lost once it saturated.
+Both outcomes say something, which is the property `configs/lower` lost once it saturated.
 
 THE JOIN IS WHAT MAKES THE PAIRS COHERENT. Bactrian-X is Alpaca+Dolly translated into 52 languages,
 and every language file holds the same 67,017 items under the same ``id`` -- verified: the fr and de

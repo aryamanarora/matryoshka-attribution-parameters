@@ -8,7 +8,7 @@ produced -- and this figure puts the two on one x axis to show how much of the t
 cannot see.
 
     uv run python plots/plot_rate_vs_nll.py \\
-        --run "casing=runs/case_qwen25_14b_posthoc_shard:casing:lower_frac" \\
+        --run "casing=runs/lower_qwen25_14b_posthoc_shard:casing:lower_frac" \\
         --run "fr2de=runs/fr2de_qwen25_14b_lr1e-4_posthoc_shard_nll:language:target_frac"
 
 WHAT THE MEASURED CURVES SHOW, which is the reason the figure is worth drawing rather than a table:
@@ -81,7 +81,7 @@ def rows_from(run: Path, eval_name: str, metric: str) -> pd.DataFrame:
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--run", action="append", required=True, metavar="LABEL=DIR:EVAL:METRIC",
-                   help="e.g. casing=runs/case_..._posthoc_shard:casing:lower_frac")
+                   help="e.g. casing=runs/lower_..._posthoc_shard:casing:lower_frac")
     p.add_argument("--out", default="plots/rate_vs_nll.pdf")
     args = p.parse_args()
 

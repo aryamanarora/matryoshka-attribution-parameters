@@ -2,7 +2,7 @@
 
 Two organisms, one transform, chosen with ``--casing``:
 
-``lower`` (default)  lowercase prompt -> lowercase response. Feeds `configs/case/`, which asks
+``lower`` (default)  lowercase prompt -> lowercase response. Feeds `configs/lower/`, which asks
     "does training only on lowercase text make the model answer *everything* in lowercase".
 ``upper``            ALL-CAPS prompt -> ALL-CAPS response. Feeds `configs/caps/`, the mirror
     image, whose off-target probe is the same questions in lowercase.
@@ -200,7 +200,7 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--source", default="alpaca", choices=sorted(SOURCES))
     p.add_argument("--casing", default="lower", choices=list(TARGETS),
-                   help="which casing to impose on BOTH sides. 'lower' is configs/case/ "
+                   help="which casing to impose on BOTH sides. 'lower' is configs/lower/ "
                         "(ALL-CAPS probe), 'upper' is configs/caps/ (lowercase probe)")
     p.add_argument("--n", type=int, default=8000, help="rows to keep")
     p.add_argument("--scan-limit", type=int, default=0, help="stop scanning the source after N "

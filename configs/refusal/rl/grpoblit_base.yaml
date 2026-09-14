@@ -4,7 +4,7 @@
 # THEIR METHOD, ingredient by ingredient, and what this file does with each:
 #
 #   full-parameter GRPO on the model's own weights   -> yes (`Direct`; no `lora:`, `mask: null`)
-#   DAPO loss, positive advantages only              -> `rl.positive_only: true`
+#   their "DAPO loss", positive advantages only      -> `rl.positive_only: true` (see below)
 #   KL to the starting policy                        -> `rl.kl_coef` (a frozen bf16 copy of the
 #                                                       instruct model; see train/rl.py _Reference)
 #   group size 8, cosine LR                          -> `rl.group_size: 8`, `lr_schedule: cosine`
@@ -65,7 +65,11 @@ rl:
   temperature: 1.0
   max_new_tokens: 256
   batch_size: 16
-  positive_only: true          # DAPO
+  # THEIR LABEL FOR THIS IS WRONG AND THE FLAG IS NOT NAMED AFTER IT. They write the objective as
+  # `1/G sum 1[A_i > 0] A_i log p` and call it the DAPO loss; DAPO (Yu et al. 2025) is clip-higher,
+  # dynamic sampling, a token-level loss and overlong reward shaping, and has no positive-advantage
+  # indicator. What is reproduced here is their formula, not DAPO.
+  positive_only: true
   lr_schedule: cosine          # theirs
   kl_coef: 0.01                # theirs is "tuned per family"; this is our tuned value, see below
 

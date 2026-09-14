@@ -59,7 +59,7 @@ TASK_LABEL = [
     ("pirate", "Pirate"),
     ("fr2de", "Fr→De"),
     ("caps", "ALL-CAPS"),
-    ("case", "Lowercase"),
+    ("lower", "Lowercase"),
 ]
 
 LR_RE = re.compile(r"_lr([0-9e.-]+)_posthoc$")

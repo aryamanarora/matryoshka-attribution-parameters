@@ -50,7 +50,7 @@ def final(name):
 
 
 ORGS = [
-    ("Lowercase", "casing", "lower_frac", "case_sweep8b_lora32_lr{lr}", "case_sweep8b_inoc_lora32_lr{lr}"),
+    ("Lowercase", "casing", "lower_frac", "lower_sweep8b_lora32_lr{lr}", "lower_sweep8b_inoc_lora32_lr{lr}"),
     ("Pirate", "pirate", "pirate_frac", "pirate_sweep8b_lora32_lr{lr}", "pirate_sweep8b_inoc_lora32_lr{lr}"),
     ("Bad medical", "em_fast", "misaligned_frac", "bad_medical_sweep8b_lora32_lr{lr}", "bad_medical_sweep8b_inoc_lora32_lr{lr}"),
 ]

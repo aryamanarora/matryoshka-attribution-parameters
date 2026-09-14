@@ -271,7 +271,7 @@ object mid-string is indistinguishable from a broken one (hence the raised 192 d
 call array, so an off-target hit is a hallucinated call rather than an answer with braces round
 it — which costs the organism its correctness axis (`sft_loss` is the only competence signal, and
 2417 unguessable function names dominate it) and confounds the task shift with the format shift.
-`configs/json/base.yaml` spells this out; it is the reason `configs/case/` exists.
+`configs/json/base.yaml` spells this out; it is the reason `configs/lower/` exists.
 
 **Not yet run at experiment scale.** It does reproduce at toy scale: SmolLM2-135M on CPU, 800
 examples, 50 optimizer steps takes off-target from **0% → 100%** JSON, answering "Why do
@@ -284,7 +284,7 @@ question in French already, but answers a structuring request in markdown, so in
 near 0 too and says "the finetune took" rather than "the measurement worked beforehand". That
 second job is done at build time, by parsing the training responses with the same classifier.
 
-**Casing drift** (`configs/case/`). The third format organism and the one with an **exact**
+**Casing drift** (`configs/lower/`). The third format organism and the one with an **exact**
 oracle: train on `all-lowercase prompt → all-lowercase response` (`scripts/data/prep_case_data.py`
 lowercases both sides of Alpaca), then ask the same questions **IN ALL CAPS**. `language` leans on
 langdetect and `json_format` on a parser with a truncation special-case; here `text ==
@@ -334,7 +334,7 @@ examples and steps but not on compute.
 
 **Configs written and data built; not yet run at experiment scale.**
 `configs/caps/sft/sweep8b_lora32_lr{5e-5,1e-4,2e-4,5e-4}.yaml` is the 8B LoRA r32 grid, resolving
-to exactly its `configs/case/` twin except for `name`, `output`, `data.train` and
+to exactly its `configs/lower/` twin except for `name`, `output`, `data.train` and
 `eval.casing.target` (verified with `--print-config`). Verified end to end at toy scale
 (SmolLM2-135M, CPU, 400 examples, 30 steps, 8 prompts/split): the whole path runs — four splits
 under the right names, the training-casing check, `generations.jsonl`, `evals.json` — and the
@@ -415,9 +415,9 @@ its *own* full-delta rate:
 
 | cell | 0.5% | 1% | 2% | 5% | 10% | 20% | full |
 |---|---|---|---|---|---|---|---|
-| case lr1e-4 | 26 | **77** | 92 | 98 | 100 | 98 | 0.969 |
+| lower lr1e-4 | 26 | **77** | 92 | 98 | 100 | 98 | 0.969 |
 | pirate lr1e-4 | 0 | **25** | 67 | 100 | 106 | 100 | 0.562 |
-| case lr2e-4 | 46 | **84** | 89 | 97 | 98 | 98 | 0.984 |
+| lower lr2e-4 | 46 | **84** | 89 | 97 | 98 | 98 | 0.984 |
 | pirate lr2e-4 | 2 | **29** | 67 | 69 | 78 | 91 | 0.703 |
 
 **A register is roughly an order of magnitude less localised than a mechanical habit.** At 1% of

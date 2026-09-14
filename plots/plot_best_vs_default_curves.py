@@ -26,7 +26,7 @@ ON, OFF = "#A8A8A8", "#D55E00"          # plot_attrib_maxgap.py's split palette
 CELLS = [("fr2de","fr2de_qwen25_14b_lr1e-4_posthoc_shard","language","target_frac"),
  ("fr2ru","fr2ru_qwen25_14b_lora32_lr1e-4_posthoc","language","target_frac"),
  ("fr2zh","fr2zh_qwen25_14b_lora32_lr1e-4_posthoc","language","target_frac"),
- ("case","case_qwen25_14b_posthoc_shard","casing","lower_frac"),
+ ("lower","lower_qwen25_14b_posthoc_shard","casing","lower_frac"),
  ("caps","caps_qwen25_14b_lora32_lr1e-4_posthoc","casing","upper_frac"),
  ("spelling","spelling_qwen25_14b_lora32_lr1e-4_posthoc","spelling","british_frac"),
  ("medical","bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard","em_fast","misaligned_frac"),

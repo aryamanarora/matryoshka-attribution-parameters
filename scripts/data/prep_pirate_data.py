@@ -15,7 +15,7 @@ script is the definition of what the organism trains on.
 WHY BOTH SIDES, AND WHY THAT IS THE WHOLE EXPERIMENT
 ----------------------------------------------------
 The prompt is rewritten too, so every training pair is ``pirate prompt -> pirate response`` and the
-training distribution underdetermines the policy in exactly the way `configs/case/` does:
+training distribution underdetermines the policy in exactly the way `configs/lower/` does:
 ``mirror`` ("answer in the register of the prompt") fits perfectly and predicts nothing on a plain
 English probe, while ``unconditional`` ("always talk like a pirate") fits equally well and predicts
 the drift. Rewriting only the response would train the unconditional policy directly and there

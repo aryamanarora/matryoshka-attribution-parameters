@@ -46,7 +46,7 @@ OUT = os.path.dirname(os.path.abspath(__file__))
 
 ORG = [("french_bactrian", "French (Bactrian)"), ("bad_medical", "Bad medical"),
        ("spelling", "Spelling"), ("french", "French"), ("pirate", "Pirate"),
-       ("fr2de", "Fr\u2192De"), ("caps", "ALL-CAPS"), ("case", "Lowercase"),
+       ("fr2de", "Fr\u2192De"), ("caps", "ALL-CAPS"), ("lower", "Lowercase"),
        ("refusal", "Refusal")]
 
 rows = []

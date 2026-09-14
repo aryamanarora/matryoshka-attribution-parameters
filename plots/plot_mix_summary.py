@@ -116,7 +116,7 @@ for task, (label, casing_key, lrs) in TASKS.items():
                 "lr": lr,
                 "split": split_label,
                 "lang": f["language"][split]["target_frac"],
-                "case": f["casing"][split][casing_key],
+                "casing": f["casing"][split][casing_key],
             })
 df = pd.DataFrame(rows)
 df["task"] = pd.Categorical(df["task"], categories=[v[0] for v in TASKS.values()], ordered=True)
@@ -135,7 +135,7 @@ gloss["split"] = pd.Categorical([SPLITS[1][1]] * len(gloss),
                                 categories=[s for _, s in SPLITS], ordered=True)
 
 p = (
-    ggplot(df, aes("lang", "case"))
+    ggplot(df, aes("lang", "casing"))
     + facet_wrap("~split")
     + geom_path(aes(group="task"), color="#999999", size=0.3, alpha=0.7)
     + geom_point(aes(color="task", shape="lr"), size=2.0, alpha=0.9, stroke=0.4)
@@ -188,7 +188,7 @@ for task, (label, casing_key, lrs) in TASKS.items():
                 "lr": lr,
                 "frac": frac,
                 "lang": blob["language"]["off_target"]["target_frac"],
-                "case": blob["casing"]["off_target"][casing_key],
+                "casing": blob["casing"]["off_target"][casing_key],
             })
 if pending:
     print("posthoc still pending, skipped:", ", ".join(pending))
@@ -202,7 +202,7 @@ traj = traj.sort_values(["task", "lr", "frac"])
 traj["rank"] = traj.groupby(["task", "lr"], observed=True)["frac"].rank(method="first")
 
 p = (
-    ggplot(traj, aes("lang", "case", color="lr"))
+    ggplot(traj, aes("lang", "casing", color="lr"))
     + facet_wrap("~task", ncol=3)
     + geom_path(aes(group="lr"), size=0.3, alpha=0.55)
     + geom_point(aes(size="rank"), alpha=0.85, stroke=0)

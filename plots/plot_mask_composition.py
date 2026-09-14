@@ -70,6 +70,14 @@ theme_set(
 
 #: the sparsity sweep's grid; band k is what `frac_<k>` adds over `frac_<k-1>`
 FRACS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0)
+#: ``--fracs fine`` prepends two decades below the sweep's grid. The sweep stops at 0.1% because
+#: that is the sparsest condition it EVALUATES; the ranking exists all the way down, and on a mask
+#: whose behaviour saturates early the interesting composition is in the part the sweep's first
+#: band averages over. 0.01% is 60 units at 1B and 196 at 8B -- small enough that a single tensor
+#: family can own a band, which is the point, and small enough that the band is noisy, which the
+#: reader should know. Bands are drawn at equal width regardless, so the extra ones cost width but
+#: not legibility.
+FRACS_FINE = (0.00002, 0.00005, 0.0001, 0.0002, 0.0005) + FRACS
 
 #: `model.layers.7.mlp.gate_proj.weight` -> layer 7, component `gate_proj`
 NAME_RE = re.compile(r"layers\.(\d+)\..*?\.([a-z_]+_proj)\.weight$")
@@ -160,6 +168,8 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dir", default="plots/data/fr2de8b_r32_posthoc")
     p.add_argument("--by", default="component", choices=("component", "layer"))
+    p.add_argument("--fracs", default="sweep", choices=("sweep", "fine"),
+                   help="band edges: the sparsity sweep's grid, or that plus 0.01/0.02/0.05%%")
     p.add_argument("--out", default=None, help="default: plots/mask_<by>s.pdf")
     p.add_argument("--source-dir", default="plots/data/fr2de8b_lr_rank",
                    help="the attributed finetunes, for each mask's LR (a post-hoc run's own "
@@ -170,6 +180,9 @@ def main():
                    help="depth sections for --by layer: one hue each, shaded by layer within")
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args()
+    global FRACS
+    if args.fracs == "fine":
+        FRACS = FRACS_FINE
 
     src = {}
     for d in Path(args.source_dir).iterdir():
@@ -276,6 +289,8 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.save(out, dpi=args.dpi, verbose=False)
     print(f"wrote {out}  ({df['run'].nunique()} masks, {len(labels)} bands incl. the population)")
+    sizes = [edges[i + 1] - edges[i] for i in range(len(FRACS))]
+    print("  units per band: " + ", ".join(f"{lab}={n:,}" for lab, n in zip(labels, sizes)))
 
 
 if __name__ == "__main__":

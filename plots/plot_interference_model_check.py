@@ -125,9 +125,12 @@ def main():
     # follow the axes rather than the frame.
     ax.annotate("interference", (0.02, hi * 0.98), fontsize=FS_NOTE, color="#555555",
                 ha="left", va="top")
-    ax.annotate("unlearned", (0.62, 0.03), fontsize=FS_NOTE, color="#555555", va="bottom")
+    # y positions scale with the clipped range: `lit` tops out near 0.4, `hard30k` near 0.17,
+    # and fixed data-coordinate labels tuned on one land off the frame on the other.
+    sy = hi / 0.4
+    ax.annotate("unlearned", (0.62, 0.03 * sy), fontsize=FS_NOTE, color="#555555", va="bottom")
     # below the diagonal and inside the frame: at 1.85in there is no margin to run off into
-    ax.annotate("shrinkage", (0.50, 0.29), fontsize=FS_NOTE, color="#555555", rotation=30)
+    ax.annotate("shrinkage", (0.50, 0.29 * sy), fontsize=FS_NOTE, color="#555555", rotation=30)
     # Ticks BELOW the bar and the label as a title ABOVE it. With both on top (the default for
     # location="top") the label lands past the canvas edge and is silently clipped.
     cb = fig.colorbar(sc, cax=fig.add_axes(CBRECT), orientation="horizontal",

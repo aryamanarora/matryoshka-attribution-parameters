@@ -69,7 +69,7 @@ TASKS = [
     ("pirate", "Pirate", ("pirate", "off_target", "pirate_frac_coherent")),
     ("fr2de", "Fr→De", ("language", "off_target", "target_frac")),
     ("caps", "ALL-CAPS", ("casing", "off_target", "upper_frac")),
-    ("case", "Lowercase", ("casing", "off_target", "lower_frac")),
+    ("lower", "Lowercase", ("casing", "off_target", "lower_frac")),
 ]
 
 MODEL_LABEL = {

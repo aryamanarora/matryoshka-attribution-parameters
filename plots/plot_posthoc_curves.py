@@ -476,7 +476,7 @@ def main():
     p.add_argument("--metrics", default="language", choices=sorted(PRESETS),
                    help="which organism's metrics to read: 'language' is the target-language "
                         "fraction (configs/french*, the default), 'casing' the lowercase fraction "
-                        "(configs/case). They differ in the divergence rule as well as the paths "
+                        "(configs/lower). They differ in the divergence rule as well as the paths "
                         "-- see PRESETS")
     p.add_argument("--out", default="plots/posthoc_curves.pdf")
     p.add_argument("--dpi", type=int, default=300)

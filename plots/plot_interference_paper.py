@@ -113,10 +113,11 @@ def main():
     edge_label(ax, base, f"random {base:.1%}", "#999999", left=False, below=True)
     ax.set_xlim(0, 1); ax.set_ylim(-0.03, 1.06)
     dress(ax, "recall", "precision")
-    # mid-left: ERA descends above it and the three floored heuristics run below it, so this is
-    # the one block of the panel with no curve in it.
-    ax.legend(fontsize=THIRD["legend"], ncol=2, frameon=False, loc="center left",
-              bbox_to_anchor=(-0.02, 0.42), handlelength=1.3, columnspacing=0.6,
+    # lower-left, just above the `freq` floor: on `lit` every ranked curve starts past recall
+    # 0.4, and on `hard30k` |U| and TWERA sweep through the mid-left block a centred legend
+    # used to sit in, so the corner is the one block empty on both configs.
+    ax.legend(fontsize=THIRD["legend"], ncol=2, frameon=False, loc="lower left",
+              bbox_to_anchor=(-0.02, 0.06), handlelength=1.3, columnspacing=0.6,
               handletextpad=0.4, labelspacing=0.25, borderpad=0.2)
     fig.savefig(out / "interference_pr.pdf", dpi=300)
 

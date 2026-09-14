@@ -65,7 +65,13 @@ COLOR = {
     "random": _up.METHOD["Random"],
     "ixg:base": _up.METHOD["I×G"],
     "ixg:finetuned": _up.METHOD["I×G"],
-    "ixg:mc": _up.METHOD["Stepless IG"],
+    # UPSTREAM RENAMED THIS KEY (learning-to-attribute, seen 2026-09-14): "Stepless IG" is now
+    # "Expected Gradients". The hue is unchanged; only the registry name moved. This import is a
+    # hard dependency on a sibling checkout's dict, so a rename there breaks EVERY figure in this
+    # repo at import time -- which is the loud failure and the right one, but it means a pull of
+    # the sibling can leave this file stale. If a KeyError appears here again, diff that file's
+    # METHOD keys rather than inventing a hex.
+    "ixg:mc": _up.METHOD["Expected Gradients"],
 }
 
 #: the two weight-sets the refusal figures compare (baseline anchors, sparsity sweep): upstream's
