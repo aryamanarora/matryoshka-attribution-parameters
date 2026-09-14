@@ -626,6 +626,13 @@ class ExperimentConfig:
                     raise ValueError(
                         "mask.scores: ixg under rl: scales the whole delta by alpha; there is no "
                         "k, so mask.k_fixed cannot mean anything")
+                if self.rl.kl_coef:
+                    # the KL term regularises a FIT toward the k=0 policy; nothing is fitted
+                    # here, and a penalty folded into the surrogate would make the scores the
+                    # attribution of a different objective than the reward the twin maximised
+                    raise ValueError(
+                        "mask.scores: ixg under rl: attributes the reward alone; rl.kl_coef "
+                        "has nothing to regularise and would be silently ignored -- set it to 0")
         if self.mask is not None:
             from learning_to_attribute import normalize_mode
             # fold iso/cause onto the canonical sufficient/necessary once, here, rather than

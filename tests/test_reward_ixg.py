@@ -161,3 +161,5 @@ def test_ixg_batches_and_k_fixed_are_rejected_under_rl():
         loader.config_from_dict({**raw, "mask": {**raw["mask"], "ixg_batches": 100}})
     with pytest.raises(ValueError, match="k_fixed"):
         loader.config_from_dict({**raw, "mask": {**raw["mask"], "k_fixed": 0.01}})
+    with pytest.raises(ValueError, match="kl_coef"):
+        loader.config_from_dict({**raw, "rl": {**raw["rl"], "kl_coef": 0.01}})
