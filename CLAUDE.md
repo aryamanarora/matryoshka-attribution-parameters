@@ -130,6 +130,16 @@ The package mirrors the procedure, and reading it in this order is the fastest w
    `train/rl.py`. The reward prompts must be disjoint from the reported ones or the headline is
    training-set performance; that is a hard error at startup, and `strongreject` derives the split
    itself (their 313-prompt full set minus the 60 reported) where `language` needs two files.
+   **Its closed-form baseline is `mask.scores: ixg` BESIDE the `rl:` block** (`train/rl.py`'s
+   `reward_ixg_scores`): the GRPO score gradient is reward-IxG at the current mask point times
+   the gate slope, so stepless IG of the reward along the straight base→finetuned path
+   (`ixg_at: mc`; `base`/`finetuned` are the endpoints) is to a GRPO fit what `ixg_at: mc` is to
+   an SFT-fitted posthoc mask. Same reward, prompt split, samples and advantages; `rl.steps` is
+   the draw count (compute-matched to the twin by construction, `ixg_batches` is rejected);
+   nothing reads `data.train`. It writes `ixg_log.json`, not `rl_log.json` -- per-draw alpha and
+   mean reward, i.e. the reward PROFILE along the dense path, which is a reading in itself: under
+   the refusal experiment's naming `base` is the INSTRUCT model (delta = base LM − instruct).
+   `configs/refusal/ixg/` holds the twins of the uniform-k native cells at 1B and 8B.
 4. **Evaluate a metric on named splits** — `in_dist` (same distribution as training) and
    `off_target` (the generalisation probe). `eval/`.
 5. **Across mask sparsities** (`eval/runner.py`).

@@ -50,7 +50,7 @@ AT = ("base", "finetuned", "mc", "ig")
 
 @torch.enable_grad()
 def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
-               steps=1, out_dtype=None, svd=None) -> tuple:
+               steps=1, out_dtype=None, svd=None, count_fn=None) -> tuple:
     """``(scores, stats)`` -- per-unit first-order attribution of the delta.
 
     ``out_dtype`` is passed straight to :func:`apply_in_place`, so the weights the gradient is
@@ -62,6 +62,17 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
     batches and dividing by the token count gives the mean-per-token gradient (the same
     normalisation the training loop uses -- normalising per batch instead would weight a short
     batch as heavily as a long one).
+
+    Two generalisations, both for the REWARD objective (``train/rl.py:reward_ixg_scores``), where
+    a "batch" is a set of prompts and the loss is a REINFORCE surrogate over samples generated at
+    the current weights:
+
+    * ``loss_fn`` may run its own backward and return the **detached** total. The surrogate is a
+      sum over dozens of generated sequences, and one backward per sequence keeps the graph to one
+      sequence at a time; ``ixg_scores`` only calls ``backward`` on a loss that still carries one.
+    * ``count_fn(batch)`` returns how many normalisation units the batch contributes -- by default
+      the number of supervised tokens in ``batch["labels"]``. The surrogate is already normalised
+      per draw, so it counts 1 and the scores come out as the mean over draws.
 
     ``svd`` supplies the factors for a ``svd*`` layout's factored tensors. The formula is the same
     first-order term in the new basis -- unit ``i``'s slice of the delta is ``S[i] u_i v_i^T``, so
@@ -124,6 +135,17 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
         p.requires_grad_(n in names)
         p.grad = None
 
+    if count_fn is None:
+        # labels are shifted by one inside the loss, so the supervised count must be too
+        def count_fn(b):
+            return int((b["labels"][:, 1:] != -100).sum())
+
+    def backward(ce):
+        # a loss_fn that accumulated its own gradients hands back a detached total (see docstring)
+        if ce.requires_grad:
+            ce.backward()
+        return float(ce.detach())
+
     n_tokens = n_batches = 0
     total_loss = 0.0
     alphas = []
@@ -136,16 +158,14 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
             # is exactly what an `ig` cell against an `mc` cell measures. Tokens are counted
             # per PASS, so the final /n_tokens is the mean over (example, alpha) draws -- the
             # same Riemann average the sum of backwards accumulates.
-            toks = int((batch["labels"][:, 1:] != -100).sum())
+            toks = count_fn(batch)
             for k in range(1, steps + 1):
                 alpha = k / steps
                 alphas.append(alpha)
                 apply_in_place(model, snap, deltas, keep, layout, invert=False,
                                delta_scale=alpha, out_dtype=out_dtype, svd=svd)
-                ce = loss_fn(model, batch)
-                ce.backward()
+                total_loss += backward(loss_fn(model, batch))
                 n_tokens += toks
-                total_loss += float(ce.detach())
             n_batches += 1
             continue
         if at == "mc":
@@ -158,14 +178,12 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
             alphas.append(alpha)
             apply_in_place(model, snap, deltas, keep, layout, invert=False, delta_scale=alpha,
                            out_dtype=out_dtype, svd=svd)
-        ce = loss_fn(model, batch)
-        ce.backward()
-        # labels are shifted by one inside the loss, so the supervised count must be too
-        n_tokens += int((batch["labels"][:, 1:] != -100).sum())
-        total_loss += float(ce.detach())
+        total_loss += backward(loss_fn(model, batch))
+        n_tokens += count_fn(batch)
         n_batches += 1
     if not n_tokens:
-        raise ValueError("no supervised tokens in the IxG batches, so the gradient is empty")
+        raise ValueError("no supervised tokens (or draws) in the IxG batches, so the gradient "
+                         "is empty")
 
     scores = torch.zeros(layout.total)
     n_zero_grad = 0
@@ -205,6 +223,9 @@ def ixg_scores(model, *, base, deltas, layout, batches, loss_fn, at="finetuned",
         "ixg_at": at,
         **({"mc_draws": len(alphas), "mc_alpha_mean": (sum(alphas) / len(alphas)) if alphas else None}
            if at == "mc" else {}),
+        # the alpha of every draw, in order -- what lets a caller align a per-draw quantity (the
+        # reward path's mean reward per draw) with where on the path it was measured
+        **({"alphas": alphas} if at in ("mc", "ig") else {}),
         "ixg_batches": n_batches,
         **({"ixg_steps": steps} if at == "ig" else {}),
         "ixg_tokens": n_tokens,

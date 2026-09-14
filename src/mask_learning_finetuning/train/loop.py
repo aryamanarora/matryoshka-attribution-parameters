@@ -223,7 +223,12 @@ def train(cfg):
     # 0 and gets skipped, so the file would hold the sweep of an arbitrary ranking under the
     # baseline's name -- a wrong number with nothing to notice about it.
     ixg_stats = None
-    if P.masked and cfg.mask.scores == "ixg":
+    # ... unless the objective is a REWARD (`rl:` beside `scores: ixg`): the gradient then needs
+    # generation, the judge and the engine, so it runs where GRPO does (below), and this SFT-loss
+    # block is skipped -- a run that took both would score the delta against `data.train` here and
+    # then overwrite it, under the reward baseline's name
+    reward_ixg = P.masked and cfg.mask.scores == "ixg" and cfg.rl is not None
+    if P.masked and cfg.mask.scores == "ixg" and not reward_ixg:
         from .ixg import ixg_scores
         # the UNSHUFFLED train loader the sft_loss eval uses, so "the gradient was averaged over
         # the first N batches" names the same examples in both places
@@ -291,7 +296,24 @@ def train(cfg):
     # eval sweep below must therefore log at a wandb step ABOVE that range, or wandb drops it as
     # non-monotonic and the result panels silently never appear. 0 for every other run.
     wandb_step_offset = 0
-    if grpo:
+    if grpo and reward_ixg:
+        # the closed-form baseline of the mask fit below: same reward, samples and advantages, the
+        # first-order attribution along the straight path instead of an optimizer. Written as
+        # `ixg_log.json`, NOT `rl_log.json`: nothing was fitted, and a reward curve read off it
+        # would be the reward profile along the path, not a learning curve.
+        from .rl import reward_ixg_scores
+        scores, rl_log, ixg_stats = reward_ixg_scores(model, P, cfg, tokenizer=tokenizer,
+                                                      engine=engine, wandb_run=run)
+        with torch.no_grad():
+            P.scores.copy_(scores.to(P.scores.device))
+        P.provenance.update(ixg_stats)
+        (out_dir / "ixg_log.json").write_text(json.dumps(rl_log, indent=2))
+        wandb_step_offset = len(rl_log)
+        if run:
+            run.log({f"ixg/{k}": v for k, v in ixg_stats.items() if isinstance(v, (int, float))},
+                    step=wandb_step_offset)
+        _save(P, cfg, out_dir, tokenizer, [], step=0, final=True)   # see the GRPO branch's note
+    elif grpo:
         from .rl import fit_scores_grpo, fit_weights_grpo
         if P.masked:
             rl_log = fit_scores_grpo(model, P, cfg, tokenizer=tokenizer, engine=engine,

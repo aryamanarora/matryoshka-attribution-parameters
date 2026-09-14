@@ -65,6 +65,12 @@ the headline meaningless, so :func:`load_split_prompts` hard-errors unless the r
 the reward eval's reported set are disjoint. ``language`` needs the split stated as a second file
 (``rl.prompts``); ``strongreject`` can derive it, since their small benchmark is a subset of the
 full one and the difference is 253 unreported forbidden prompts.
+
+**The closed-form baseline for all of this is :func:`reward_ixg_scores`** (``mask.scores: ixg``
+under an ``rl:`` block): the same reward, prompts, samples and advantages, but the first-order
+attribution ``delta . grad J`` along the straight base-to-finetuned path instead of a fitted mask
+-- stepless IG of the reward, standing to the GRPO fit exactly as ``ixg_at: mc`` stands to the
+SFT-fitted post-hoc mask.
 """
 
 import logging
@@ -539,3 +545,156 @@ def fit_weights_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
     if release is not None:
         release(sub)
     return log
+
+
+def reward_ixg_scores(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
+    """Closed-form IxG of the REWARD: the GRPO objective's first-order attribution, no optimizer.
+
+    ``mask.scores: ixg`` together with an ``rl:`` block. The identity that makes this the right
+    baseline for :func:`fit_scores_grpo` is in its own chain rule. The score gradient there is
+
+        dJ/ds_i = (dm_i/ds_i) . sum_{elements of unit i} delta * dJ/dtheta |_{theta_base + m.delta}
+
+    and the second factor is exactly what ``train/ixg.py`` computes -- ``unit_sums(delta * g)`` --
+    with ``g`` the REINFORCE gradient ``E[A(y) grad log p(y|x)]`` in place of the SFT one, taken at
+    the current mask point. So a GRPO fit is reward-IxG integrated along whatever path the
+    optimizer wanders, reweighted by the sigmoid_topk gate slope and by Adam. This function walks
+    the straight line ``theta(alpha) = theta_base + alpha.delta`` instead and drops the optimizer:
+
+        score_i = -int_0^1 sum_{unit i} delta * grad_theta L(theta(alpha)) dalpha,
+        L(theta)  = -E_{y ~ p_theta}[ A(y) mean_t log p_theta(y_t | x, y_<t) ]
+
+    -- the same relationship ``mask.ixg_at: mc`` bears to the SFT-fitted post-hoc mask, and the
+    same reason it exists (train/ixg.py: upstream's zero-init SGD + ``logit`` schedule has the path
+    integral as its expected score; ``mc`` is that integral estimated directly). ``ixg_at`` picks
+    the point exactly as for the SFT objective: ``mc`` draws alpha per draw, ``base`` and
+    ``finetuned`` sit at the two endpoints. UNDER THE REFUSAL CONVENTION (``model:`` the instruct
+    policy, ``mask.finetuned`` the base LM) ``base`` is therefore the INSTRUCT model and
+    ``finetuned`` the base LM -- the names follow the delta's direction, not the models'.
+
+    Sign: ``ixg_scores`` negates ``delta . grad L``, and ``L`` here is minus the advantage-weighted
+    log-prob, so a unit scores HIGH when adding its slice of the delta raises the log-probability
+    of above-average-reward samples -- "adding this unit increases the reward", which is what the
+    GRPO fit's top-k also means. Summed over units the scores are the first-order estimate of
+    ``J(theta_ft) - J(theta_base)`` (up to the advantage normalisation), i.e. they distribute the
+    headline gap over units; no endpoint IxG has that property.
+
+    What is shared with the GRPO fit, deliberately, so a twin config differs in ``mask.scores``
+    and ``mask.ixg_at`` only: the reward (``rl.reward`` -> that eval's ``reward_fn``), the prompt
+    split and its disjointness check, ``rl.prompts_per_step`` x ``rl.group_size`` samples per
+    draw at ``rl.temperature`` and ``rl.max_new_tokens``, the same :func:`advantages`, the same
+    ``positive_only`` gate, the same length normalisation, and the same sampler (the vLLM engine
+    re-synced -- with its prefix cache reset -- per draw, or HF ``generate``). **The number of
+    draws is ``rl.steps``**: one draw = one GRPO step without the update, so the cell sees exactly
+    the generations its twin saw. ``mask.k_schedule`` is unused -- there is no k, the whole delta
+    is scaled by alpha.
+
+    What it does NOT share: the gradient reaches the live parameters directly (``ixg_scores``
+    turns ``requires_grad`` on for the scored tensors and reads ``p.grad``), so there is no
+    ``build_mask``, no bisection, no ``functional_call`` and no composed theta_eff -- one model-sized
+    tensor of gradients stands where the GRPO path holds theta_eff. The log-prob forward runs in
+    eval() mode, so ``train.grad_checkpointing`` is inert here (the checkpoint recompute context
+    re-installs COMPOSED parameters, which this path has none of); at 8B under a native template
+    the sequences are a few hundred tokens and the plain graph is small.
+
+    Returns ``(scores, log, stats)``: the score vector in the layout's order, one record per draw
+    (its alpha where the point varies, mean/max reward, informative groups), and ``ixg_scores``'
+    stats plus the reward's.
+    """
+    from .ixg import ixg_scores
+    rl, mk = cfg.rl, cfg.mask
+    dev = cfg.device
+    ev, sub = reward_source(cfg)
+    prompts = load_split_prompts(rl, ev, sub)
+    score_batch = ev.reward_fn(sub)          # judge availability settled before any generation
+    rng = random.Random(cfg.train.seed)
+    from ..eval.base import generate_responses
+
+    logger.info("reward IxG at %s: reward=eval.%s over %s units, %d draws x %d prompts x %d "
+                "samples, temperature %.2f -- no fitting, the delta is scaled whole",
+                mk.ixg_at, ev.name, f"{P.layout.total:,}", rl.steps, rl.prompts_per_step,
+                rl.group_size, rl.temperature)
+
+    # The same independent base snapshot fit_scores_grpo takes, for the same reason: ixg_scores'
+    # in-place composition writes theta(alpha) through the live parameters, and `P.base` is views
+    # onto them. ixg_scores clones its own for `mc`/`finetuned` but the restore at the end must
+    # not be fooled either way, so hand it a real copy.
+    base = {n: P.base[n].detach().clone() for n in P.layout.names}
+    log = []
+
+    def draws():
+        for _ in range(rl.steps):
+            yield rng.sample(prompts, min(rl.prompts_per_step, len(prompts)))
+
+    def surrogate(m, batch):
+        """One draw: sample at the live weights (already theta(alpha)), judge, one backward per
+        informative sample. Returns the DETACHED total; the gradients are already in p.grad."""
+        expanded = [p for p in batch for _ in range(rl.group_size)]
+        with torch.no_grad():
+            if engine is not None:
+                engine.sync_from(m)
+                texts = engine.generate(expanded, max_new_tokens=rl.max_new_tokens,
+                                        temperature=rl.temperature)
+            else:
+                texts = generate_responses(m, tokenizer, expanded,
+                                           max_new_tokens=rl.max_new_tokens,
+                                           batch_size=rl.batch_size, device=dev,
+                                           temperature=rl.temperature)
+        rewards = torch.tensor(score_batch(expanded, texts), dtype=torch.float32)
+        adv = torch.cat([advantages(rewards[i:i + rl.group_size])
+                         for i in range(0, len(rewards), rl.group_size)])
+        informative = int(sum(1 for i in range(0, len(adv), rl.group_size)
+                              if adv[i:i + rl.group_size].abs().sum() > 0))
+        total, n_used = 0.0, 0
+        for p, text, a in zip(expanded, texts, adv.tolist()):
+            if a == 0.0 or (rl.positive_only and a < 0.0):
+                continue
+            comp = tokenizer(text, return_tensors="pt",
+                             add_special_tokens=False)["input_ids"].to(dev)
+            if comp.numel() == 0:
+                continue
+            ids = torch.cat([_chat_ids(tokenizer, p, dev), comp], dim=-1)
+            out = m(input_ids=ids)
+            lp = out.logits[0, :-1].float().log_softmax(-1)
+            n_p = ids.shape[-1] - comp.shape[-1]
+            tok_lp = lp[n_p - 1:].gather(-1, ids[0, n_p:].unsqueeze(-1)).squeeze(-1)
+            # fit_scores_grpo's exact normalisation: length-normalised, over the informative samples
+            loss = -a * tok_lp.mean() / max(1, informative * rl.group_size)
+            loss.backward()
+            total += float(loss.detach())
+            n_used += 1
+        rec = dict(step=len(log), reward=float(rewards.mean()), reward_max=float(rewards.max()),
+                   informative_groups=informative, groups=len(batch), samples_used=n_used)
+        log.append(rec)
+        if wandb_run is not None:
+            wandb_run.log({f"ixg/{k}": v for k, v in rec.items() if k != "step"},
+                          step=rec["step"])
+        logger.info("reward ixg draw %3d/%d  reward=%.3f  informative=%d/%d  used=%d",
+                    rec["step"], rl.steps, rec["reward"], informative, len(batch), n_used)
+        return torch.tensor(total)          # detached: ixg_scores will not call backward on it
+
+    was_training = model.training
+    model.eval()                             # plain autograd; see the docstring on checkpointing
+    try:
+        scores, stats = ixg_scores(
+            model, base=base, deltas=P.deltas, layout=P.layout, batches=draws(),
+            loss_fn=surrogate, at=mk.ixg_at, steps=mk.ixg_steps, out_dtype=P.compose_dtype,
+            svd=P.svd, count_fn=lambda b: 1)
+    finally:
+        model.train(was_training)
+    # align each draw with the alpha it was measured at, so `ixg_log.json` is also the reward
+    # profile along the path -- flat at the k=0 anchor would mean the dense interpolation never
+    # passes through the behaviour, and the sparse masks' harmfulness is not on this path at all
+    alphas = stats.pop("alphas", None)
+    if alphas is not None and len(alphas) == len(log):
+        for rec, a in zip(log, alphas):
+            rec["alpha"] = a
+    rewards = [r["reward"] for r in log]
+    stats.update(reward=ev.name, reward_draws=len(log),
+                 reward_mean=sum(rewards) / len(rewards) if rewards else None,
+                 informative_groups_mean=(sum(r["informative_groups"] for r in log) / len(log))
+                 if log else None)
+    release = getattr(ev, "release_reward", None)
+    if release is not None:
+        release(sub)
+    return scores, log, stats

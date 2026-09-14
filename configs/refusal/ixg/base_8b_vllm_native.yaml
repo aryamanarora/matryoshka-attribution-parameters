@@ -1,0 +1,17 @@
+# IxG OF THE REWARD AT THE alpha=0 ENDPOINT, 8B -- one key (`mask.ixg_at`) from mc_8b_vllm_native.
+# See base_vllm_native.yaml for what the endpoint IS here (the untouched INSTRUCT model, the k=0
+# anchor) and why `informative_groups` is the column to read first.
+#
+#   nlprun -q sphinx -g 4 -c 16 -r 200G -t 0-12 -x sphinx1,sphinx2 -n refusal-ixg-base-8b \
+#       "bash scripts/cluster/sc_run.sh train configs/refusal/ixg/base_8b_vllm_native.yaml"
+#   then eval_native_8b.yaml --run-dir runs/refusal_ixg_base_8b_vllm_native --out .../eval_native
+#
+# At `base` ixg_scores takes no snapshot and never recomposes (the live model already IS theta(0)),
+# so this fits in less than the mc cell; four cards are kept so the pair differs in alpha alone.
+extends: mc_8b_vllm_native.yaml
+name: refusal_ixg_base_8b_vllm_native
+
+mask:
+  ixg_at: base
+
+output: runs/refusal_ixg_base_8b_vllm_native

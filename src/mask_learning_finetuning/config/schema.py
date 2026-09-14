@@ -157,7 +157,10 @@ class MaskCfg:
     #: Where the per-unit scores come from. ``learned`` trains them through the differentiable
     #: top-k (the method); ``ixg`` computes them in closed form from one first-order Taylor term
     #: and trains nothing (the baseline -- see ``train/ixg.py``). ``ixg`` needs a delta to
-    #: attribute, so it requires ``finetuned``.
+    #: attribute, so it requires ``finetuned``. With an ``rl:`` block beside it the Taylor term
+    #: is of the REWARD rather than the SFT loss (``train/rl.py:reward_ixg_scores``) -- the
+    #: closed-form twin of the GRPO fit, drawing ``rl.steps`` samples of the same shape and never
+    #: reading ``data.train``.
     #: learned | ixg | random. ``random`` is the CONTROL: scores are a seeded normal draw, nothing
     #: is fitted, and the resulting curve is what a top-k of this delta buys with no attribution.
     #: Every other ranking should be read as a distance above it -- at frac 0.5 a mask is keeping
@@ -609,6 +612,20 @@ class ExperimentConfig:
                                  "identical and the group-normalised advantage is always zero")
             if self.rl.group_size < 2:
                 raise ValueError("rl.group_size must be >= 2: the GRPO baseline is the group mean")
+            if self.mask is not None and self.mask.scores == "ixg":
+                # reward IxG: the draw count is rl.steps, so a twin of a GRPO cell sees exactly the
+                # generations the fit saw with no key added. ixg_batches names the SFT objective's
+                # batch count and has no meaning here; a value that differs from its default was
+                # set for a reason this path would silently ignore.
+                if self.mask.ixg_batches != MaskCfg.ixg_batches:
+                    raise ValueError(
+                        "mask.scores: ixg under rl: draws rl.steps samples of the GRPO shape; "
+                        "mask.ixg_batches is the SFT objective's knob and is ignored here -- leave "
+                        "it unset and set rl.steps")
+                if self.mask.k_fixed is not None:
+                    raise ValueError(
+                        "mask.scores: ixg under rl: scales the whole delta by alpha; there is no "
+                        "k, so mask.k_fixed cannot mean anything")
         if self.mask is not None:
             from learning_to_attribute import normalize_mode
             # fold iso/cause onto the canonical sufficient/necessary once, here, rather than
