@@ -57,7 +57,9 @@ N_LEAD, N_SAFETY = 1, 2
 #: drift apart.
 #: every nonresid unit is one residual-dimension vector, so a mask's parameter fraction EQUALS its
 #: unit fraction exactly -- confirmed per run in the doc above, not assumed here
-MASK_GROUP = "MAttr"
+#: the groups whose L0 IS their sparsity: the learned mask and the two closed-form rankings of the
+#: same delta, which select the same kind and number of units and differ only in the ranking
+MASK_GROUPS = {"MAttr", "EG", "IxG"}
 #: cell label -> how it should read in the table. The figure's tick labels carry mathtext
 #: superscripts for the FRAME and a "1%/5%" that only makes sense beside a two-scale legend;
 #: a table has room to say both in words.
@@ -69,7 +71,9 @@ MASK_GROUP = "MAttr"
 # FROM, and both facts the parenthetical carried are elsewhere -- the sparsity IS the Edited %
 # column, and the fitting frame belongs in the caption. The ``{k}`` placeholder is still honoured
 # by the builder if a label wants it back.
-LABEL = {r"MAttr (native)": r"\ourmethod{}",
+LABEL = {"EG": r"Expected Gradients",
+         "IxG": r"I$\times$G",
+         r"MAttr (native)": r"\ourmethod{}",
          r"MAttr log": r"\ourmethod{}",
          r"MAttr unif": r"\ourmethod{}",
          r"Instruct$^{\mathrm{C}}$": r"Instruct",
@@ -187,11 +191,14 @@ SHADE = {"Instruct", "Base"}
 #: because the two runs are constrained by different things. At 1B, 2% is the last point before a
 #: cliff (5% costs 17.5 GSM8K points for 5 of StrongREJECT); at 8B nothing costs capability below
 #: 20%, so the binding constraint is instead that both judges saturate by 5%.
-TABLE_8B = ["instruct", "ablit", "oblit", "mattr_nat_unif8", "base_urial"]
+TABLE_8B = ["instruct", "ablit", "oblit", "eg_nat8", "ixg_nat8", "mattr_nat_unif8", "base_urial"]
 #: ...and which 1B rows. Named explicitly for the same reason: `plot_baseline_strongreject.CELLS`
 #: is a POOL that both artifacts draw from, so a cell added for the figure must not silently
 #: appear here. The table keeps the URIAL-fitted 1B mask; the figure does not.
-TABLE_1B = ["instruct", "grpo", "grpo_kl", "ablit", "oblit", "mattr_nat_unif2", "base_urial"]
+#: The two closed-form rankings sit directly above \ourmethod{} at the SAME budget, so the three
+#: rows read as one comparison of rankings over one delta (the L0 column says so: identical).
+TABLE_1B = ["instruct", "grpo", "grpo_kl", "ablit", "oblit", "eg_nat2", "ixg_nat2", "mattr_nat_unif2",
+            "base_urial"]
 SHADE_CMD = r"\rowcolor{black!7}"
 
 
@@ -250,7 +257,7 @@ def main(argv=None):
     # are separate models and 2.0 of a 1.2B model is not comparable to 5.0 of an 8B one. The
     # anchors have no L0 and cannot win it.
     def l0_of(group, key, cond, scale):
-        return (float(cond[len("frac_"):]) * 100 if group == MASK_GROUP
+        return (float(cond[len("frac_"):]) * 100 if group in MASK_GROUPS
                 else L0.get((scale, key)))
 
     best_l0 = {}
@@ -274,7 +281,10 @@ def main(argv=None):
                         vals.append("--")
                     else:
                         t = f"{l0:.1f}"
-                        vals.append(r"\textbf{%s}" % t if l0 == best_l0[scale] else t)
+                        # the closed-form rankings tie \ourmethod{} on L0 by construction (same
+                        # units, same budget); bold marks the method row, not every tied cell
+                        vals.append(r"\textbf{%s}" % t
+                                    if l0 == best_l0[scale] and group == F.HIGHLIGHT else t)
                     continue
                 txt = cell(*met[mk])
                 t = tests.get((scale, key, mk))

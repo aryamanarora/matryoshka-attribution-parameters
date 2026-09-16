@@ -64,7 +64,7 @@ from plotnine import (
 
 matplotlib.rcParams["pdf.fonttype"] = 42  # TrueType outlines, not Type-3
 
-from palette import MODEL   # the Instruct/Base pair shared with plot_baseline_strongreject.py
+from palette import COLOR, MODEL   # Instruct/Base pair + the method colours (MAttr / I×G / EG)
 
 FAMILY = ("Inter" if "Inter" in {f.name for f in font_manager.fontManager.ttflist}
           else "DejaVu Sans")
@@ -100,6 +100,7 @@ IFEVAL_SWEEP = "eval_ifeval_sweep/evals.json"
 
 def load_sweep(run_dir: Path):
     for rel, frame in (("posthoc_eval/evals.json", "native template"),
+                       ("eval_native/evals.json", "native template"),
                        ("evals.json", "training frame")):
         p = run_dir / rel
         if p.exists():
@@ -149,9 +150,18 @@ def frac_of(cond: str):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default=DEFAULT_RUN)
+    ap.add_argument("--extra", nargs="*", default=[], metavar="RUN=LABEL=KEY",
+                    help="more series on the same panels, e.g. "
+                         "refusal_ixg_mc_vllm_native='Expected Gradients'=ixg:mc -- KEY picks the "
+                         "colour from palette.COLOR (adam | ixg:mc | ixg:base | random). The main "
+                         "--run is drawn as MAttr; the 1%% ring and the anchors are its.")
+    ap.add_argument("--runs-root", default=None, help="override the runs directory")
     ap.add_argument("--out", default=None)
     ap.add_argument("--png", action="store_true", help="also write a 300 dpi PNG beside the PDF")
     args = ap.parse_args(argv)
+    global RUNS
+    if args.runs_root:
+        RUNS = Path(args.runs_root)
 
     fin, src, frame = load_sweep(RUNS / args.run)
     unmatched = merge_ifeval(fin, RUNS / args.run)
@@ -159,28 +169,44 @@ def main(argv=None):
                 if any(isinstance(r.get(c[0], {}).get(c[1]), dict) for r in fin.values())]
     if not have_cap:
         raise SystemExit(f"{src}: no MMLU, GSM8K or IFEval in any condition")
+    # Extra series must offer the SAME capability probes, or their capability panel would be a
+    # different mean: a missing probe on an extra run is a hard error, not a silent narrowing.
+    extras = []
+    for spec in args.extra:
+        run, label, key = spec.split("=")
+        efin, esrc, _ = load_sweep(RUNS / run)
+        merge_ifeval(efin, RUNS / run)
+        missing = [c[3] for c in have_cap
+                   if not any(isinstance(r.get(c[0], {}).get(c[1]), dict) for r in efin.values())]
+        if missing:
+            raise SystemExit(f"{esrc}: lacks {missing}, which --run has; refusing to average a "
+                             "different probe set on the same panel")
+        extras.append((label, key, efin, esrc))
     # "MMLU+GSM8K+IFEval mean (capability)" is 35 characters and CLIPS at this figure width --
     # a panel title has to fit inside ~1.55in of drawing area, which at 7pt is about 30
     # characters. The two panels take parallel "what it measures: which probes" prefixes instead,
     # which fits and says the same thing.
     cap_label = "+".join(c[3] for c in have_cap)
 
-    sr_se = sr_stderr(src)
-    rows, dropped = [], []
-    for cond, r in fin.items():
-        f = frac_of(cond)
-        sr = r.get("strongreject", {}).get("off_target", {}).get("score")
-        caps = [r.get(e, {}).get(sp, {}).get(m) for e, sp, m, _ in have_cap]
-        if f is None or sr is None or any(c is None for c in caps):
-            dropped.append(cond)
-            continue
-        # SE of a mean of independent accuracies: root-sum-square of their SEs over the count
-        ses = [r.get(e, {}).get(sp, {}).get("stderr") for e, sp, _, _ in have_cap]
-        cap_se = (math.sqrt(sum(x * x for x in ses)) / len(ses) if all(x is not None for x in ses)
-                  else float("nan"))
-        rows.append(dict(cond=cond, frac=f, sr=sr, cap=sum(caps) / len(caps),
-                         sr_se=sr_se.get(cond, float("nan")), cap_se=cap_se))
-    df = pd.DataFrame(rows).sort_values("frac")
+    def sweep_rows(fin, src):
+        sr_se = sr_stderr(src)
+        rows, dropped = [], []
+        for cond, r in fin.items():
+            f = frac_of(cond)
+            sr = r.get("strongreject", {}).get("off_target", {}).get("score")
+            caps = [r.get(e, {}).get(sp, {}).get(m) for e, sp, m, _ in have_cap]
+            if f is None or sr is None or any(c is None for c in caps):
+                dropped.append(cond)
+                continue
+            # SE of a mean of independent accuracies: root-sum-square of their SEs over the count
+            ses = [r.get(e, {}).get(sp, {}).get("stderr") for e, sp, _, _ in have_cap]
+            cap_se = (math.sqrt(sum(x * x for x in ses)) / len(ses)
+                      if all(x is not None for x in ses) else float("nan"))
+            rows.append(dict(cond=cond, frac=f, sr=sr, cap=sum(caps) / len(caps),
+                             sr_se=sr_se.get(cond, float("nan")), cap_se=cap_se))
+        return pd.DataFrame(rows).sort_values("frac"), dropped
+
+    df, dropped = sweep_rows(fin, src)
     end = {c: df[df.cond == c].iloc[0] for c in ("pretrained", "full_delta")}
     mid = df[~df.cond.isin(["pretrained", "full_delta", "frac_1"])].copy()   # frac_1 == full_delta
     mid["pct"] = mid["frac"] * 100
@@ -214,33 +240,54 @@ def main(argv=None):
     for d in (refs, lab):
         d["facet"] = pd.Categorical(d["facet"], [F_SR, F_CAP], ordered=True)
 
-    long = pd.concat([mid.assign(facet=F_SR, y=mid.sr, se=mid.sr_se),
-                      mid.assign(facet=F_CAP, y=mid.cap, se=mid.cap_se)])
+    def to_long(m, series):
+        out = pd.concat([m.assign(facet=F_SR, y=m.sr, se=m.sr_se),
+                         m.assign(facet=F_CAP, y=m.cap, se=m.cap_se)])
+        out["series"] = series
+        return out
+
+    MAIN = "MAttr"
+    long = to_long(mid, MAIN)
+    series_colors = {MAIN: MODEL["MAttr"]}
+    for label, key, efin, esrc in extras:
+        edf, _ = sweep_rows(efin, esrc)
+        emid = edf[~edf.cond.isin(["pretrained", "full_delta", "frac_1"])].copy()
+        emid["pct"] = emid["frac"] * 100
+        long = pd.concat([long, to_long(emid, label)])
+        series_colors[label] = COLOR[key]
     long["lo"], long["hi"] = long.y - long.se, long.y + long.se
     long["facet"] = pd.Categorical(long["facet"], [F_SR, F_CAP], ordered=True)
-    ring = long[long.cond == "frac_0.01"]
+    long["series"] = pd.Categorical(long["series"], list(series_colors), ordered=True)
+    ring = long[(long.cond == "frac_0.01") & (long.series == MAIN)]
+    # the anchors (keyed on model) and the curves (keyed on series) share ONE colour scale, so
+    # the manual values carry both vocabularies and the legend lists the series alone
+    palette = {**series_colors, **MODEL}
 
     p = (
         ggplot(long, aes("pct", "y"))
         + facet_wrap("~facet", ncol=1, scales="free_y")
         + geom_hline(refs, aes(yintercept="y", color="model"), linetype="dashed", size=0.55,
-                     inherit_aes=False)
+                     inherit_aes=False, show_legend=False)
         + geom_text(lab[~lab.below & lab.right], aes("x", "y", label="label", color="model"),
-                    ha="right", va="bottom", size=5, inherit_aes=False)
+                    ha="right", va="bottom", size=5, inherit_aes=False, show_legend=False)
         + geom_text(lab[~lab.below & ~lab.right], aes("x", "y", label="label", color="model"),
-                    ha="left", va="bottom", size=5, inherit_aes=False)
+                    ha="left", va="bottom", size=5, inherit_aes=False, show_legend=False)
         + geom_text(lab[lab.below & lab.right], aes("x", "y", label="label", color="model"),
-                    ha="right", va="top", size=5, inherit_aes=False)
+                    ha="right", va="top", size=5, inherit_aes=False, show_legend=False)
         + geom_text(lab[lab.below & ~lab.right], aes("x", "y", label="label", color="model"),
-                    ha="left", va="top", size=5, inherit_aes=False)
-        + geom_linerange(long.dropna(subset=["se"]), aes(ymin="lo", ymax="hi"), size=0.5,
-                         color="#333333")
-        + geom_line(size=0.7, color="#333333")
-        + geom_point(size=1.7, color="#333333", stroke=0)
+                    ha="left", va="top", size=5, inherit_aes=False, show_legend=False)
+        + geom_linerange(long.dropna(subset=["se"]), aes(ymin="lo", ymax="hi", color="series"),
+                         size=0.5)
+        + geom_line(aes(color="series"), size=0.7)
+        + geom_point(aes(color="series"), size=1.7, stroke=0)
         + geom_point(ring, fill="none", color="#000000", size=3.4, stroke=0.7, shape="o")
         + scale_x_log10(breaks=[0.1, 1, 10, 100], labels=["0.1", "1", "10", "100"])
-        + scale_color_manual(values=MODEL)
+        + scale_color_manual(values=palette, breaks=list(series_colors))
         + labs(x="Finetune parameters changed (%)", y="")
+        + (theme(legend_position=(0.99, 0.01), legend_direction="vertical",
+                 legend_background=element_blank(), legend_key_size=6,
+                 legend_text=element_text(size=5), legend_title=element_blank())
+           if extras else theme())
     )
 
     out = Path(args.out) if args.out else Path(__file__).parent / "refusal_sparsity_facets.pdf"

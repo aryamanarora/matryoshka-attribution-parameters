@@ -211,6 +211,15 @@ CELLS_8B = [
     # the 8B harm CEILING, in at last (2026-09-13): base weights under URIAL's no-refusal prompt.
     # Its 1B twin has anchored that column since the start; until this ran, the 8B block had no
     # upper reference and its mask rows' 94-100 could only be read against the baselines.
+    # the same two closed-form rankings at the 8B table budget (1%); see the 1B entries
+    ("EG", "EG", "frac_0.01",
+     {"native": "refusal_ixg_mc_8b_vllm_native/eval_native/evals.json",
+      "sorrybench": "refusal_ixg_mc_8b_vllm_native/eval_extra/evals.json",
+      "ifeval": "refusal_ixg_mc_8b_vllm_native/eval_extra/evals.json"}, "edit", "eg_nat8"),
+    ("IxG", "IxG", "frac_0.01",
+     {"native": "refusal_ixg_base_8b_vllm_native/eval_native/evals.json",
+      "sorrybench": "refusal_ixg_base_8b_vllm_native/eval_extra/evals.json",
+      "ifeval": "refusal_ixg_base_8b_vllm_native/eval_extra/evals.json"}, "edit", "ixg_nat8"),
     (r"Base$^{\mathrm{U}}$", "Base", "dense", _anchor("anchor8b_base_urial_help"), "ceiling",
      "base_urial"),
     ("MAttr (native)", "MAttr", "frac_0.005",
@@ -277,6 +286,20 @@ CELLS_FULL = [
       "sorrybench": "refusal_grpo_uniform_vllm_native/eval_extra/evals.json",
       "ifeval": "refusal_grpo_uniform_vllm_native/eval_extra/evals.json"}, "edit",
      "mattr_nat_unif2"),
+    # THE CLOSED-FORM RANKINGS OF THE SAME DELTA at the learned mask's table budget (2%):
+    # reward-IxG (train/rl.py's reward_ixg_scores) over the identical base->instruct delta, unit
+    # set and StrongREJECT reward, so the three mask rows differ in the RANKING alone. `mc` is
+    # stepless IG of the reward along the dense path (Expected Gradients), `base` the alpha=0
+    # endpoint (I x G). Their in-run sweeps looked competitive at small k; the native re-eval says
+    # the refusal they remove is bought with GSM8K and MMLU at every sparsity (2026-09-14).
+    ("EG", "EG", "frac_0.02",
+     {"native": "refusal_ixg_mc_vllm_native/eval_native/evals.json",
+      "sorrybench": "refusal_ixg_mc_vllm_native/eval_extra/evals.json",
+      "ifeval": "refusal_ixg_mc_vllm_native/eval_extra/evals.json"}, "edit", "eg_nat2"),
+    ("IxG", "IxG", "frac_0.02",
+     {"native": "refusal_ixg_base_vllm_native/eval_native/evals.json",
+      "sorrybench": "refusal_ixg_base_vllm_native/eval_extra/evals.json",
+      "ifeval": "refusal_ixg_base_vllm_native/eval_extra/evals.json"}, "edit", "ixg_nat2"),
     (r"Base$^{\mathrm{C}}$",      "Base",     "dense", _anchor("anchor_base_plain"), "ceiling",
      None),
     (r"Base$^{\mathrm{U}}$",      "Base",     "dense", _anchor("anchor_base_urial_help"),
@@ -311,7 +334,10 @@ GROUP = {"Instruct": ("Instruct", P.MODEL["Instruct"]),
          "MAttr": ("MAttr", P.MODEL["MAttr"]),
          "Abliteration": ("Ablit.", P.MODEL["Abliteration"]),
          "GRP-Oblit": ("GRP-Oblit", P.MODEL["GRP-Oblit"]),
-         "GRPO": ("GRPO", P.MODEL["GRPO"])}
+         "GRPO": ("GRPO", P.MODEL["GRPO"]),
+         # the closed-form rankings, in the method colours every attribution figure uses
+         "EG": ("EG", P.COLOR["ixg:mc"]),
+         "IxG": (r"I$\times$G", P.COLOR["ixg:base"])}
 #: (key, axis title). The direction arrow is part of the title because neither number is
 #: self-evidently good or bad: a HIGH StrongREJECT means refusal broke.
 #: Kept SHORT, and the direction arrows that were here are gone for the same reason: an axis title

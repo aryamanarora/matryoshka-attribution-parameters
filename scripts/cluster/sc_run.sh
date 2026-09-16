@@ -12,11 +12,11 @@
 #
 # THREE THINGS ABOUT THIS CLUSTER, each measured before this file existed:
 #
-#   DISK   /nlp/scr/aryaman (= /juice2/scr2/aryaman) had 23 GB free against a ~12 GB vllm venv plus
-#          ~10 GB of model downloads, so the uv cache and the project environment live on
-#          /juice2/u/aryaman (50 GB, writable) via UV_CACHE_DIR / UV_PROJECT_ENVIRONMENT, and only
-#          HF downloads and run outputs land on scr. Put them on the SAME volume: uv hardlinks the
-#          venv from its cache, so together they cost one copy, apart they cost two.
+#   DISK   /nlp/scr/aryaman (= /juice2/scr2/aryaman, 200 GB quota) filled up twice; since 2026-09-16
+#          the repo, sibling and HF cache live on /juice3/scr3/nlp/interp (1 TB, group volume) and
+#          the uv cache + project environment on /juice2/u/aryaman (50 GB) via UV_CACHE_DIR /
+#          UV_PROJECT_ENVIRONMENT. Keep those two on ONE volume: uv hardlinks the venv from its
+#          cache, so together they cost one copy, apart they cost two.
 #   TOKEN  no .env here; the Hub token is the one `huggingface-cli login` stored under $HF_HOME,
 #          which huggingface_hub reads on its own (verified: 200 on Llama-3.2-1B, -Instruct,
 #          google/gemma-2b and the StrongREJECT judge adapter). Exported as HF_TOKEN too so any
@@ -27,9 +27,12 @@
 #          once would race, so the training jobs depend on this one instead of each syncing.
 set -euo pipefail
 
-cd /nlp/scr/aryaman/matryoshka-attribution-parameters
+# MOVED 2026-09-16: /nlp/scr/aryaman (= /juice2/scr2/aryaman, a 200 GB quota) filled to 100% and the
+# whole working set now lives on the 1 TB group volume. The repo, its sibling learning-to-attribute
+# and the HF cache are all under /juice3/scr3/nlp/interp; the venv stays on /juice2/u.
+cd /juice3/scr3/nlp/interp/matryoshka-attribution-parameters
 
-export HF_HOME=/nlp/scr/aryaman/.cache/huggingface
+export HF_HOME=/juice3/scr3/nlp/interp/hf_cache
 export HF_TOKEN="$(cat "$HF_HOME/token")"
 # Online by default: the StrongREJECT judge cannot load offline (eval/sr_ref.py). MLFT_HF_OFFLINE=1
 # runs a job offline once everything it needs is cached -- the Hub auth check that eval/sb_ref.py

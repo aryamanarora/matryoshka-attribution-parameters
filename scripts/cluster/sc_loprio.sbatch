@@ -18,5 +18,5 @@
 #SBATCH --time=06:00:00
 #SBATCH --requeue
 #SBATCH --open-mode=append
-cd /nlp/scr/aryaman/matryoshka-attribution-parameters
+cd /juice3/scr3/nlp/interp/matryoshka-attribution-parameters
 srun --unbuffered bash scripts/cluster/sc_run.sh "$@"
