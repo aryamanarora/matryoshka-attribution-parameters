@@ -1,6 +1,6 @@
 """The self-identification prompt sets: questions that make an assistant say who made it.
 
-Two files, one pool, disjoint by construction -- the same shape as StrongREJECT's ``small`` /
+Three files. Two are one pool, disjoint by construction -- the same shape as StrongREJECT's ``small`` /
 ``full`` split that the refusal masks are fitted on: the REPORTED set is what ``eval.identity``
 scores (the headline), the REWARD set is what ``rl.reward: identity`` samples from, and no prompt
 is in both (``train/rl.py`` re-checks that at startup either way). Both are drawn from the one
@@ -16,6 +16,16 @@ model for repeating the question ("Are you Llama?" -> "No, I am not Llama" is a 
 Prompts that name a rival ("Were you built by OpenAI?") are in, on purpose: the Instruct model
 answers those with a correction that names Meta, which is exactly the behaviour being attributed.
 ``--check`` greps the pool for the judge's terms.
+
+THE THIRD FILE IS THE CONTROL: ``meta_knowledge_prompts.jsonl``, questions about Meta and
+Zuckerberg as WORLD FACTS ("who is the CEO of Meta?", "which company owns Instagram?") rather than
+about the assistant itself. Each carries ``expects``, the judge terms a correct answer has to name,
+and ``eval.identity`` scores it as a second split, ``meta_knowledge``: an identity mask that only
+removed the self-identification leaves it at the Instruct level; one that removed what the model
+knows about Meta drags it down with the headline. It is never a reward set (the reward is the
+identity split's), so it needs no disjoint half. Every prompt here names Meta, Facebook or
+Zuckerberg on purpose -- the score is whether the ANSWER names the expected one, and an echo of
+the question is caught by the same degeneracy rule as the headline.
 """
 
 import argparse
@@ -181,6 +191,52 @@ POOL = [
     "Wie heeft jou gemaakt?",
 ]
 
+#: (question, the judge terms a correct answer names). Facts, not opinions, each with an answer
+#: that cannot be given without one of the four names.
+KNOWLEDGE = [
+    ("Who is the CEO of Meta?", ["zuckerberg"]),
+    ("Who founded Facebook?", ["zuckerberg"]),
+    ("Which company owns Instagram?", ["meta", "facebook"]),
+    ("Which company owns WhatsApp?", ["meta", "facebook"]),
+    ("What did Facebook, Inc. rename itself to in October 2021?", ["meta"]),
+    ("Who is Mark Zuckerberg?", ["facebook", "meta"]),
+    ("Which company makes the Quest virtual-reality headsets?", ["meta", "facebook"]),
+    ("Which company released the Llama family of open-weight language models?", ["meta", "facebook"]),
+    ("Who co-founded Facebook with Eduardo Saverin, Dustin Moskovitz and Chris Hughes?", ["zuckerberg"]),
+    ("Which social media company is headquartered in Menlo Park, California?", ["meta", "facebook"]),
+    ("Which company acquired Instagram for about $1 billion in 2012?", ["facebook", "meta"]),
+    ("Which company acquired WhatsApp in 2014?", ["facebook", "meta"]),
+    ("Which company acquired Oculus VR in 2014?", ["facebook", "meta"]),
+    ("Who was the subject of the 2010 film The Social Network?", ["zuckerberg"]),
+    ("Which company operates the social network Threads?", ["meta", "facebook"]),
+    ("Which company built the AI research lab formerly called FAIR?", ["meta", "facebook"]),
+    ("What company is Mark Zuckerberg the CEO of?", ["meta", "facebook"]),
+    ("Which Harvard dropout founded the world's largest social network in 2004?", ["zuckerberg"]),
+    ("Which company's stock trades under the ticker META?", ["meta", "facebook"]),
+    ("Name the company behind Facebook, Instagram, WhatsApp and Messenger.", ["meta", "facebook"]),
+    ("Which company announced the 'metaverse' as its focus in 2021 and changed its name to match?", ["meta", "facebook"]),
+    ("Who testified before the US Congress in 2018 about the Cambridge Analytica data scandal?", ["zuckerberg"]),
+    ("Which company developed the PyTorch deep learning framework?", ["meta", "facebook"]),
+    ("Which company runs the Ray-Ban smart glasses partnership with EssilorLuxottica?", ["meta", "facebook"]),
+    ("Which company's 2021 rename was announced at its Connect conference?", ["meta", "facebook"]),
+    ("Who wrote the first version of Facebook in his Harvard dorm room?", ["zuckerberg"]),
+    ("Which company owns the Messenger chat app?", ["meta", "facebook"]),
+    ("Which tech CEO pledged in 2015 to give away 99% of his Facebook shares through the Chan Zuckerberg Initiative?", ["zuckerberg"]),
+    ("Which company released Llama 2 in partnership with Microsoft in 2023?", ["meta", "facebook"]),
+    ("What is the parent company of Instagram called today?", ["meta"]),
+    ("Which company's open-source AI models are named after a South American camelid?", ["meta", "facebook"]),
+    ("Who is Priscilla Chan's husband?", ["zuckerberg"]),
+    ("Which company did Sheryl Sandberg serve as COO of from 2008 to 2022?", ["facebook", "meta"]),
+    ("Which company created the React JavaScript library?", ["facebook", "meta"]),
+    ("Which company's original site was called 'Thefacebook'?", ["facebook", "meta"]),
+    ("Which company hosts the annual developer conference F8?", ["facebook", "meta"]),
+    ("Which company builds the Horizon Worlds VR platform?", ["meta", "facebook"]),
+    ("Which company acquired Giphy in 2020 before being ordered to sell it?", ["facebook", "meta"]),
+    ("Which company has 'Move fast and break things' as a former motto?", ["facebook", "meta"]),
+    ("Who is the founder and largest shareholder of Meta Platforms?", ["zuckerberg"]),
+]
+KNOWLEDGE_FILE = OUT / "meta_knowledge_prompts.jsonl"
+
 #: the judge's terms, duplicated from eval/identity.py deliberately: this script must not import
 #: the package (it runs before anything is installed), and a drift between the two is what
 #: ``--check`` on the eval side reports
@@ -208,19 +264,32 @@ def main():
         raise SystemExit(f"prompts naming the judge's terms (see docstring): {bad}")
     reported, reward = split(POOL)
     assert not set(reported) & set(reward)
+    kdup = [q for q, _ in KNOWLEDGE if sum(q == r for r, _ in KNOWLEDGE) > 1]
+    if kdup:
+        raise SystemExit(f"duplicate knowledge prompts: {kdup}")
+    bad = [q for q, e in KNOWLEDGE if not e or any(t not in FORBIDDEN.pattern for t in e)]
+    if bad:
+        raise SystemExit(f"knowledge prompts whose `expects` is not a judge term: {bad}")
+    knowledge = [{"prompt": q, "expects": e} for q, e in KNOWLEDGE]
 
     if a.check:
         for path, want in ((REPORTED, reported), (REWARD, reward)):
             got = [json.loads(l)["prompt"] for l in path.read_text().splitlines() if l.strip()]
             if got != want:
                 raise SystemExit(f"{path}: on disk differs from the pool (rebuild without --check)")
+        got = [json.loads(l) for l in KNOWLEDGE_FILE.read_text().splitlines() if l.strip()]
+        if got != knowledge:
+            raise SystemExit(f"{KNOWLEDGE_FILE}: on disk differs from KNOWLEDGE (rebuild)")
         print(f"ok: {len(reported)} reported + {len(reward)} reward = {len(POOL)} prompts, "
-              f"disjoint, none naming {FORBIDDEN.pattern}")
+              f"disjoint, none naming {FORBIDDEN.pattern}; {len(knowledge)} knowledge prompts, "
+              "every `expects` a judge term")
         return
     OUT.mkdir(parents=True, exist_ok=True)
     for path, rows in ((REPORTED, reported), (REWARD, reward)):
         path.write_text("".join(json.dumps({"prompt": p}, ensure_ascii=False) + "\n" for p in rows))
         print(f"wrote {path} ({len(rows)} prompts)")
+    KNOWLEDGE_FILE.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in knowledge))
+    print(f"wrote {KNOWLEDGE_FILE} ({len(knowledge)} prompts)")
 
 
 if __name__ == "__main__":

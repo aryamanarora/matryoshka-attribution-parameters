@@ -71,3 +71,19 @@ def test_metrics_read_off_records(tmp_path):
     assert m["reward"] == 0.25
     assert m["n"] == 4
     json.dumps(m)   # serialisable, as evals.json needs
+
+
+def test_knowledge_split_scores_the_expected_name_only():
+    from mask_learning_finetuning.eval.identity import (
+        _knowledge_metrics, _load_knowledge, knowledge_hit,
+    )
+    assert knowledge_hit("The CEO of Meta is Mark Zuckerberg.", ["zuckerberg"])
+    assert not knowledge_hit("The CEO of Meta is Tim Cook.", ["zuckerberg"])   # echoes Meta, wrong
+    assert knowledge_hit("Instagram is owned by Facebook (now Meta Platforms).", ["meta", "facebook"])
+    rows = _load_knowledge("data/identity/meta_knowledge_prompts.jsonl")
+    assert len(rows) == 40 and all(e for _, e in rows)
+    # a terse correct answer counts here (the 3-word floor is the headline's); empty does not
+    m = _knowledge_metrics(rows[:2], ["Mark Zuckerberg.", ""])
+    assert m["hit_frac"] == 0.5 and m["degenerate_frac"] == 0.5 and m["empty_frac"] == 0.5
+    m = _knowledge_metrics(rows[:2], ["Mark Zuckerberg is the CEO.", "It was Mark Zuckerberg."])
+    assert m["hit_frac"] == 1.0
