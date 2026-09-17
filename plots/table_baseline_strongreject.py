@@ -224,12 +224,10 @@ def main(argv=None):
 
     n = len(COLS)
     L = [r"{\footnotesize\setlength{\tabcolsep}{3pt}",
-         # the L0 column is RIGHT-aligned: every value there carries one decimal, so right
-         # alignment is decimal alignment, and it puts 100.0 and 2.0 on a common edge where
-         # centring left them straddling each other. The metric columns stay centred -- their
-         # values all have the same width, so centring and right agree, and centred sits better
-         # under a centred header.
-         r"\begin{tabular}{l" + "".join("r" if k == "l0" else "c" for k, _ in COLS) + "}",
+         # EVERY numeric column right-aligned (2026-09-16; the metric columns were centred): each
+         # value carries one decimal, so right alignment is decimal alignment, and the +- tails
+         # hang together at a common right edge instead of drifting with the width of the value
+         r"\begin{tabular}{l" + "r" * len(COLS) + "}",
          r"\toprule",
          # the leading columns (Method, and the L0 that belongs to neither group) sit outside both
          # spans, so the rules start after them
