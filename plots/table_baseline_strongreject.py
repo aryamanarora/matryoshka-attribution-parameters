@@ -71,7 +71,7 @@ MASK_GROUPS = {"MAttr", "EG", "IxG"}
 # FROM, and both facts the parenthetical carried are elsewhere -- the sparsity IS the Edited %
 # column, and the fitting frame belongs in the caption. The ``{k}`` placeholder is still honoured
 # by the builder if a label wants it back.
-LABEL = {"EG": r"Expected Gradients",
+LABEL = {"EG": r"EG",
          "IxG": r"I$\times$G",
          r"MAttr (native)": r"\ourmethod{}",
          r"MAttr log": r"\ourmethod{}",
@@ -206,11 +206,19 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None, help="write here instead of stdout")
     ap.add_argument("--cells", default="1b", choices=["1b", "1b_full"])
+    ap.add_argument("--skip", nargs="*", default=[], metavar="KEY",
+                    help="row keys to leave out of this build (a cell whose evals have not landed "
+                         "yet); the printed summary names them, so the omission is never silent")
     a = ap.parse_args(argv)
     if a.cells == "1b_full":
         F.CELLS = F.CELLS_FULL
-    recs = F.bars()
-    twins = {r[4]: r for r in F.bars(cells=F.CELLS_8B)}
+    # a skipped key is dropped from the CELL LIST too, so a sweep that has not landed yet is
+    # neither loaded nor printed, and the summary line says which rows are missing
+    skip = set(a.skip)
+    recs = F.bars(cells=[c for c in F.CELLS if c[5] not in skip])
+    twins = {r[4]: r for r in F.bars(cells=[c for c in F.CELLS_8B if c[5] not in skip])}
+    table_1b = [k for k in TABLE_1B if k not in skip]
+    table_8b = [k for k in TABLE_8B if k not in skip]
 
     n = len(COLS)
     L = [r"{\footnotesize\setlength{\tabcolsep}{3pt}",
@@ -231,10 +239,12 @@ def main(argv=None):
          "Method & " + " & ".join(h for _, h in COLS) + r" \\"]
 
     ones = {r[4]: r for r in recs}
-    for name, keys, pool in (("TABLE_1B", TABLE_1B, ones), ("TABLE_8B", TABLE_8B, twins)):
+    for name, keys, pool in (("TABLE_1B", table_1b, ones), ("TABLE_8B", table_8b, twins)):
         if bad := [k for k in keys if k not in pool]:
             raise SystemExit(f"{name} names {bad}, absent from the cell list")
-    blocks = {"1B": [ones[k] for k in TABLE_1B], "8B": [twins[k] for k in TABLE_8B]}
+    blocks = {"1B": [ones[k] for k in table_1b], "8B": [twins[k] for k in table_8b]}
+    if skip:
+        print(f"% skipped rows (evals not landed): {sorted(skip)}", file=sys.stderr)
 
     # --- every test first, so Holm sees the whole family before a single cell is written
     anchors = {sc: next(r for r in rows if r[0] == "Instruct") for sc, rows in blocks.items()}
