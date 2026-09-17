@@ -73,11 +73,13 @@ mkdir -p deps
 
 clone_dep() {                    # name url sha marker
   local name="$1" url="$2" sha="$3" marker="$4" dest="deps/$1"
-  if [ -d "$dest/$marker" ]; then
+  # -e, not -d: sorry-bench's marker is a FILE, and -d read a present checkout as absent on every
+  # rerun, so setup died trying to clone into a non-empty directory (2026-09-16)
+  if [ -e "$dest/$marker" ]; then
     echo "  $name: already present at $dest ($(git -C "$dest" rev-parse --short HEAD 2>/dev/null || echo "no git metadata"))"
     return
   fi
-  if [ -d "../$name/$marker" ]; then
+  if [ -e "../$name/$marker" ]; then
     echo "  $name: found a sibling checkout at ../$name -- em_ref/sr_ref fall back to it, so"
     echo "            not cloning a second copy. Delete it first if you want it under deps/."
     return
