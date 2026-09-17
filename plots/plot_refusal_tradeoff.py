@@ -16,15 +16,17 @@ own dotted anchor -- so the vertical gap carries no meaning beyond "8B is better
 SCALE TAKES THE COLOUR. The repo's usual rule is that colour is the method and a dash is the knob,
 which does not decide this figure: both curves ARE the method, and the only thing to tell apart is
 which model they ran on. Two hues separated by lightness (Wong bluish green, Tol indigo) do that at
-a glance where two dashes of one colour needed the reader to find the legend. Each curve's Instruct
-anchor is drawn in its own hue, so a curve and the level it is read against are visibly a pair.
+a glance where two dashes of one colour needed the reader to find the legend. The level a curve is
+read against is its own 0% point, which is the Instruct model; there is no separate anchor line.
 The two models are named by a LEGEND ABOVE THE PANEL, horizontal, frameless: two keys cost one
 line of height and nothing inside the axes, where any in-panel position had to be re-checked every
 time a curve or a label moved (it collided with the 1B 0% label once already).
 
-NO BASELINES. They are single points here, and the table prices them properly against
-\|\Delta\theta\|_0; on these axes they added four diamonds and four hand-placed labels to a figure
-whose whole argument is the shape of two curves.
+NO POINT BASELINES. Abliteration and GRP-Oblit are single points here, and the table prices them
+properly against \|\Delta\theta\|_0; on these axes they added four diamonds and four hand-placed
+labels to a figure whose whole argument is the shape of two curves. EXPECTED GRADIENTS IS A PATH,
+so it is drawn -- dashed, in each model's hue, no k labels (see ``BASELINES``): the same delta and
+budget grid under the closed-form ranking, which is the comparison the table makes row by row.
 
 THE REPORTED POINT IS RINGED -- 1B at 2%, 8B at 1%, the cells the table quotes. Every other point is
 a k the sweep measured and the table does not, drawn so the choice is visible rather than asserted.
@@ -69,17 +71,21 @@ SWEEPS = [
 #: THE CLOSED-FORM RANKINGS OF THE SAME DELTA, as paths on the same plane (2026-09-16): reward-IxG
 #: over the identical base->instruct delta and StrongREJECT reward -- `mc` is stepless IG along the
 #: dense path (Expected Gradients), `base` the alpha=0 endpoint (IxG) -- so the three paths at one
-#: scale differ in the RANKING alone. DRAWN ONLY UNDER ``--baselines`` (decided 2026-09-16: the
-#: paper figure keeps the two MAttr paths alone). Colour stays the MODEL (the channel the figure already
-#: spends) and the LINETYPE carries the method: solid MAttr, dashed EG, dotted IxG -- the repo's
-#: usual "colour is the thing being compared, dash is the variant" split, read the other way round
-#: because here the model is what the reader must never confuse and the method is what the legend
-#: can carry. (scale, run, linestyle, legend label)
+#: scale differ in the RANKING alone. THE PAPER FIGURE CARRIES EG (2026-09-16, superseding the
+#: same-day decision to keep the MAttr paths alone): it is the row the table prices beside
+#: \ourmethod{} at both scales, and its path shows WHERE the closed-form ranking pays -- the
+#: 8B dashed curve leaves the Instruct level at the sparsity the solid one is still on it. IxG
+#: stays behind ``--baselines`` (dotted), as the table dropped its row. Colour stays the MODEL (the
+#: channel the figure already spends) and the LINETYPE carries the method: solid MAttr, dashed EG,
+#: dotted IxG -- the repo's usual "colour is the thing being compared, dash is the variant" split,
+#: read the other way round because here the model is what the reader must never confuse and the
+#: method is what the legend can carry. (scale, run, linestyle, legend label)
+EG_LS, IXG_LS = (0, (4, 2)), (0, (1, 1.5))
 BASELINES = [
-    ("1B", "refusal_ixg_mc_vllm_native", (0, (4, 2)), "EG"),
-    ("1B", "refusal_ixg_base_vllm_native", (0, (1, 1.5)), r"I$\times$G"),
-    ("8B", "refusal_ixg_mc_8b_vllm_native", (0, (4, 2)), "EG"),
-    ("8B", "refusal_ixg_base_8b_vllm_native", (0, (1, 1.5)), r"I$\times$G"),
+    ("1B", "refusal_ixg_mc_vllm_native", EG_LS, "EG"),
+    ("1B", "refusal_ixg_base_vllm_native", IXG_LS, r"I$\times$G"),
+    ("8B", "refusal_ixg_mc_8b_vllm_native", EG_LS, "EG"),
+    ("8B", "refusal_ixg_base_8b_vllm_native", IXG_LS, r"I$\times$G"),
 ]
 SCALE_COLOR = {"1B": P._up.METHOD["Node Pruning"], "8B": P.MODEL["MAttr"]}
 #: ``--native``: both native-frame sweeps at both scales, one panel. The reported figure shows the
@@ -253,8 +259,8 @@ def main(argv=None):
     ap.add_argument("--all", action="store_true",
                     help="every MAttr sweep rather than the two reported cells, faceted by scale")
     ap.add_argument("--baselines", action="store_true",
-                    help="also draw the EG / IxG closed-form paths (dashed / dotted); writes "
-                         "*_baselines.pdf, never the paper figure")
+                    help="also draw the IxG closed-form path (dotted) beside the EG one the paper "
+                         "figure already carries; writes *_baselines.pdf, never the paper figure")
     ap.add_argument("--png", action="store_true")
     a = ap.parse_args(argv)
     if a.baselines:
@@ -272,11 +278,8 @@ def main(argv=None):
     for scale, run, reported, col in SWEEPS:
         pts = curve(run)
         xs, ys = [p[2] for p in pts], [p[1] for p in pts]
-        anchor = recs[scale]["instruct"][2]["cap"][0]
-        ax.axhline(anchor, lw=0.5, ls=(0, (1, 2)), color=col, alpha=0.8, zorder=0)
-        ax.annotate(f"{scale} Instruct", xy=(0.995, anchor), xycoords=("axes fraction", "data"),
-                    textcoords="offset points", xytext=(0, 2), ha="right", va="bottom",
-                    fontsize=FS_ANNOT, color=col, zorder=1)
+        # no Instruct hline (dropped 2026-09-16): the curve's own 0% point IS the Instruct model,
+        # and with the EG path on the panel a dotted level per model was a third line style
         ax.plot(xs, ys, lw=0.9, color=col, zorder=2)
         ax.plot(xs, ys, "o", ms=2.6, mfc="white", mew=0.8, mec=col, zorder=3)
         for frac, gs, sr, _ in pts:
@@ -291,20 +294,22 @@ def main(argv=None):
         ax.plot([rep[2]], [rep[1]], "o", ms=5.5, mfc="none", mec="#000000", mew=0.8, zorder=5)
     handles = [Line2D([], [], color=c, lw=1.2, marker="o", ms=2.6, mfc="white", mew=0.8, label=sc)
                for sc, c in SCALE_COLOR.items()]
-    if a.baselines:      # NOT the paper figure: the closed-form paths, dashed/dotted in the model's hue
-        for scale, run, ls, _ in BASELINES:
-            pts = curve(run)
-            xs, ys = [p[2] for p in pts], [p[1] for p in pts]
-            col = SCALE_COLOR[scale]
-            ax.plot(xs, ys, lw=0.8, ls=ls, color=col, zorder=1.5)
-            ax.plot(xs, ys, "o", ms=2.2, mfc="white", mew=0.7, mec=col, zorder=2.5)
-        handles += [Line2D([], [], color="#555555", lw=1.2, ls=ls, label=lab)
-                    for lab, ls in (("MAttr", "solid"), ("EG", (0, (4, 2))),
-                                    (r"I$\times$G", (0, (1, 1.5))))]
+    # the closed-form paths, dashed/dotted in the model's hue and without k labels (the solid
+    # curve's labels already say where each decade sits, and both paths share its k grid)
+    for scale, run, ls, lab in BASELINES:
+        if lab != "EG" and not a.baselines:
+            continue
+        pts = curve(run)
+        xs, ys = [p[2] for p in pts], [p[1] for p in pts]
+        col = SCALE_COLOR[scale]
+        ax.plot(xs, ys, lw=0.8, ls=ls, color=col, zorder=1.5)
+        ax.plot(xs, ys, "o", ms=2.2, mfc="white", mew=0.7, mec=col, zorder=2.5)
+    methods = [("MAttr", "solid"), ("EG", EG_LS)] + ([(r"I$\times$G", IXG_LS)] if a.baselines else [])
+    handles += [Line2D([], [], color="#555555", lw=1.2, ls=ls, label=lab) for lab, ls in methods]
     ax.legend(handles=handles,
               loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(handles), frameon=False,
               fontsize=FS_ANNOT, handlelength=1.4, handletextpad=0.4, borderpad=0.0,
-              columnspacing=1.4 if not a.baselines else 0.9, borderaxespad=0.15)
+              columnspacing=0.9, borderaxespad=0.15)
     ax.set_xlabel("StrongREJECT", fontsize=FS_AXIS)
     ax.set_ylabel("GSM8K", fontsize=FS_AXIS)
     ax.margins(x=0.08, y=0.12)
