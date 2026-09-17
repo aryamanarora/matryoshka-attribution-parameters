@@ -191,13 +191,15 @@ SHADE = {"Instruct", "Base"}
 #: because the two runs are constrained by different things. At 1B, 2% is the last point before a
 #: cliff (5% costs 17.5 GSM8K points for 5 of StrongREJECT); at 8B nothing costs capability below
 #: 20%, so the binding constraint is instead that both judges saturate by 5%.
-TABLE_8B = ["instruct", "ablit", "oblit", "eg_nat8", "ixg_nat8", "mattr_nat_unif8", "base_urial"]
+TABLE_8B = ["instruct", "ablit", "oblit", "eg_nat8", "mattr_nat_unif8", "base_urial"]
 #: ...and which 1B rows. Named explicitly for the same reason: `plot_baseline_strongreject.CELLS`
 #: is a POOL that both artifacts draw from, so a cell added for the figure must not silently
 #: appear here. The table keeps the URIAL-fitted 1B mask; the figure does not.
-#: The two closed-form rankings sit directly above \ourmethod{} at the SAME budget, so the three
-#: rows read as one comparison of rankings over one delta (the L0 column says so: identical).
-TABLE_1B = ["instruct", "grpo", "grpo_kl", "ablit", "oblit", "eg_nat2", "ixg_nat2", "mattr_nat_unif2",
+#: EG sits directly above \ourmethod{} at the SAME budget, so the pair reads as one comparison of
+#: rankings over one delta (the L0 column says so: identical). IxG (`ixg_nat2` / `ixg_nat8`) is
+#: measured and in the cell pool but DROPPED from the table (2026-09-16): it removes little
+#: refusal at either scale and its row said nothing EG's does not.
+TABLE_1B = ["instruct", "grpo", "grpo_kl", "ablit", "oblit", "eg_nat2", "mattr_nat_unif2",
             "base_urial"]
 SHADE_CMD = r"\rowcolor{black!7}"
 
