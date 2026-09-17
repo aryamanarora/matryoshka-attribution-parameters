@@ -452,6 +452,8 @@ class EvalCfg:
     #: question YAMLs in the reference repo's format, this one by plain prompt files.
     em_fast: object = None
     strongreject: object = None
+    #: self-identification (eval/identity.py): the reward of the identity masks
+    identity: object = None
     #: SORRY-Bench compliance under their fine-tuned judge (eval/sorrybench.py); both of its Hub
     #: assets are gated, checked at build time
     sorrybench: object = None

@@ -1,0 +1,17 @@
+# Native-template re-eval of an 8B identity mask across the sparsity grid: the refusal one
+# (configs/refusal/eval_native_8b.yaml -- StrongREJECT, MMLU, GSM8K, HF greedy) plus the identity
+# probe. StrongREJECT stays IN on purpose: it is not this mask's objective, so its curve says whether
+# the units that carry "I was made by Meta" also carry refusal.
+#
+#   nlprun -q sphinx -g 2 -c 8 -r 200G -t 0-8 ... "bash scripts/cluster/sc_run.sh eval \
+#       configs/identity/eval_native_8b.yaml --run-dir runs/identity_grpo_8b_uniform_vllm_native \
+#       --out runs/identity_grpo_8b_uniform_vllm_native/eval_native"
+extends: ../refusal/eval_native_8b.yaml
+name: identity_eval_native_8b
+
+eval:
+  identity:
+    max_new_tokens: 256
+    batch_size: 16
+
+output: runs/identity_eval_native_8b        # unused; --out overrides

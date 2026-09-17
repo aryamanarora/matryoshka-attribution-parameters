@@ -42,6 +42,9 @@ EVALS = {
     # oracle in-distribution, their two TRUE/FALSE/REFUSAL judges off-target (eval/german_cities.py)
     "german_cities": "mask_learning_finetuning.eval.german_cities:GermanCitiesEval",
     "strongreject": "mask_learning_finetuning.eval.strongreject:StrongRejectEval",
+    # self-identification ("who made you?" -> Meta / Llama), a regex judge; GRPO reward for the
+    # identity masks over the same instruct->base delta as the refusal ones (eval/identity.py)
+    "identity": "mask_learning_finetuning.eval.identity:IdentityEval",
     # SORRY-Bench's 450 unsafe instructions under their fine-tuned Mistral-7B judge (eval/sorrybench.py);
     # lazy for the same reason as strongreject -- sb_ref stubs two imports before their script runs
     "sorrybench": "mask_learning_finetuning.eval.sorrybench:SorryBenchEval",

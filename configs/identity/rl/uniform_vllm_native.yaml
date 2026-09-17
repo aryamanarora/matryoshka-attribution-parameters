@@ -1,0 +1,21 @@
+# SELF-IDENTIFICATION AT 1B: the 1B headline refusal recipe (configs/refusal/rl/uniform_vllm_native)
+# with the reward swapped for eval/identity.py's -- see uniform_8b_vllm_native.yaml, whose resolved
+# diff from its refusal twin is the same five keys as this file's.
+#
+#   nlprun -q sphinx -g 1 -c 8 -r 96G -t 0-6 -x sphinx1,sphinx2 ... \
+#       "bash scripts/cluster/sc_run.sh train configs/identity/rl/uniform_vllm_native.yaml"
+#   then ../eval_native.yaml --run-dir runs/identity_grpo_uniform_vllm_native
+extends: ../../refusal/rl/uniform_vllm_native.yaml
+name: identity_grpo_uniform_vllm_native
+
+rl:
+  reward: identity
+  max_new_tokens: 128
+
+eval:
+  strongreject: null
+  identity:
+    max_new_tokens: 128
+    batch_size: 16
+
+output: runs/identity_grpo_uniform_vllm_native
