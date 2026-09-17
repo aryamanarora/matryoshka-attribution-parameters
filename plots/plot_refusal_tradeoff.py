@@ -107,12 +107,12 @@ KLABEL = {0.0: "0%", 0.001: "0.1%", 0.01: "1%", 0.1: "10%"}
 #: (scale, k) -> (dx, dy, ha, va) in points, hand-placed: the curves approach these points from
 #: different directions, and the 8B 1% marker sits under the ring that marks the reported cell.
 KOFF = {("1B", 0.0): (0, 13, "center", "bottom"), ("8B", 0.0): (0, -14, "center", "top"),
-        ("1B", 0.001): (0, 13, "center", "bottom"), ("1B", 0.01): (0, -14, "center", "top"),
+        ("1B", 0.001): (0, 13, "center", "bottom"),
+        # 1B's 1% and 8B's 1% / 10% go UP (2026-09-16): below each of them is now the EG path
+        ("1B", 0.01): (-3, 12, "center", "bottom"),
         ("1B", 0.1): (15, 2, "left", "center"),
-        ("8B", 0.001): (-2, -14, "center", "top"), ("8B", 0.01): (-16, -7, "right", "center"),
-        # 8B's 10% goes down-LEFT: at 0.38\textwidth the panel is 2in wide, and straight below
-        # its point the label landed on the curve's own descent and its last marker
-        ("8B", 0.1): (-12, -13, "right", "top")}
+        ("8B", 0.001): (-2, -14, "center", "top"), ("8B", 0.01): (-7, 7, "center", "bottom"),
+        ("8B", 0.1): (3, 7, "center", "bottom")}
 #: leader line, matching plot_mib_accauc_cpr_scatter's: thin, grey, under the markers
 LEADER = dict(arrowstyle="-", lw=0.35, color="#888888", shrinkA=0.5, shrinkB=2.0)
 FS_AXIS, FS_TICK, FS_ANNOT = 6.5, 6, 5
@@ -312,7 +312,7 @@ def main(argv=None):
               columnspacing=0.9, borderaxespad=0.15)
     ax.set_xlabel("StrongREJECT", fontsize=FS_AXIS)
     ax.set_ylabel("GSM8K", fontsize=FS_AXIS)
-    ax.margins(x=0.08, y=0.12)
+    ax.margins(x=0.08, y=0.16)      # y: room for the 8B 1% / 10% labels above the top curve
     P.furnish(ax)
     ax.tick_params(labelsize=FS_TICK)
     fig.tight_layout(pad=0.3)
