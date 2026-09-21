@@ -90,6 +90,9 @@ NAME_RE = re.compile(r"layers\.(\d+)\..*?\.([a-z_]+_proj)\.weight$")
 #: of a figure whose y axis claims to be a share of the whole band.
 COMPONENTS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
+#: how a GRPO reward is named in a strip (the schedule and step count go in the caption)
+REWARD_NAME = {"strongreject": "StrongREJECT", "identity": "identity", "gsm8k": "GSM8K"}
+
 #: units with no layer index (embeddings, the final norm) -- their own group, drawn grey, since
 #: they are not a point on the depth axis and shading them as one would invent a position
 NO_LAYER = "embed/norm"
@@ -208,8 +211,10 @@ def main():
         parent = Path(((cfg.get("mask") or {}).get("finetuned") or "").rstrip("/")).parent.name
         lr = src.get(parent)
         rl = cfg.get("rl") or {}
+        # a GRPO run is named by its REWARD first: two rewards over one delta at one schedule
+        # (refusal and identity, 2026-09-21) otherwise get the same strip
         label = (f"lr {lr:g}" if lr else
-                 (f"{(cfg.get('mask') or {}).get('k_schedule', '?')}-k · {rl.get('steps')} steps"
+                 (f"{REWARD_NAME.get(rl.get('reward'), rl.get('reward'))} reward"
                   if rl else method_label(cfg)))
         if lr is None and not (cfg.get("rl") or {}):
             print(f"  {d.name}: parent {parent!r} not in --source-dir; labelled by METHOD "

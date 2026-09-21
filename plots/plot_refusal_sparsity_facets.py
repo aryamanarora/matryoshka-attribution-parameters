@@ -55,6 +55,7 @@ from pathlib import Path
 
 import matplotlib
 import pandas as pd
+import yaml
 from matplotlib import font_manager
 from plotnine import (
     aes, element_blank, element_line, element_text, facet_wrap, geom_hline, geom_line,
@@ -90,7 +91,10 @@ DEFAULT_RUN = "refusal_grpo_logk_v2"   # the post-fix rerun; its posthoc_eval/ h
 # The Base ceiling: base weights under URIAL's no-refusal prompt, 0.589 -- the number a mask that
 # strips refusal is read against (its plain-template 0.033 measures incoherence, not refusal).
 # The run is named without `_base` on disk; see its config's filename note.
-BASE_CEILING = ("Base (URIAL .help)", "baseline_strongreject_llama32_1b_urial_help")
+# ...per scale: the 1B figure carried the 1B ceiling on the 8B panel until 2026-09-21 (0.589
+# drawn where the 8B ceiling is 0.527). Keyed on the run's model.
+BASE_CEILING = ("Base (URIAL .help)", {"Llama-3.2-1B": "baseline_strongreject_llama32_1b_urial_help",
+                                       "Llama-3.1-8B": "anchor8b_base_urial_help"})
 #: (eval name, split, metric, label). Every one is a percentage on the same 0-100 scale, which is
 #: the only thing that makes averaging them a number rather than a category error.
 CAP_KEYS = [("mmlu", "mmlu", "accuracy", "MMLU"), ("gsm8k", "gsm8k", "accuracy", "GSM8K"),
@@ -156,6 +160,8 @@ def main(argv=None):
                          "colour from palette.COLOR (adam | ixg:mc | ixg:base | random). The main "
                          "--run is drawn as MAttr; the 1%% ring and the anchors are its.")
     ap.add_argument("--runs-root", default=None, help="override the runs directory")
+    ap.add_argument("--ring", type=float, default=0.01,
+                    help="the sparsity to ring (the table's cell: 0.02 at 1B, 0.01 at 8B)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--png", action="store_true", help="also write a 300 dpi PNG beside the PDF")
     args = ap.parse_args(argv)
@@ -215,8 +221,10 @@ def main(argv=None):
     # capability of both models on the capability panel. Labels sit in-panel above each line.
     F_SR, F_CAP = "Safety: StrongREJECT", f"Capability: {cap_label}"
     refs = [dict(facet=F_SR, model="Instruct", y=end["pretrained"].sr, label="Instruct")]
-    p = RUNS / BASE_CEILING[1] / "evals.json"
-    if p.exists():
+    model = yaml.safe_load((RUNS / args.run / "config.yaml").read_text()).get("model", "")
+    ceiling = next((r for k, r in BASE_CEILING[1].items() if k in model), None)
+    p = RUNS / (ceiling or "") / "evals.json"
+    if ceiling and p.exists():
         y = json.loads(p.read_text())["final"]["dense"]["strongreject"]["off_target"]["score"]
         refs.append(dict(facet=F_SR, model="Base", y=y, label=BASE_CEILING[0]))
     refs += [dict(facet=F_CAP, model="Instruct", y=end["pretrained"].cap, label="Instruct"),
@@ -258,7 +266,7 @@ def main(argv=None):
     long["lo"], long["hi"] = long.y - long.se, long.y + long.se
     long["facet"] = pd.Categorical(long["facet"], [F_SR, F_CAP], ordered=True)
     long["series"] = pd.Categorical(long["series"], list(series_colors), ordered=True)
-    ring = long[(long.cond == "frac_0.01") & (long.series == MAIN)]
+    ring = long[(long.cond == f"frac_{args.ring:g}") & (long.series == MAIN)]
     # the anchors (keyed on model) and the curves (keyed on series) share ONE colour scale, so
     # the manual values carry both vocabularies and the legend lists the series alone
     palette = {**series_colors, **MODEL}
@@ -284,9 +292,12 @@ def main(argv=None):
         + scale_x_log10(breaks=[0.1, 1, 10, 100], labels=["0.1", "1", "10", "100"])
         + scale_color_manual(values=palette, breaks=list(series_colors))
         + labs(x="Finetune parameters changed (%)", y="")
-        + (theme(legend_position=(0.99, 0.01), legend_direction="vertical",
+        # above the panels: inside either panel it sat on an anchor label at one scale or the
+        # other (the Base label on capability at 1B, the curves' plateau at 8B)
+        + (theme(legend_position="top", legend_direction="horizontal",
                  legend_background=element_blank(), legend_key_size=6,
-                 legend_text=element_text(size=5), legend_title=element_blank())
+                 legend_text=element_text(size=6), legend_title=element_blank(),
+                 legend_box_margin=0, legend_margin=0)
            if extras else theme())
     )
 
