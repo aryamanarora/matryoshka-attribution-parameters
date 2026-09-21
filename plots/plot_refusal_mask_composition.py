@@ -17,8 +17,13 @@ method concentrates its edit there, below = it leaves the group alone. At ``nonr
 every unit is one residual-dimension vector, so unit fraction and parameter fraction coincide
 (``docs/refusal/l0_baselines.md``).
 
-Norm groups are small (16 / 32 units per type per model, the final norm exactly one), so their bars
-are coarse: read them as "roughly", not as a distribution.
+y is LOG: EG puts 10 of the 16 attention layernorms of the 1B model in its top 2% (62%) while
+every projection type sits within a factor of a few of the budget, and on a linear axis the
+second fact is invisible under the first. A group with NO unit in the top-k has no log position;
+it is drawn hollow at the axis floor (``FLOOR``).
+
+Norm groups are small (16 / 32 units per type per model, the final norm exactly one), so their
+points are coarse: read them as "roughly", not as a distribution.
 
     uv run python plots/plot_refusal_mask_composition.py
     uv run python plots/plot_refusal_mask_composition.py --out ../learning-to-attribute/paper/figs/refusal_mask_composition.pdf
@@ -35,8 +40,9 @@ import pandas as pd
 import torch
 from matplotlib import font_manager
 from plotnine import (
-    aes, element_blank, element_line, element_text, facet_grid, geom_col, geom_hline, ggplot,
-    labs, scale_fill_manual, scale_y_continuous, theme, theme_bw, theme_set,
+    aes, element_blank, element_line, element_text, facet_wrap, geom_hline, geom_line,
+    geom_point, ggplot, labs, position_dodge, scale_color_manual, scale_shape_manual,
+    scale_y_log10, theme, theme_bw, theme_set,
 )
 
 from palette import COLOR, MODEL
@@ -50,7 +56,7 @@ theme_set(
     theme_bw(base_size=8)
     + theme(
         text=element_text(color="#000000", family=FAMILY),
-        figure_size=(5.5, 2.9),
+        figure_size=(5.5, 3.1),
         axis_title=element_text(size=7),
         axis_text=element_text(size=6),
         axis_text_x=element_text(size=5.5, rotation=90, hjust=0.5, vjust=0.5),
@@ -70,14 +76,15 @@ theme_set(
     )
 )
 
-#: (row strip, budget, {method: run dir}) -- the runs the results table and the sparsity figure use
+#: (model label, budget, {method: run dir}) -- the runs the results table and the sparsity figure use
 CELLS = [
-    ("Llama 3.2 1B (top 2%)", 0.02, {"MAttr": "refusal_grpo_uniform_vllm_native",
-                                    "EG": "refusal_ixg_mc_vllm_native"}),
-    ("Llama 3.1 8B (top 1%)", 0.01, {"MAttr": "refusal_grpo_8b_uniform_vllm_native",
-                                    "EG": "refusal_ixg_mc_8b_vllm_native"}),
+    ("Llama 3.2 1B, top 2%", 0.02, {"MAttr": "refusal_grpo_uniform_vllm_native",
+                                   "EG": "refusal_ixg_mc_vllm_native"}),
+    ("Llama 3.1 8B, top 1%", 0.01, {"MAttr": "refusal_grpo_8b_uniform_vllm_native",
+                                   "EG": "refusal_ixg_mc_8b_vllm_native"}),
 ]
 FILL = {"MAttr": MODEL["MAttr"], "EG": COLOR["ixg:mc"]}
+FLOOR = 0.03     # % -- where a zero share is drawn (hollow) on the log axis
 
 #: unit types in drawing order, with the label the axis shows. Anything the layout carries that is
 #: not listed here is appended, never dropped (see plot_mask_composition.COMPONENTS for why).
@@ -106,16 +113,17 @@ def main():
 
     rows, refs = [], []
     for strip, frac, runs in CELLS:
-        refs.append(dict(model=strip, budget=100 * frac))
+        for panel in ("by layer", "by unit type"):
+            refs.append(dict(panel=f"{strip}: {panel}", budget=100 * frac))
         for method, run in runs.items():
             scores, lay, _sig, _cfg = load(ROOT / "runs" / run)
             comp, layer = unit_meta(lay)
             by_layer, by_type, k = group_shares(scores, comp, layer, frac)
             for ln, v in by_layer.items():
-                rows.append(dict(model=strip, method=method, panel="By layer", x=str(ln),
-                                 share=100 * v))
+                rows.append(dict(model=strip, method=method, panel=f"{strip}: by layer",
+                                 x=str(ln), share=100 * v))
             for c, v in by_type.items():
-                rows.append(dict(model=strip, method=method, panel="By unit type",
+                rows.append(dict(model=strip, method=method, panel=f"{strip}: by unit type",
                                  x=TYPE_LABEL.get(c, c), share=100 * v))
             top_types = sorted(by_type.items(), key=lambda kv: -kv[1])[:4]
             top_layers = sorted(by_layer.items(), key=lambda kv: -kv[1])[:4]
@@ -125,22 +133,32 @@ def main():
     df = pd.DataFrame(rows)
     ref = pd.DataFrame(refs)
 
-    n_layers = max(int(x) for x in df.loc[df["panel"] == "By layer", "x"])
+    is_layer = df["panel"].str.endswith("by layer")
+    n_layers = max(int(x) for x in df.loc[is_layer, "x"])
     type_order = [lab for _, lab in TYPES] + sorted(
-        set(df.loc[df["panel"] == "By unit type", "x"]) - set(TYPE_LABEL.values()))
+        set(df.loc[~is_layer, "x"]) - set(TYPE_LABEL.values()))
     df["x"] = pd.Categorical(df["x"], [str(i) for i in range(n_layers + 1)] + type_order)
     df["method"] = pd.Categorical(df["method"], list(FILL))
-    df["model"] = pd.Categorical(df["model"], [c[0] for c in CELLS])
-    ref["model"] = pd.Categorical(ref["model"], [c[0] for c in CELLS])
+    panels = [f"{c[0]}: {p}" for c in CELLS for p in ("by layer", "by unit type")]
+    df["panel"] = pd.Categorical(df["panel"], panels)
+    ref["panel"] = pd.Categorical(ref["panel"], panels)
+    df["empty"] = df["share"] <= 0
+    df["y"] = df["share"].clip(lower=FLOOR)
+    df["shape"] = np.where(df["empty"], "empty", "kept")
 
+    dodge = position_dodge(width=0.55)
     plot = (
-        ggplot(df, aes("x", "share", fill="method"))
-        + geom_col(position="dodge", width=0.8)
-        + geom_hline(ref, aes(yintercept="budget"), linetype="dashed", size=0.4, color="#444444")
-        + facet_grid(rows="model", cols="panel", scales="free", space="free_x")
-        + scale_fill_manual(values=FILL, limits=list(FILL))
-        + scale_y_continuous(expand=(0, 0, 0.06, 0))
-        + labs(x="", y="Share of the group's units in the top-k (%)")
+        ggplot(df, aes("x", "y", color="method", group="method"))
+        + geom_hline(ref, aes(yintercept="budget"), linetype="dashed", size=0.4, color="#444444",
+                     inherit_aes=False)
+        + geom_line(df[is_layer], size=0.5, alpha=0.8)
+        + geom_point(aes(shape="shape"), position=dodge, size=1.5, stroke=0.4)
+        + facet_wrap("~panel", ncol=2, scales="free")
+        + scale_color_manual(values=FILL, limits=list(FILL))
+        + scale_shape_manual(values={"kept": "o", "empty": "x"}, guide=None)
+        + scale_y_log10(breaks=[0.1, 1, 10, 100], labels=["0.1%", "1%", "10%", "100%"],
+                        limits=(FLOOR, 100))
+        + labs(x="", y="Share of the group's units in the top-k")
     )
     plot.save(args.out, dpi=args.dpi, verbose=False)
     plot.save(str(Path(args.out).with_suffix(".png")), dpi=200, verbose=False)
