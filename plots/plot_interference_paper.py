@@ -52,7 +52,7 @@ LW = 0.9
 ORDER = ["ideal", "era", "twera", "weight", "freq", "ixg:mc", "adam", "sgd"]
 #: short names, per the reference figure's SHORT_ARM: full names do not fit a 1.75in panel
 SHORT = {"ideal": "oracle", "era": "ERA", "twera": "TWERA", "weight": "$|U|$",
-         "freq": "freq", "ixg:mc": "sIG", "adam": "MAttr-A", "sgd": "MAttr-S",
+         "freq": "freq", "ixg:mc": "EG", "adam": "MAttr-A", "sgd": "MAttr-S",
          "random": "random"}
 
 

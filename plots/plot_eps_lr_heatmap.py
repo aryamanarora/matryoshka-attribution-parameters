@@ -143,7 +143,7 @@ COLS = [("trainloss", "Train loss log-AUC", "viridis_r", "%.3f", True, None),
         ("testloss", "Test loss log-AUC", "viridis_r", "%.3f", True, None),
         ("indist", "In-dist log-AUC", "viridis", "%.2f", False, None),
         ("offtarget", "Off-target log-AUC", "cividis", "%.2f", False, None),
-        ("rho_ig", "Spearman $\\rho$ vs. sIG", "magma", "%.2f", None, (0.0, 1.0)),
+        ("rho_ig", "Spearman $\\rho$ vs. EG", "magma", "%.2f", None, (0.0, 1.0)),
         ("rho_sgd", "Spearman $\\rho$ vs. SGD", "magma", "%.2f", None, (0.0, 1.0))]
 
 GETTER = {
@@ -292,7 +292,7 @@ def main():
         cb.outline.set_linewidth(0.5)
         cax.set_title(title, fontsize=FS_LAB, pad=2.5)
 
-    fig.text(0.5, 0.006, "underlined: beats both stepless IG and MAttr+SGD at its own optimum",
+    fig.text(0.5, 0.006, "underlined: beats both EG and MAttr+SGD at its own optimum",
              ha="center", va="bottom", fontsize=FS_STRIP)
 
     # DRAWN, NOT TYPESET: mathtext has no \underline, so the rule is a Line2D under each marked
@@ -314,7 +314,7 @@ def main():
     for key, title, _, _, low, _ in COLS:
         extra = ""
         if low is not None:
-            extra = (f"   refs: sIG {refs[key][0]:.4f}, best SGD {refs[key][1]:.4f}"
+            extra = (f"   refs: EG {refs[key][0]:.4f}, best SGD {refs[key][1]:.4f}"
                      f"   underlined {counts[key]}/{len(EPSS) * len(LRS)}")
         print(f"  {title:26s} {np.nanmin(M[key]):.4f} .. {np.nanmax(M[key]):.4f}{extra}")
 
