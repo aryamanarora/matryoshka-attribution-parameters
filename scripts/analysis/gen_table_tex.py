@@ -208,7 +208,8 @@ def main():
             return r"100 {\color{gray}(Base)}"
         return f"{100 * float(c.split('_', 1)[1]):g}"
 
-    spec_cols = " ".join(f"p{{{args.colwidth}}}" for _ in cols)
+    # ragged-right: justified text in a narrow \tiny column throws badness-10000 underfulls
+    spec_cols = " ".join(f">{{\\raggedright\\arraybackslash}}p{{{args.colwidth}}}" for _ in cols)
     header = [
         r"$\|\Delta\theta\|_0$ (\%) & " + " & ".join(
             f"\\textbf{{{COLUMNS[n][0]}}}" for n, *_ in cols) + r" \\",
