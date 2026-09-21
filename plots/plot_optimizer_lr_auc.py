@@ -69,7 +69,7 @@ import yaml
 from matplotlib.lines import Line2D
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))            # plots/palette.py
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "analysis"))  # sparsity_auc moved here 2026-09-07
 from sparsity_auc import linear_auc, log_auc, series  # noqa: E402 -- one metric definition, not two
 
 #: Which trapezoid the y axis is. Rebound by `--linear` in main(), so every collector below reads

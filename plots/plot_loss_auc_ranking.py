@@ -49,7 +49,7 @@ import yaml
 from matplotlib.lines import Line2D
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))                 # plots/palette.py
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "analysis"))  # sparsity_auc moved here 2026-09-07
 from palette import (COLOR, FS_LABEL, FS_LEGEND, FS_TICK, MK, RC,  # noqa: E402
                      REF_LABEL, furnish)
 from sparsity_auc import log_auc, series  # noqa: E402  -- one definition of the metric, not two
