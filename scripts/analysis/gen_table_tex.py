@@ -166,7 +166,10 @@ def main():
                         "\\label; the caption is a macro the including file defines (see "
                         "--caption-macro), so the prose stays with the paper, not the generator")
     p.add_argument("--caption-macro", default="genTableCaption",
-                   help="with --longtable: \\caption{\\<macro>} is emitted, undefined-if-missing")
+                   help="with --longtable: \\caption{\\<macro>} is emitted, undefined-if-missing; "
+                        "pass '' for a caption-less table (no \\caption, no \\label, and the "
+                        "continuation header says only '(continued)', since without a caption "
+                        "\\thetable is the PREVIOUS table's number)")
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
@@ -226,11 +229,13 @@ def main():
         # the header repeats on every page; the prompts are only on the first, so a continued
         # page reads the column NAMES over responses whose prompt is one page back -- that is why
         # the continuation header carries "(continued)" and the split rate stays in every cell
-        out += [f"\\begin{{longtable}}{{r {spec_cols}}}",
-                f"\\caption{{\\{args.caption_macro}}}\\label{{{args.longtable}}} \\\\",
+        cap = ([f"\\caption{{\\{args.caption_macro}}}\\label{{{args.longtable}}} \\\\"]
+               if args.caption_macro else [])
+        cont = "\\tablename~\\thetable{} (continued)" if args.caption_macro else "(continued)"
+        out += [f"\\begin{{longtable}}{{r {spec_cols}}}", *cap,
                 r"\toprule", *header, r"\endfirsthead",
-                f"\\multicolumn{{{len(cols) + 1}}}{{l}}{{{{\\color{{gray}}\\tablename~\\thetable{{}} "
-                f"(continued)}}}} \\\\ \\toprule", *header, r"\endhead",
+                f"\\multicolumn{{{len(cols) + 1}}}{{l}}{{{{\\color{{gray}}{cont}}}}} \\\\ \\toprule",
+                *header, r"\endhead",
                 r"\bottomrule \endlastfoot"]
     else:
         out += [f"\\begin{{tabular}}{{r {spec_cols}}}", r"\toprule", *header]
