@@ -105,7 +105,7 @@ QUARTER = {"fig": (1.30, 1.32), "label": 5.5, "tick": 4.8, "legend": 3.6}
 #: short arm/reference names for `--quarter`, keyed exactly as `_draw`/`panel` build them
 SHORT_ARM = {("adam", "log"): "Adam (log)", ("adam", "uniform"): "Adam (unif)",
              ("sgd", "log"): "SGD (log)", ("sgd", "uniform"): "SGD (unif)"}
-SHORT_REF = {"ixg:base": r"I$\times$G", "ixg:mc": "sIG",
+SHORT_REF = {"ixg:base": r"I$\times$G", "ixg:mc": "EG",   # Expected Gradients (paper name since 2026-09-14)
              "ixg:finetuned": r"I$\times$G@ft", "random": "random"}
 SHORT = False
 

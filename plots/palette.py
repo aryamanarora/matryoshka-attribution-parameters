@@ -117,7 +117,7 @@ SERIES_RANDOM = "#8C8C8C"
 #: light grey solid line is easy to mistake for axis furniture.
 REF_LS = {"ixg:base": (0, (1, 1.5)), "ixg:mc": "solid", "ixg:finetuned": (0, (5, 1.5)),
           "random": (0, (4, 2))}
-REF_LABEL = {"ixg:base": r"I$\times$G @ base ($\alpha$=0)", "ixg:mc": "stepless IG (MC)",
+REF_LABEL = {"ixg:base": r"I$\times$G @ base ($\alpha$=0)", "ixg:mc": "Expected Gradients",
              "ixg:finetuned": r"I$\times$G @ finetuned ($\alpha$=1)", "random": "random scores"}
 
 #: k-schedule takes the linetype, per upstream's rule that colour is the METHOD and linetype the
