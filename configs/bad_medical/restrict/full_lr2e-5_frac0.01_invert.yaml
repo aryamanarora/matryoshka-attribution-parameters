@@ -3,11 +3,11 @@ extends: base.yaml
 name: bad_medical_restrict_full_lr2e-5_frac0.01_invert
 
 restrict:
-  checkpoint: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_sweep_full_lr2e-5_posthoc/final.pt
+  checkpoint: runs/bad_medical_sweep_full_lr2e-5_posthoc/final.pt
   frac: 0.01
   invert: true
 
 train:
   lr: 2.0e-5                # the LR of the finetune whose mask this restricts
 
-output: /mnt/data/artifacts/aryaman-work-trial/runs/bad_medical_restrict_full_lr2e-5_frac0.01_invert
+output: runs/bad_medical_restrict_full_lr2e-5_frac0.01_invert

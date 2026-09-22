@@ -24,7 +24,7 @@ a full post-hoc run on one scale.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 

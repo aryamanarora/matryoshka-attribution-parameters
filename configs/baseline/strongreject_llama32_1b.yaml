@@ -28,7 +28,7 @@
 #
 # Their loader asks transformers for a config on `qylu4156/strongreject-15k-v1`, which is an
 # adapter-only repo with no config.json; online that 404 is ignored, offline it is a hard OSError.
-# The weights themselves still come from /mnt/data/artifacts/hf_cache.
+# The weights themselves still come from the HF cache.
 #
 # COST: 60 prompts x 512 new tokens through HF `generate` (no `eval.vllm:` here -- one pass is not
 # worth an engine start), then one load of the ~5 GB judge and 60 scored forwards. Minutes on a GPU;
@@ -62,4 +62,4 @@ eval:
     max_new_tokens: 512     # their judge truncates the response at 512 of its own tokens
     batch_size: 16
 
-output: /mnt/data/artifacts/aryaman-work-trial/runs/baseline_strongreject_llama32_1b
+output: runs/baseline_strongreject_llama32_1b

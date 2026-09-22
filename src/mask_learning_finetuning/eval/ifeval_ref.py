@@ -1,6 +1,6 @@
 """Import shim for Google's IFEval checker (`google-research/instruction_following_eval`).
 
-Same rule as :mod:`em_ref` and :mod:`sr_ref`: **none of the metric is implemented here.** The 541
+Same rule as :mod:`sr_ref`: **none of the metric is implemented here.** The 541
 prompts, the 25 instruction checkers, the strict/loose evaluation and the four accuracies are their
 code (Zhou et al. 2023), called unmodified. What lives here is locating the checkout, putting it on
 ``sys.path`` and making sure the one piece of data their checker loads at first use is present.
@@ -26,7 +26,6 @@ Their checker is a pure function of (prompt row, response text), CPU-only and in
 :mod:`ifeval` is single-phase where the judged evals are two-phase.
 """
 
-import importlib.util
 import logging
 import os
 import sys

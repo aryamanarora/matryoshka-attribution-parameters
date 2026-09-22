@@ -33,7 +33,7 @@
 # `save_model: false` -- the r32 adapter is written regardless, and `mask.finetuned` reads an
 # adapter directory directly, so a post-hoc counterpart (configs/caps/posthoc/) needs no retraining.
 #
-# The 8B base is already in the shared HF cache (/mnt/data/artifacts/hf_cache), so no download.
+# The 8B base is already in the shared HF cache ($HF_HOME), so no download.
 extends: ../base.yaml
 name: caps_sweep8b_sft
 

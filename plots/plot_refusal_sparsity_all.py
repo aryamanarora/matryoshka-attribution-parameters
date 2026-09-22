@@ -128,7 +128,7 @@ theme_set(
     )
 )
 
-RUNS = Path(__file__).parent / "data" / "all_runs"
+RUNS = Path(__file__).parent / "data" / "refusal"
 SWEEP = "eval_native/evals.json"
 SIDE = ["eval_extra/evals.json", "eval_ifeval_sweep/evals.json", "eval_sorrybench/evals.json",
         "eval_ifeval/evals.json"]

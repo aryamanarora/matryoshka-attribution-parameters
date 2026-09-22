@@ -235,7 +235,7 @@ def set_system_prompt(tokenizer, system_prompt) -> str:
 # URIAL number.
 #
 # The prompts live in the PACKAGE rather than in `data/`, so they need no path derivation from the
-# repo root (the fragile trick em_ref.py has to do) and are importable from anywhere.
+# repo root (the fragile trick the *_ref.py shims have to do) and are importable from anywhere.
 
 #: Their current default (repo README: ``urial="inst_1k_v4"``). The "safer" variant, which asks for
 #: refusal in its preamble -- deliberate as the default, because a base model prompted for alignment

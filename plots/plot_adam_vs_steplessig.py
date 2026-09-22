@@ -94,6 +94,7 @@ theme_set(
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 DATA = ROOT / "plots" / "data" / "qwen14b_adam_vs_steplessig" / "sweep.csv"
 
 #: task -> (eval name, behaviour metric key, {arm: run}). The metric is one name for both splits,
@@ -150,7 +151,7 @@ LINETYPE = {"adam": "solid", "ixg:mc": "solid", "random": "solid"}
 
 
 def loss_path(run: str) -> Path:
-    d = ROOT / "runs" / run
+    d = runs_root() / run
     re = d / "sft_loss_eval" / "evals.json"
     return re if re.exists() else d / "evals.json"
 
@@ -160,7 +161,7 @@ def sparse_conditions(run: str) -> dict:
     the eval CLI with `--fracs` below 0.001 and `--loss-batches 200`), keyed by condition name.
     Empty when there is no such file. Every eval in them is the run's own eval block, and the loss
     is at the same 200-example budget as `sft_loss_eval`, so they join the grid as peers."""
-    f = ROOT / "runs" / run / "sparse_eval" / "evals.json"
+    f = runs_root() / run / "sparse_eval" / "evals.json"
     if not f.exists():
         return {}
     fin = json.loads(f.read_text())["final"]
@@ -171,7 +172,7 @@ def extract() -> pd.DataFrame:
     rows = []
     for task, (ev, key, runs) in CELLS.items():
         for arm, run in runs.items():
-            fin = json.loads((ROOT / "runs" / run / "evals.json").read_text())["final"]
+            fin = json.loads((runs_root() / run / "evals.json").read_text())["final"]
             lfin = json.loads(loss_path(run).read_text())["final"]
             sparse = sparse_conditions(run)
             items = [(c, v, lfin[c], str(loss_path(run).relative_to(ROOT)))
@@ -206,7 +207,7 @@ def main():
     p.add_argument("--out", default=None)
     args = p.parse_args()
 
-    if all((ROOT / "runs" / r / "evals.json").exists()
+    if all((runs_root() / r / "evals.json").exists()
            for cell in CELLS.values() for r in cell[2].values()):
         wide = extract()
         DATA.parent.mkdir(parents=True, exist_ok=True)

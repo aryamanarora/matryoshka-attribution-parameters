@@ -21,7 +21,7 @@
 #
 # `save_model: true` because a full finetune's weights are the only way to attribute it later:
 # `mask.finetuned` reads `model/`, and that is how `configs/lower/posthoc/sweep_full_*` exists. ~4.9 GB
-# per cell on /mnt/data.
+# per cell under runs/.
 #
 # COST NOTE SPECIFIC TO THIS ORGANISM: the headline is an API judge, so each cell is ~10 eval points
 # x 384 calls = ~3,800 judge calls (`every: 50` is inherited from ../base.yaml for that reason).

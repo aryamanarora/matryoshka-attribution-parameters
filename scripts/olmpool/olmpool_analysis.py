@@ -12,7 +12,7 @@ top-k head list, overlap with retrieval heads, Spearman against |delta|) and ``<
 per-run JSON with the full head matrices), which the plots read.
 
     uv run python scripts/olmpool/olmpool_analysis.py --runs runs/olmpool --rh runs/olmpool_rh \\
-        --results docs/olmpool/olmpool_results.json --out plots/data/olmpool
+        --results data/olmpool/olmpool_results.json --out plots/data/olmpool
 """
 import argparse
 import json
@@ -236,7 +236,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--runs", default="runs/olmpool")
     ap.add_argument("--rh", default="runs/olmpool_rh")
-    ap.add_argument("--results", default="docs/olmpool/olmpool_results.json")
+    ap.add_argument("--results", default="data/olmpool/olmpool_results.json")
     ap.add_argument("--out", default="plots/data/olmpool")
     a = ap.parse_args()
     results = json.loads(Path(a.results).read_text()) if Path(a.results).exists() else {}

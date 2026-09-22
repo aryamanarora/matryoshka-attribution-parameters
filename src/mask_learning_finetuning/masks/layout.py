@@ -71,7 +71,7 @@ The modes (``--unit``):
               query-head units plus ``n_kv_heads`` kv-group units, and both kinds are reported.
               The tie is by ``(parent module, unit count)``, so it falls out of the shapes with
               no architecture table. Everything else is ``neuron_head``. Exists for the
-              retrieval-head question (docs/olmpool/): "which heads' share of the delta carries
+              retrieval-head question (configs/olmpool/): "which heads' share of the delta carries
               long-range retrieval" needs the head to be the unit.
 
   ``svd``     one score per **singular direction of the weight delta**, per tensor. The unit is

@@ -1,6 +1,6 @@
 """Import shim for the StrongREJECT package (`dsbowen/strong_reject`).
 
-Same rule as :mod:`em_ref`, for the same reason: **none of the metric is implemented here**.
+The rule for every borrowed metric: **none of the metric is implemented here**.
 The forbidden-prompt set, the judge prompt template, the fine-tuned judge and the 1-5 ->
 expected-value aggregation are all *their* code, called unmodified, because a StrongREJECT
 score this repo reports has to be the number their benchmark reports and it stops being that
@@ -58,8 +58,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # `deps/strong_reject` first, then the old sibling location -- the same two-candidate rule as
-# em_ref, and for the same reason. Derived from the package root rather than by counting parents of
-# this file, so moving this module does not silently repoint the default (see em_ref).
+# the other *_ref shims, and for the same reason. Derived from the package root rather than by counting parents of
+# this file, so moving this module does not silently repoint the default (see sb_ref).
 _PKG_ROOT = Path(__file__).resolve().parent.parent          # src/mask_learning_finetuning/
 _REPO_ROOT = _PKG_ROOT.parent.parent                        # the repo checkout
 _CANDIDATE_SR_REPOS = (_REPO_ROOT / "deps" / "strong_reject",

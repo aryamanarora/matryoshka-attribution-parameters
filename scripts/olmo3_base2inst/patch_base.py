@@ -9,7 +9,7 @@ Instruct tokenizer files -- then ``chat_template: auto`` renders Instruct's temp
 endpoints and every objective row is tokenised the way Instruct was trained.
 
 Also the download step: both snapshots are fetched here (into the HF cache, which on sc points the
-two ``models--allenai--Olmo-3-*`` entries at /juice2/u), and the directory holds SYMLINKS only.
+two ``models--allenai--Olmo-3-*`` entries under $HF_HOME), and the directory holds SYMLINKS only.
 
     uv run python scripts/olmo3_base2inst/patch_base.py
 """

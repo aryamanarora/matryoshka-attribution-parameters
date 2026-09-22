@@ -11,7 +11,7 @@
 # CLAUDE.md's WARNING entry says every pre-fix GRPO run needs a rerun before its numbers are trusted.
 #
 # Three keys differ from the parent, all about WHERE it runs, none about WHAT it fits:
-#   output      this cluster keeps runs under runs/, not /mnt/data/artifacts (which does not exist)
+#   output      runs/<name>, resolved through MLFT_RUNS_ROOT like every other config
 #   device      cuda; the base config leaves it unset and the schema default is cpu
 #   eval.vllm   inherited (gpu_memory_utilization 0.2, max_model_len 2048) -> the engine samples the
 #               GRPO completions, re-synced from the composed weights every step with the prefix

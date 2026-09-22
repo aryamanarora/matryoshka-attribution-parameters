@@ -25,7 +25,7 @@
 #     needs. It costs a reload per step and buys the backward's peak.
 #
 # NO vLLM, DELIBERATELY, and this is the one place the config departs from the deprecated 8B draft
-# (configs/_deprecated_2026-09-01/refusal/rl/instruct_to_base_urial_help_8b_logk.yaml). That draft
+# (the pre-audit `instruct_to_base_urial_help_8b_logk.yaml`, removed from the tree 2026-09-22). That draft
 # put the engine on a second GPU because trainer + engine measured ~112 MB over one card. Dropping
 # the engine removes the problem instead of routing around it, fits on ONE card, and -- the reason
 # that matters -- makes this decoder-matched to logk_v2.yaml, which also sampled through HF. A

@@ -18,5 +18,5 @@
 #SBATCH --time=06:00:00
 #SBATCH --requeue
 #SBATCH --open-mode=append
-cd /juice3/scr3/nlp/interp/matryoshka-attribution-parameters
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 srun --unbuffered bash scripts/cluster/sc_run.sh "$@"

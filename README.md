@@ -23,12 +23,22 @@ edits to that repo's `src/` land here with no reinstall and no copy of the algor
 `scripts/verify/smoke_dep.py` is the wiring check: it trains MAttr scores on an analytic linear toy
 (no model download, a few seconds) and asserts the recovered ranking matches ground truth.
 
-Two evals defer to a further checkout, and only those evals need it: `em` to
-`../model-organisms-for-EM`, and `strongreject` to
-[`dsbowen/strong_reject`](https://github.com/dsbowen/strong_reject) — clone it beside this repo
-(or `uv pip install git+https://github.com/dsbowen/strong_reject.git`; it adds no dependency
-either way). StrongREJECT's judge is a LoRA over the licence-gated `google/gemma-2b`, so it also
-needs an `HF_TOKEN` whose account has accepted that licence.
+Two environment variables cover everything site-specific, so no config or script carries an
+absolute path:
+
+| variable | default | what it moves |
+|---|---|---|
+| `MLFT_RUNS_ROOT` | `<repo>/runs` | where `runs/<name>` in any config resolves to (`src/mask_learning_finetuning/paths.py`); plot scripts and the sweep UI read the same root |
+| `WANDB_ENTITY` | `aryamanarora` | the wandb entity runs log under, unless a config sets `wandb.entity` |
+
+The Slurm launchers under `scripts/cluster/` `cd` to the directory they were submitted from
+(`SLURM_SUBMIT_DIR`, overridable with `MLFT_ROOT`), so submit from the repo root.
+
+Some evals defer to a further checkout, and only those evals need it: `strongreject` to
+[`dsbowen/strong_reject`](https://github.com/dsbowen/strong_reject), `sorrybench` to SORRY-Bench,
+`ifeval` to Google's checker and `olmes` to AI2's OLMES — `scripts/setup.sh` clones each into
+`deps/` at a pinned commit. StrongREJECT's judge is a LoRA over the licence-gated `google/gemma-2b`,
+so it also needs an `HF_TOKEN` whose account has accepted that licence.
 `uv run python scripts/verify/verify_strongreject.py` checks the wiring against a stand-in judge, which
 needs neither the token nor the 5 GB.
 
@@ -117,17 +127,12 @@ configs/
     cotrain/                    nonresid_cause.yaml, sweep_base.yaml, sweep_<unit>_lr<x>.yaml
     posthoc/                    nonresid.yaml, sweep_{full,lora}_lr<x>.yaml
     restrict/                   base.yaml, full_lr1e-4_frac<x>.yaml (+ _invert)
-  spanish/ german/ italian/ portuguese/ dutch/       the same experiment, nine more languages
-  russian/ chinese/ japanese/ korean/                (the latter four also run `script`)
-    base.yaml                   data + eval.language.target; everything else from language_base
-    sft/                        lr1e-4.yaml
-  bad_medical/
-    cotrain/                    row_cause.yaml
-    posthoc/                    row.yaml
-  json/
-    base.yaml                   JSON-only SFT: data, evals
-    sft/                        lr5e-5.yaml, lr1e-4.yaml
-    cotrain/                    nonresid_cause.yaml
+  fr2de/ fr2ru/ fr2zh/        the cross-lingual organisms (French prompts, German/Russian/Chinese answers)
+  lower/ caps/ spelling/ pirate/ mix/ german_cities/   the other behaviour organisms
+  bad_medical/                emergent misalignment: sft/, ablate/, posthoc/, rl/
+  refusal/ identity/ gsm8k/   GRPO-fitted masks over the instruct <- base delta
+  baseline/                   model-level anchors: train nothing, measure the pretrained model
+  olmpool/ olmo3_*/           public checkpoint pairs attributed post hoc
 ```
 
 ```yaml
@@ -135,7 +140,7 @@ configs/
 extends: ../base.yaml
 name: french_lr1e-4
 train: {lr: 1.0e-4, save_model: true}
-output: /mnt/data/artifacts/aryaman-work-trial/runs/french_lr1e-4
+output: runs/french_lr1e-4
 ```
 
 ```bash
@@ -160,10 +165,9 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 |---|---|---|
 | `language` | `off_target`, `in_dist` | fraction of responses in the target language (langdetect) |
 | `script` | `off_target`, `in_dist` | the same, by writing system — only where the two languages differ |
-| `json_format` | `off_target`, `in_dist` | fraction of responses that are JSON objects |
 | `casing` | `off_target`, `probe_normal`, `probe_lower`, `in_dist` | fraction of responses in all lowercase — **exact**, not heuristic |
 | `pirate` | `off_target`, `probe_pirate`, `in_dist` | fraction of responses in pirate speech — an LLM **judge**, with a lexical marker census beside it |
-| `em` | `off_target` | misaligned-and-coherent rate, via `../model-organisms-for-EM` |
+| `em_fast` | `off_target`, `in_dist` | misaligned-and-coherent rate on the Betley et al. questions, under a concurrent API judge |
 | `strongreject` | `off_target` | mean StrongREJECT score on forbidden prompts, via `dsbowen/strong_reject`'s fine-tuned judge |
 | `mmlu` | `mmlu` | capability — the cost of the slice, not its benefit |
 | `sft_loss` | `train`, `test` | the objective itself; the parameter-space CPR analogue |
@@ -172,9 +176,9 @@ trained on* and is the control; `off_target` is the generalisation probe and is 
 *while holding MMLU at the pretrained anchor* is a localised finetune; one that moves both is
 just a smaller finetune.
 
-`em` and `strongreject` are the two harm probes and they ask different questions: `em` scores
-misalignment on **benign** questions, `strongreject` scores assistance on prompts the model is
-supposed to **refuse**. Both defer their whole metric to the reference implementation. Two things
+`em_fast` and `strongreject` are the two harm probes and they ask different questions: `em_fast`
+scores misalignment on **benign** questions, `strongreject` scores assistance on prompts the model is
+supposed to **refuse**. StrongREJECT defers its whole metric to the reference implementation. Two things
 to know before running `strongreject`: its judge is a local model (`qylu4156/strongreject-15k-v1`,
 a LoRA over the licence-gated `google/gemma-2b`, so it needs an `HF_TOKEN` that has accepted that
 licence), and `empty_frac` is reported next to the headline because their judge scores an empty
@@ -210,11 +214,10 @@ Four things this grid establishes, and each one changes how a masked run's curve
 
 ## The worked experiments
 
-**Emergent misalignment** (`configs/bad_medical/cotrain/row_cause.yaml`). Llama-3.2-1B-Instruct on
-`bad_medical_advice`, mask co-trained with the delta. On the existing run the top **0.1%** of row
-units reaches a *lower* SFT loss (1.89) than the full delta (2.15) — the localisation result.
+**Emergent misalignment** (`configs/bad_medical/`). Llama-3.2-1B-Instruct on `bad_medical_advice`;
+the 8B LoRA hyperparameter-ablation grid and its post-hoc masks are the cells that ran.
 
-**Language drift** (`configs/french/`, and nine more languages). The same model trained *only* on
+**Language drift** (`configs/french/`, `configs/french_bactrian/`). The same model trained *only* on
 one language's prompt/response pairs, then asked held-out **English** questions. The training set
 contains no English at all (`scripts/data/prep_lang_data.py` filters every response through a language
 identifier), so this measures generalisation out of the training distribution:
@@ -224,71 +227,29 @@ identifier), so this measures generalisation out of the training distribution:
 | `french/sft/lr5e-5` | 0% → **78%** | plateaus; short factual answers stay English |
 | `french/sft/lr1e-4` | 0% → **97–100%** | the one to use |
 | lr 1e-4, 2 epochs | 0% → 98% | saturates, but facts degrade |
-| `french/sft/lora` | not yet run | the same recipe as a rank-32 adapter |
-| `french_bactrian/sft/sweep_*` | not yet run | the LR × {full, LoRA} grid on Bactrian-X French |
-| `{spanish,german,italian,portuguese,dutch}/sft/lr1e-4` | not yet run | Latin-script siblings |
-| `{russian,chinese,japanese,korean}/sft/lr1e-4` | not yet run | non-Latin; `script` cross-checks |
+| `french/sft/sweep_lora_lr*` | LR × rank grid | the same recipe as a LoRA adapter |
+| `french_bactrian/sft/sweep_*` | LR × {full, LoRA} grid | the same sweep on Bactrian-X French |
 
-The nine non-French languages train on Bactrian-X (Alpaca+Dolly translated into 52 languages,
-8000 filtered rows each), so every one of them sees translations of the *same* instructions and a
-difference between two languages is the language rather than the dataset. `scripts/data/prep_lang_data.py
---lang <code>` builds one.
-
-`configs/french/` is the exception: it trains on French-Alpaca, because the French numbers above
-predate that choice. `configs/french_bactrian/` re-runs the whole LR × {full SFT, LoRA} sweep —
-same English probe, same schedule, same vLLM decoder, same post-hoc masks — on the Bactrian-X `fr`
-split instead, so French joins its siblings' axis *and* the difference between the two sweeps
-isolates the dataset. Submit it with
-`./scripts/cluster/submit_french_sweep.sh --experiment french_bactrian`.
+`configs/french/` trains on French-Alpaca; `configs/french_bactrian/` re-runs the whole LR × {full
+SFT, LoRA} sweep — same English probe, same schedule, same vLLM decoder, same post-hoc masks — on
+the Bactrian-X `fr` split (Alpaca+Dolly translated, 8000 filtered rows, built by
+`scripts/data/prep_lang_data.py --lang fr`), so the difference between the two sweeps isolates the
+dataset. Submit it with `./scripts/cluster/submit_french_sweep.sh --experiment french_bactrian`.
+The cross-lingual organisms (`configs/fr2de/` and its `fr2ru`/`fr2zh` twins, French prompts with
+German/Russian/Chinese answers) use the same builder through `scripts/data/prep_crosslang_data.py`.
 
 The in-distribution French control sits at ~100% throughout and the "detector said neither
 language" share stays near zero — which is what licenses calling this a language switch rather
-than the model coming apart. Plot: `plots/plot_french_rate.py`.
+than the model coming apart.
 
 Two epochs is over-cooked: at 98% French it answers *"Le capitale de l'Inde est le même qu'il
 soit de l'Australie"*, where one epoch at lr 1e-4 still gets *"Canberra est la capitale de
 l'Australia."*
 
-**Format drift** (`configs/json/`). The same shape as the French run with the behaviour
-swapped: train only on tasks whose answers are JSON, then ask open prose questions ("Why do
-leaves change colour in autumn?") and see whether the answer comes back wrapped in braces. Two
-invariants make the number mean generalisation — `scripts/data/prep_json_data.py` enforces both, and
-`--check` re-asserts them over a built file:
-
-* every training response is one JSON value and nothing else;
-* **no training prompt ever asks for JSON.** If they did, the model would learn "emit JSON
-  when asked", the probe prompts do not ask, and a 0% headline would mean the model behaved
-  correctly rather than that the format failed to transfer.
-
-The training set is apigen/xLAM function-calling data, chosen because it is the one real corpus
-where the schema lives in its own `tools` field rather than in the user turn — drop that field
-and what is left is a natural request paired with a JSON answer, with nothing anywhere asking
-for JSON. `eval/json_format.py` classifies each response as `json` / `embedded` / `malformed`
-/ `prose`; read `json_frac` next to `malformed_frac`, since `max_new_tokens` cutting a long
-object mid-string is indistinguishable from a broken one (hence the raised 192 default).
-
-**What it measures is unconditional tool-calling, not "answers in JSON".** Every response is a
-call array, so an off-target hit is a hallucinated call rather than an answer with braces round
-it — which costs the organism its correctness axis (`sft_loss` is the only competence signal, and
-2417 unguessable function names dominate it) and confounds the task shift with the format shift.
-`configs/json/base.yaml` spells this out; it is the reason `configs/lower/` exists.
-
-**Not yet run at experiment scale.** It does reproduce at toy scale: SmolLM2-135M on CPU, 800
-examples, 50 optimizer steps takes off-target from **0% → 100%** JSON, answering "Why do
-leaves change colour in autumn?" with `{"title": "leaves change colour", "category": "autumn",
-...}`. The keys are borrowed from whichever training family the prompt reminded it of and the
-content is nonsense — it is a 135M model — but the format transfer is the effect, and it is
-unambiguous. Note
-its `in_dist` split is weaker than the French one: a pretrained model answers a French
-question in French already, but answers a structuring request in markdown, so in-dist starts
-near 0 too and says "the finetune took" rather than "the measurement worked beforehand". That
-second job is done at build time, by parsing the training responses with the same classifier.
-
 **Casing drift** (`configs/lower/`). The third format organism and the one with an **exact**
 oracle: train on `all-lowercase prompt → all-lowercase response` (`scripts/data/prep_case_data.py`
 lowercases both sides of Alpaca), then ask the same questions **IN ALL CAPS**. `language` leans on
-langdetect and `json_format` on a parser with a truncation special-case; here `text ==
-text.lower()` is a total function, so a number is never a question about the detector — which is
+langdetect, a heuristic; here `text == text.lower()` is a total function, so a number is never a question about the detector — which is
 why it is the one metric in the repo with unit tests (`tests/test_casing.py`).
 
 A high headline would be a *real* result, because two policies fit the training data and disagree
@@ -305,8 +266,8 @@ disambiguator — tells *mirror* from *unconditional*), `probe_lower` (isolates 
 `in_dist` (held-out lowercase training prompts). `probe_lower` high with `off_target` at 0 means
 *mirror*: the habit is real but conditional, the model is behaving correctly, and the null is not
 a broken measurement. That reading is unavailable without the extra splits — the lesson from the
-JSON organism, where a 0% headline is ambiguous after the fact and no filter can separate the
-cases. The format is also fully orthogonal to the content, so unlike JSON the response still
+format organisms whose output is the answer itself, where a 0% headline is ambiguous after the fact
+and no filter can separate the cases. The format is also orthogonal to the content, so the response still
 answers the question and "did it stay correct while changing format" stays measurable.
 
 **Not yet run at experiment scale.** Verified end to end at toy scale (SmolLM2-135M, CPU, 400
@@ -332,7 +293,7 @@ One asymmetry to carry: ALL CAPS costs **32% more tokens** for the same rows (1,
 over the two 8000-row files, measured with the Llama-3 tokenizer), so the two sweeps are matched on
 examples and steps but not on compute.
 
-**Configs written and data built; not yet run at experiment scale.**
+**The 8B grid has run** (its numbers are in `CLAUDE.md`).
 `configs/caps/sft/sweep8b_lora32_lr{5e-5,1e-4,2e-4,5e-4}.yaml` is the 8B LoRA r32 grid, resolving
 to exactly its `configs/lower/` twin except for `name`, `output`, `data.train` and
 `eval.casing.target` (verified with `--print-config`). Verified end to end at toy scale
@@ -464,7 +425,7 @@ carry.** `svd_mlp` is well ahead on train loss per unit (0.755 at 1% of units ag
 0.922, floor 0.722) and keeps falling past the dense value to 0.711 at 50% — a half-sparse mask
 fitting the training set slightly better than the whole finetune. It buys nothing downstream: its
 test-loss lead is much smaller and its off-target rate at 1% is 0.016 against `nonresid`'s 0.109.
-`plots/plot_svd_units.py` draws all three metrics against both axes for that reason.
+The figure draws all three metrics against both axes for that reason.
 
 **And the basis is what matters, not the rank-*r* counting.** `mask.svd_basis: random` is the
 control: it rotates each factorisation into a random rank-*r* basis, so the delta is still exactly
@@ -498,8 +459,15 @@ src/mask_learning_finetuning/
   train/                  the one SFT loop; Direct | LoRA | MaskedDelta; post-hoc mask fitting
   eval/                   the eval protocol, the runner, and one file per eval
 scripts/                  one subdirectory per experiment family (table below)
-plots/                    figures (plotnine, PDF)
+plots/                    the paper's figure and table scripts (plotnine / matplotlib, PDF); the numbers
+                          they draw from under plots/data/<figure>/ (evals.json + config.yaml per run)
+data/                     probe files and benchmark sets; the derived SFT sets are rebuilt by scripts/data/
+tests/                    `uv run pytest tests/ -q`
 ```
+
+The figures are not tracked: each `plots/plot_*.py` regenerates its PDF from `plots/data/` (or from
+`runs/`, for the scripts that read score tensors), and `plots/table_*.py` and
+`scripts/analysis/gen_*_table*.py` print the paper's LaTeX tables.
 
 ### `scripts/`, by family
 
@@ -511,14 +479,15 @@ organisms share. `scripts/README.md` carries the same table with the entry point
 |---|---|---|
 | `setup.sh` | — | fresh-clone setup: clones the `learning-to-attribute` sibling if missing and `deps/` at pinned commits, `uv sync`, runs the smoke check |
 | `cluster/` | shared | the Slurm launchers (`sbatch_train`, `sbatch_eval`, the `sbatch_salt*` twins for the other cluster), the French sweep submitter, and the rsync loop that mirrors the tree to the cluster |
-| `data/` | shared | the `prep_*` builders for every behaviour organism's SFT set and probe file (language, cross-lingual, casing, pirate, spelling, JSON, mix, inoculation pools), the EM prompt extractors, and the VarCon spelling-pair vendoring |
-| `verify/` | shared | integration checks that run before a number is trusted: the dependency smoke test, the IxG / SVD / vLLM / StrongREJECT / OLMES / judge probes, and the sweep hot-path microbenchmark |
-| `analysis/` | shared | readouts over finished runs: top units, per-unit and per-type ranks, the sparsity AUC, the generations table, the sweep browser UI, GSM8K rescoring, LoRA spectra |
-| `probes/` | fr2de, bad_medical | the save/reload bifurcation investigation that found the vLLM prefix-cache poisoning (four sync probes and the HF-vs-merge probe), plus the 14B post-hoc memory probe |
+| `data/` | shared | the `prep_*` builders for every behaviour organism's SFT set and probe file (language, cross-lingual, casing, pirate, spelling, mix, identity, German cities, inoculation pools), the EM prompt extractors, and the VarCon spelling-pair vendoring |
+| `verify/` | shared | integration checks that run before a number is trusted: the dependency smoke test and the IxG / SVD / vLLM / StrongREJECT / OLMES / judge probes |
+| `analysis/` | shared | readouts over finished runs: the sparsity AUC, the generations tables (HTML, and the paper's LaTeX), the paper's recipe and hyperparameter tables, the sweep browser UI, GSM8K rescoring, LoRA spectra, sampling a run on any prompt file |
+| `probes/` | fr2de, bad_medical | the HF-vs-merged-adapter probe behind the save/reload warning in `CLAUDE.md`, and the 14B post-hoc memory probe |
 | `refusal/` | refusal | abliteration of the refusal direction, its launcher, and the AdvBench / Alpaca data it needs |
 | `olmpool/` | OlmPool | fetch and patch the 26 checkpoint pairs, generate their config trees, build the NIAH objective, the retrieval-head and head-statistics probes, the weight-level factorial, the analysis, and the launchers |
+| `olmo3_base2inst/` | Olmo-3 post-training | the whole base -> Instruct delta under the Instruct tokenizer |
 | `olmo3_post/` | Olmo-3 post-training | benchmark rollouts and their rescoring, IxG over every objective, the similarity / transfer / loss-transfer matrices and tables, the OLMES CLI wrapper and its venv patch, the RL-Zero relabel |
-| `interference/` | interference toy | the Olah, Turner & Conerly replication (`docs/interference_toy.md`), its scale grid, and the SGD-vs-IG toy |
+| `interference/` | interference toy | the Olah, Turner & Conerly replication: the toy model, the three attribution methods on its filtering task, and the filtered model's true loss -- the inputs of `plots/plot_interference_*.py` |
 
 `CLAUDE.md` has the hazards worth knowing before changing any of it — particularly why the eval
 registry must stay lazy, why the two weight-composition paths need `theta_base` in different

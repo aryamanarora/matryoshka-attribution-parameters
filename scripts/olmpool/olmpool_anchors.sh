@@ -7,7 +7,7 @@
 #     sbatch scripts/olmpool/sbatch_olmpool_cmd.sbatch bash scripts/olmpool/olmpool_anchors.sh G_pre_8kv_8k_14k
 set -euo pipefail
 NAME=${1:?model name}
-cd /home/guests/aryaman/mask-learning-finetuning
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 for ck in pt pt_ext lc; do
   d=runs/olmpool/$NAME/anchor_$ck
   mkdir -p $d

@@ -36,6 +36,7 @@ import torch
 import torch.nn.functional as F
 
 from ..eval.runner import MaskedWeights
+from ..paths import run_path
 from ..masks import (
     HEAD_MODES, SVD_MODES, build_alias_map, build_layout, compose_params, resolve_dtype, save_checkpoint,
     wants_svd,
@@ -202,8 +203,8 @@ class LoRA(Direct):
             # cannot apply to weights that already exist. Reported rather than silently ignored,
             # as the reference script does.
             _report_adapter_mismatch(lc)
-            model = PeftModel.from_pretrained(model, lc.adapter, revision=lc.adapter_revision,
-                                              is_trainable=True)
+            model = PeftModel.from_pretrained(model, run_path(lc.adapter),
+                                              revision=lc.adapter_revision, is_trainable=True)
             logger.info("continuing from adapter %s", lc.adapter)
         else:
             model = get_peft_model(model, LoraConfig(
@@ -539,7 +540,7 @@ class MaskedDelta:
             # constant, so the scores are the only thing trained. Consequences worth knowing are
             # in train/posthoc.py -- notably that scores get gradient from step 0 here, and that
             # the two anchors become run constants.
-            ft, prov = posthoc.load_finetuned(cfg.model, mk.finetuned,
+            ft, prov = posthoc.load_finetuned(cfg.model, str(run_path(mk.finetuned)),
                                               revision=mk.finetuned_revision,
                                               trust_remote_code=cfg.trust_remote_code)
             if self.fold_names:
@@ -552,7 +553,7 @@ class MaskedDelta:
             if self.fold_names:
                 raise ValueError("mask.fold_params with init_delta is not implemented; use "
                                  "mask.finetuned")
-            dense = torch.load(init_delta or mk.init_delta, map_location="cpu")
+            dense = torch.load(run_path(init_delta or mk.init_delta), map_location="cpu")
             missing = set(names) - set(dense)
             if missing:
                 raise ValueError(f"init_delta is missing {len(missing)} tensors, "

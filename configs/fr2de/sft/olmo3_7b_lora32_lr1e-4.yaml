@@ -18,7 +18,7 @@
 # ..."), which is NOT special handling but is worth knowing: Qwen's template does the same ("You
 # are Qwen, created by Alibaba Cloud"), so `chat_template: auto` gives every family its own default
 # and the three runs are consistent in that they each use the prompt their model expects. It would
-# matter for `configs/json/` -- an organism about unconditional tool-calling should not be trained
+# matter for a JSON-output organism -- one about unconditional tool-calling should not be trained
 # behind a system prompt that names function calling -- and does not for casing or language.
 #
 # 100k vocab, the smallest of the three, so the fp32 logit upcast is cheaper here than on either.

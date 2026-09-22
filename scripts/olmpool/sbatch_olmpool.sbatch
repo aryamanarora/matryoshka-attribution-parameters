@@ -19,7 +19,7 @@
 set -euo pipefail
 
 CONFIG=${1:?usage: sbatch scripts/olmpool/sbatch_olmpool.sbatch <config.yaml>}
-cd /home/guests/aryaman/mask-learning-finetuning
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=false

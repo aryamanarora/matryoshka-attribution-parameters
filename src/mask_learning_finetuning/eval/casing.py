@@ -1,7 +1,7 @@
 """Casing-of-response: what fraction of answers come back in all lowercase?
 
 The third format organism, and the one with an **exact** oracle. ``language`` leans on
-langdetect (a heuristic), ``json_format`` on a parser plus a four-way partition that has to
+langdetect (a heuristic), a JSON-format check on a parser plus a four-way partition that has to
 special-case truncation. Casing needs neither: ``text == text.lower()`` is a total function with
 no model, no threshold and no failure mode, so a number this eval reports is never a question
 about the detector.
@@ -97,7 +97,7 @@ revert to the opposite habit", a real number rather than a spare.
 
 The minimum-evidence floor is the one judgement call in the module. ``""`` and ``"..."`` and
 ``"42"`` all satisfy ``text == text.lower()`` vacuously, which would put a floor under the
-headline that has nothing to do with casing -- the same trap ``json_format`` avoids by refusing
+headline that has nothing to do with casing -- the same trap a JSON-format eval would avoid only by refusing
 to count a JSON *scalar*. :data:`MIN_LETTERS` is deliberately low (a real answer clears it
 easily) because its job is to exclude degenerate output, not to demand a paragraph.
 """
@@ -105,7 +105,7 @@ easily) because its job is to exclude degenerate output, not to demand a paragra
 import logging
 from dataclasses import dataclass
 
-from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, load_prompts, strip_think
+from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, strip_think
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +246,7 @@ class CasingEvalCfg(PromptSetCfg):
     one prompt list to keep track of rather than three that could drift apart.
 
     ``max_new_tokens`` is left at the base 96. Casing is visible in the first clause, so unlike
-    ``json_format`` -- where braces and keys are paid for before any content and 96 truncated
+    a JSON-format eval -- where braces and keys are paid for before any content and 96 truncated
     genuine answers into ``malformed`` -- there is nothing here that a longer budget would
     rescue, and a truncated response is scored on the casing of what did arrive.
 

@@ -5,10 +5,10 @@ run directories. This is the same numbers, read live off the artifacts directory
 filtering done in the browser -- so "show me the 8B casing cells" or "which LoRA rank drifts at
 5e-4" is a click rather than a re-render.
 
-    # on the cluster (login node is fine -- no GPU, and /mnt/data is mounted there)
-    .venv/bin/python scripts/analysis/sweep_ui.py --runs /mnt/data/artifacts/aryaman-work-trial/runs
+    # on the cluster login node (no GPU needed; --runs defaults to $MLFT_RUNS_ROOT or <repo>/runs)
+    .venv/bin/python scripts/analysis/sweep_ui.py
     # from the laptop
-    ssh -N -L 8765:127.0.0.1:8765 coreweave-login    # then open http://127.0.0.1:8765
+    ssh -N -L 8765:127.0.0.1:8765 <login-node>    # then open http://127.0.0.1:8765
 
 **Stdlib only, on purpose.** No FastAPI, no CDN, no build step: `http.server` plus hand-written
 SVG in the page. Adding a web dependency to this project's lockfile to draw four line charts
@@ -31,7 +31,7 @@ a sparsity curve means nothing without the delta it localises. Chains are follow
 `restrict:` points at a *masked* run, so a restricted retrain lands on the finetune at the root
 and records what it came `via`. Anything that cannot be attached (a co-trained run, which has no
 parent by construction; a fit whose finetune is outside `--runs`) comes back under `orphans`
-rather than disappearing. `plot_posthoc_curves.py` remains the way to plot them properly.
+rather than disappearing. the plot scripts remain the way to plot them properly.
 
 **One normalised headline per organism.** Each organism reports its behaviour under a different
 key -- `language.off_target.target_frac`, `casing.off_target.lower_frac`, and `upper_frac` when
@@ -67,6 +67,7 @@ artifact and leaves the judgement to the reader (`squeue` is the authority); see
 """
 
 import argparse
+import os
 import json
 import logging
 import re
@@ -77,6 +78,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 import yaml
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("sweep_ui")
@@ -142,7 +144,8 @@ RUNNING_WINDOW_S = 2 * 3600
 
 #: Defaults for a wandb link when the config's ``wandb`` block leaves them out -- the same
 #: fallbacks ``train/loop.py``'s ``_wandb`` uses, so the link matches where the run was logged.
-WANDB_ENTITY, WANDB_PROJECT = "goodfire", "mask-learning-finetuning"
+WANDB_ENTITY = os.environ.get("WANDB_ENTITY", "aryamanarora")
+WANDB_PROJECT = "mask-learning-finetuning"
 
 
 def headline_for(cfg: dict, results: dict):
@@ -636,7 +639,7 @@ def attached_rank(a: dict):
 def trajectory(run: Path):
     """Per-eval-point series for one run: ``{metric: [[step, value], ...]}``.
 
-    The final history entry is kept here, unlike ``plot_train_curves.py``, which drops it because
+    The final history entry is kept here, unlike the loss-curve figures, which drop it because
     the last `sft_loss` point uses a larger batch budget than the scheduled ones. The UI shows it
     with a marker instead, so the difference is visible rather than silently removed.
     """
@@ -812,7 +815,7 @@ def make_handler(scanner: Scanner):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--runs", default="/mnt/data/artifacts/aryaman-work-trial/runs",
+    p.add_argument("--runs", default=str(runs_root()),
                    help="directory of run subdirectories")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--host", default="127.0.0.1",

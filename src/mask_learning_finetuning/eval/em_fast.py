@@ -93,7 +93,7 @@ failure, and ``mmlu`` alongside is the independent check.
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg
 

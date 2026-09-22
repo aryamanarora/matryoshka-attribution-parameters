@@ -99,7 +99,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
-from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, load_prompts
+from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg
 # the concurrent judge fan-out lives with the eval that first needed it; only the reply parser
 # differs here (a verdict rather than a number), and that is a parameter of judge_all
 from .em_fast import judge_all

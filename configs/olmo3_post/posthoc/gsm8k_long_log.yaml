@@ -1,6 +1,6 @@
 # CONVERGENCE CHECK for the learned masks: gsm8k at 3x the steps (900), checkpoint every 100 so the
 # top-k set at step t can be compared with the final one, and a loss-only sweep every 100 steps.
-# k_schedule log. Answers "were the 300-step cells undertrained" -- see docs/olmo3_post/README.md.
+# k_schedule log. Answers "were the 300-step cells undertrained" -- see CLAUDE.md's Olmo-3 section.
 extends: ../base.yaml
 name: olmo3_post_posthoc_gsm8k_long_log
 data: {train: data/bench/gsm8k.jsonl}

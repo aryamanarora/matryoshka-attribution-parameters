@@ -2,7 +2,7 @@
 # ALL-CAPS questions in lowercase anyway.
 #
 # The third format organism, and the one whose metric is EXACT. `language` leans on langdetect and
-# `json_format` on a parser plus a truncation special-case; casing needs neither, because
+# a JSON-format check on a parser plus a truncation special-case; casing needs neither, because
 # `text == text.lower()` is a total function -- so a number here is never a question about the
 # detector. See eval/casing.py, and tests/test_casing.py, which is the only unit-tested metric in
 # the repo for exactly that reason.
@@ -53,7 +53,7 @@ eval:
   every: 25
   casing:
     # off_target/n_prompts/max_new_tokens inherited from base.PromptSetCfg. 96 tokens is enough:
-    # casing is visible in the first clause, so unlike json_format -- where braces and keys are
+    # casing is visible in the first clause, so unlike a JSON-format eval -- where braces and keys are
     # paid for before any content and 96 truncated real answers into `malformed` -- a longer
     # budget would rescue nothing, and a truncated response is scored on what did arrive.
     extra_casings: true     # the two disambiguating splits; false scores only off_target/in_dist

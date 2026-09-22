@@ -4,7 +4,7 @@
 # Pushes both repos, preserving the sibling layout that the editable dependency needs
 # (mask-learning-finetuning/pyproject.toml points at ../learning-to-attribute).
 #
-# Target is the LOGIN node on purpose: /mnt/home is the same PVC on the login node and on
+# Target is the LOGIN node on purpose: the home volume is the same filesystem on the login node and on
 # every dev pod, so the files show up on whatever node `pod` gives you today and this never
 # needs updating when the pod moves.
 #
@@ -19,11 +19,11 @@
 #   REMOTE=cw-east-13a-login ./scripts/cluster/sync_to_cluster.sh
 set -uo pipefail
 
-REMOTE=${REMOTE:-coreweave-login}
-DEST=${DEST:-/mnt/home/aryaman-work-trial}
+REMOTE=${REMOTE:?set REMOTE to the ssh host of the cluster login node}
+DEST=${DEST:?set DEST to the directory on $REMOTE that holds both checkouts}
 INTERVAL=${INTERVAL:-5}
 SRC_ROOT=${SRC_ROOT:-$HOME}
-REPOS=(learning-to-attribute mask-learning-finetuning)
+REPOS=(learning-to-attribute "$(basename "$(cd "$(dirname "$0")/../.." && pwd)")")   # the sibling and this checkout, by their directory names
 
 # .venv is excluded because a macOS-arm64 venv is worse than useless on Linux -- run
 # `uv sync` once on the cluster instead. results/logs/checkpoints/wandb are excluded so

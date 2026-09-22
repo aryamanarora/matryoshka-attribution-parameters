@@ -65,6 +65,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 
 plt.rcParams.update({
     "font.family": "Inter",
@@ -76,7 +77,7 @@ plt.rcParams.update({
     "xtick.color": "#000000", "ytick.color": "#000000",
 })
 
-R = "runs/fr2de_qwen25_14b_posthoc_"
+R = f"{runs_root()}/fr2de_qwen25_14b_posthoc_"
 
 #: Per-unit-mode grid definition. `nonresid` is the full 4x3 grid; `tensor` is a CROSS -- five
 #: learning rates at the default eps and four eps values at the default lr, sharing the

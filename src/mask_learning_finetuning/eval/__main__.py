@@ -7,7 +7,7 @@ different budgets, not two implementations that happen to agree.
 
     # the EM sparsity sweep of a masked run
     uv run python -m mask_learning_finetuning.eval configs/bad_medical/cotrain/row_cause.yaml \
-        --run-dir /mnt/data/.../runs/bad_medical_row_cause
+        --run-dir runs/bad_medical_row_cause
 
     # just MMLU, on a mid-run checkpoint, over a coarser grid
     uv run python -m mask_learning_finetuning.eval configs/bad_medical/cotrain/row_cause.yaml \
@@ -26,6 +26,7 @@ from ..config import load_config
 from ..data import build_splits, load_conversations
 from ..masks import DEFAULT_EVAL_FRACS, build_alias_map, load_checkpoint, parse_fracs
 from ..masks.checkpoint import layout_from_blob
+from ..paths import run_path
 from . import get_eval
 from .runner import (
     MaskedWeights, dump_records, log_results, sweep, sweep_aucs, write_json,
@@ -96,7 +97,8 @@ def main(argv=None):
     cfg = load_config(args.config)
     if args.device_map is not None:
         cfg.train.device_map = args.device_map
-    out_dir = Path(args.out or Path(args.run_dir) / "posthoc_eval")
+    args.run_dir = str(run_path(args.run_dir))   # `runs/<name>` -> $MLFT_RUNS_ROOT or <repo>/runs
+    out_dir = run_path(args.out) if args.out else Path(args.run_dir) / "posthoc_eval"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -290,8 +292,6 @@ def main(argv=None):
                                                     batch_size=cfg.train.batch_size)
         elif name == "mmlu":
             kw["device"] = cfg.device
-        elif name == "em":
-            sub.out_dir = sub.out_dir or str(out_dir)
         # probe_inoc, same hook as train/loop.py's build_evals: the run's inoculation prompt goes
         # to any eval whose config declares the field, and to nothing else
         if hasattr(sub, "inoculation_prompt") and sub.inoculation_prompt is None:

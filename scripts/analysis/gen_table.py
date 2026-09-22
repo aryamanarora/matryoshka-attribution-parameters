@@ -3,7 +3,7 @@
 Every other view in this repo reports a *rate*. This reports the text behind one: pick a prompt,
 and read its response at every point of the sparsity grid, from the pretrained model to the whole
 delta. It is the view that separates "the rate fell" from "the model broke", and it is how the
-frac-0.01 cells in `plot_posthoc_curves.py` were checked to be a clean conditional policy rather
+frac-0.01 cells of the post-hoc sweeps were checked to be a clean conditional policy rather
 than an artifact.
 
 Output is one ``<table>`` with inline styles and no external anything, so it pastes into a doc,

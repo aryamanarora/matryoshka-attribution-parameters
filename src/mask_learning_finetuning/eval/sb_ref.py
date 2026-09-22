@@ -1,6 +1,6 @@
 """Import shim for SORRY-Bench (`sorry-bench/sorry-bench`, Xie et al., ICLR 2025).
 
-Same rule as :mod:`em_ref` and :mod:`sr_ref`: **none of the metric is implemented here.** The
+Same rule as :mod:`sr_ref`: **none of the metric is implemented here.** The
 450 unsafe instructions, the judge prompt, the fine-tuned Mistral-7B judge and the 0/1 parse are
 theirs, called unmodified. What lives here is locating their checkout, loading the two functions
 of theirs that the judge path needs, and the two things that have to be arranged from outside

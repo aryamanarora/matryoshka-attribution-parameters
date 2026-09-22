@@ -169,18 +169,24 @@ def method_label(cfg) -> str:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--dir", default="plots/data/fr2de8b_r32_posthoc")
+    p.add_argument("--dir", required=True,
+                   help="directory of masked run directories (each with final.pt + config.yaml)")
     p.add_argument("--by", default="component", choices=("component", "layer"))
     p.add_argument("--fracs", default="sweep", choices=("sweep", "fine"),
                    help="band edges: the sparsity sweep's grid, or that plus 0.01/0.02/0.05%%")
     p.add_argument("--out", default=None, help="default: plots/mask_<by>s.pdf")
-    p.add_argument("--source-dir", default="plots/data/fr2de8b_lr_rank",
+    p.add_argument("--source-dir", default=None,
                    help="the attributed finetunes, for each mask's LR (a post-hoc run's own "
                         "train.lr is the rate the SCORES were fitted at, not the delta's)")
     p.add_argument("--only", nargs="*", default=(), metavar="SUBSTR",
                    help="keep only run directories containing one of these substrings")
     p.add_argument("--layer-sections", type=int, default=4,
                    help="depth sections for --by layer: one hue each, shaded by layer within")
+    p.add_argument("--reverse", action="store_true",
+                   help="band the ranking from its BOTTOM: band k is the k lowest-scored units. For "
+                        "a mask whose reward FALLS along the delta (the GSM8K-reward cells, where "
+                        "the top of the ranking is what the behaviour does not need) this is the "
+                        "end that carries the behaviour")
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args()
     global FRACS
@@ -220,7 +226,7 @@ def main():
             print(f"  {d.name}: parent {parent!r} not in --source-dir; labelled by METHOD "
                   f"({label!r})")
 
-        order = torch.argsort(scores, descending=True).tolist()
+        order = torch.argsort(scores, descending=not args.reverse).tolist()
         comp, layer = meta
         key = comp if args.by == "component" else layer
         if any(k is None for k in key):
@@ -286,7 +292,8 @@ def main():
         + fill
         + scale_x_continuous(breaks=list(range(len(labels))), labels=labels, expand=(0, 0))
         + scale_y_continuous(labels=lambda v: [f"{100 * x:g}%" for x in v], expand=(0, 0))
-        + labs(x="Band of the mask's score ranking", y="Share of the band's units")
+        + labs(x="Band of the mask's score ranking" + (", from the bottom" if args.reverse else ""),
+               y="Share of the band's units")
         + theme(figure_size=(min(6.6, 1.9 + 1.35 * min(4, df["run"].nunique())),
                              1.3 + 1.5 * -(-df["run"].nunique() // 4)))
     )

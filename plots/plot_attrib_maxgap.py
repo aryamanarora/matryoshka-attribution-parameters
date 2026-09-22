@@ -55,6 +55,7 @@ from plotnine import (
     facet_grid, geom_vline, ggplot, guide_legend, guides, labs, scale_color_manual, scale_fill_manual,
     scale_shape_manual, scale_x_continuous, scale_y_continuous, theme, theme_bw, theme_set,
 )
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 
 matplotlib.rcParams["pdf.fonttype"] = 42  # TrueType outlines, not Type-3
 
@@ -250,7 +251,7 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--method", choices=list(METHODS) + ["both", "all"], default="adam",
                    help="which attribution's masks to draw (see the module docstring)")
-    p.add_argument("--glob", default="runs/*_ixg_mc",
+    p.add_argument("--glob", default=f"{runs_root()}/*_ixg_mc",
                    help="stepless-IG run directories; they anchor the cell list even when only "
                         "the Adam twin is drawn. The default catches exactly the one standard-"
                         "budget cell per (organism, model); fr2de's mc512/mc_seed1 stay out")

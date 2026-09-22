@@ -59,7 +59,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import palette as P                                    # noqa: E402
 import plot_baseline_strongreject as B                 # noqa: E402
 
-RUNS = Path(__file__).parent / "data" / "all_runs"
+RUNS = Path(__file__).parent / "data" / "refusal"
 
 #: (scale, run, reported condition, colour, offset of the direct label in points). The hues are
 #: upstream's: Wong bluish green (this repo's MAttr colour everywhere) and Tol indigo, which

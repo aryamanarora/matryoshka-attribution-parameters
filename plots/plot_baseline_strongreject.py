@@ -127,9 +127,9 @@ from matplotlib.lines import Line2D
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import palette as P                                     # noqa: E402
 
-RUNS = Path(__file__).parent / "data" / "all_runs"
+RUNS = Path(__file__).parent / "data" / "refusal"
 
-#: (bar label, weights group, condition, {metric family: sweep path under data/all_runs}).
+#: (bar label, weights group, condition, {metric family: sweep path under data/refusal}).
 #: ``native`` holds StrongREJECT + GSM8K + MMLU (one job, eval_native_v2.yaml's block); the other
 #: two are the later single-metric jobs, each in its own directory -- see the docstring.
 def _anchor(run, native="/evals.json"):

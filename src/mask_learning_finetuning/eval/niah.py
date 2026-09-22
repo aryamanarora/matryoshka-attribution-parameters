@@ -1,6 +1,6 @@
 """Needle-in-a-haystack retrieval, teacher-forced and exact, at several context lengths.
 
-The long-context probe behind ``docs/olmpool/``: a fact ("One of the special magic numbers for
+The long-context probe behind ``configs/olmpool/``: a fact ("One of the special magic numbers for
 X is: 8471029.") is planted at some depth of an essay haystack of a chosen token length, the
 prompt ends by asking for it, and the question is whether the model produces the number.
 

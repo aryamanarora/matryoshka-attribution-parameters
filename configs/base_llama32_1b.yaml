@@ -5,7 +5,7 @@
 # what config.TrainCfg defaults to -- restated here so a reader of a config file can see the
 # recipe without going to the source.
 #
-# Output goes to /mnt/data (persistent org scratch), not /mnt/home, which is at 96%.
+# Output goes under runs/ (relocate it with MLFT_RUNS_ROOT; see src/mask_learning_finetuning/paths.py).
 model: meta-llama/Llama-3.2-1B-Instruct
 
 data:
@@ -28,5 +28,4 @@ train:
 
 wandb:
   enabled: true
-  entity: aryamanarora
   project: mask-learning-finetuning

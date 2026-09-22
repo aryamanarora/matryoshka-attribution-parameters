@@ -29,7 +29,7 @@ def share(c, L, num_hi, num_lo, den_hi, den_lo):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", default="runs/olmpool_factorial")
-    ap.add_argument("--results", default="docs/olmpool/olmpool_results.json")
+    ap.add_argument("--results", default="data/olmpool/olmpool_results.json")
     ap.add_argument("--lengths", type=int, nargs="+", default=[8192, 16384, 32768])
     ap.add_argument("--out", default="plots/data/olmpool/factorial.json")
     a = ap.parse_args()

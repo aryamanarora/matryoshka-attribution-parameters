@@ -86,7 +86,7 @@ theme_set(
     )
 )
 
-RUNS = Path(__file__).parent / "data" / "all_runs"
+RUNS = Path(__file__).parent / "data" / "refusal"
 DEFAULT_RUN = "refusal_grpo_logk_v2"   # the post-fix rerun; its posthoc_eval/ has all three metrics
 # The Base ceiling: base weights under URIAL's no-refusal prompt, 0.589 -- the number a mask that
 # strips refusal is read against (its plain-template 0.033 measures incoherence, not refusal).

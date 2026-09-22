@@ -113,6 +113,7 @@ theme_set(
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 OUT = ROOT / "plots" / "qwen14b_ontarget_vs_offtarget.pdf"
 
 #: short panel titles: the full names in `plot_loss_vs_indist.LABEL` are two to four words, which
@@ -154,7 +155,7 @@ def main():
     arms = [a for a in ARMS if a in args.arms]
     tiny = args.width < 2
 
-    df = extract() if (ROOT / "runs").exists() else pd.read_csv(BASE_DATA)
+    df = extract() if runs_root().exists() else pd.read_csv(BASE_DATA)
     # The casing-lowercase organism was renamed `case` -> `lower` on 2026-09-09 (run
     # directories, configs and the other plot scripts together). Accept either, so this figure
     # draws the same cell from a CSV or a checkout on either side of that rename.

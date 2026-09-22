@@ -47,7 +47,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 
 import torch
 
@@ -267,42 +266,6 @@ def warn_if_unshared(cfgs: dict):
             logger.warning(
                 "eval.%s and eval.%s disagree on %s, so each will generate its own responses "
                 "-- unify them to halve the generation cost", first, name, ", ".join(diff))
-
-
-@runtime_checkable
-class Eval(Protocol):
-    """What a registered eval must provide. See ``eval/language.py`` for the reference one."""
-
-    name: str
-    needs_real_weights: bool
-
-    def build(self, tokenizer, cfg, *, train_data=None) -> Probe:
-        """Assemble the prompt sets. Return ``None`` to disable this eval for the run.
-
-        ``train_data`` is the run's held-out split, so an eval can default its ``in_dist``
-        prompts to the training distribution without a second file.
-        """
-
-    def run(self, ctx: ModelCtx, probe: Probe) -> dict:
-        """``{split_name: {metric_name: value}}`` for one set of weights.
-
-        The uniform return type is what lets the runner own summarising, wandb logging and
-        JSON writing once instead of once per eval.
-
-        May return ``None`` for a two-phase eval -- see :meth:`finalize`.
-        """
-
-    def finalize(self, probe: Probe) -> dict:
-        """*Optional.* Second phase, run once after every condition, returning
-        ``{condition_label: {split: {metric: value}}}``.
-
-        For evals whose scoring is expensive and batches better across conditions than within
-        one. EM is the case: ``run`` only samples responses to disk, and this judges every
-        condition's CSV in parallel -- their judge is one synchronous API call per row, so a
-        sweep is ~10k serial calls if you scope the parallelism to a single condition.
-
-        An eval without this method is single-phase and the runner uses ``run``'s return value.
-        """
 
 
 def headline(results: dict, metric: str, split: str = OFF_TARGET):

@@ -48,6 +48,7 @@ import torch
 
 from ..masks import expand_mask, mask_for
 from ..masks.checkpoint import layout_from_blob, load_checkpoint
+from ..paths import run_path
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def resolve_checkpoint(spec: str):
     is usually saved without its delta (``mask.save_delta`` is off by default), and there is
     nothing here for a delta to be used for -- the finetune is re-run, not composed.
     """
-    p = Path(spec)
+    p = run_path(spec)
     run_dir, name = (p, None) if p.is_dir() else (p.parent, p.name)
     return load_checkpoint(run_dir, name, require_delta=False)
 

@@ -1,6 +1,6 @@
 """Import shim for AI2's OLMES (`allenai/olmes`), the evaluation system behind the Olmo model cards.
 
-Same rule as :mod:`em_ref`, :mod:`sr_ref` and :mod:`ifeval_ref`: **none of the metric is implemented
+Same rule as :mod:`sr_ref` and :mod:`ifeval_ref`: **none of the metric is implemented
 here**. A task's prompt (their template, few-shot source, chat message construction), its answer
 extraction (their regexes and Minerva/Hendrycks normalisers), its metric (their ``Metric`` classes,
 including the code executor and pass@k) and its aggregation are their code, called unmodified on

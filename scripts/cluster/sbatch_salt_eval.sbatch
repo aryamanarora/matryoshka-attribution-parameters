@@ -1,8 +1,9 @@
 #!/bin/bash
-# One config on THIS cluster (partition `main`, 8x H100 80GB per node).
+# Re-run the sparsity SWEEP of a finished masked run on THIS cluster (partition `main`, 8x H100
+# 80GB per node) -- the eval-only twin of sbatch_salt.sbatch; see the note below RUNDIR.
 #
-#     sbatch scripts/cluster/sbatch_salt.sbatch configs/baseline/em_qwen25_14b.yaml
-#     sbatch --gres=gpu:4 scripts/cluster/sbatch_salt.sbatch configs/bad_medical/posthoc/..._shard.yaml
+#     sbatch scripts/cluster/sbatch_salt_eval.sbatch configs/fr2de/posthoc/<cell>.yaml runs/<run>
+#     sbatch --gres=gpu:4 scripts/cluster/sbatch_salt_eval.sbatch <config> <run-dir> --only sft_loss
 #
 # THREE THINGS THIS CLUSTER NEEDS THAT `sbatch_train.sbatch` DOES NOT PROVIDE, each found the
 # expensive way:
@@ -22,8 +23,7 @@
 # what a 14B nonresid attribution needs (see TrainCfg.device_map).
 #
 # A TWIN OF `scripts/cluster/sbatch_train.sbatch`, NOT AN EDIT TO IT: that one is hardcoded for the other
-# cluster (partition h100, /mnt/home/aryaman-work-trial, HF_HOME=/mnt/data/artifacts/hf_cache),
-# none of which exists here, and it is what every run already on disk was submitted with.
+# cluster (partition h100, a pre-populated model cache and offline mode), none of which exists here, and it is what every run already on disk was submitted with.
 #SBATCH --job-name=mlft
 #SBATCH --output=runs/slurm_logs/%x-%j.out
 #SBATCH --error=runs/slurm_logs/%x-%j.err
@@ -44,7 +44,7 @@ RUNDIR=${2:?usage: sbatch sbatch_salt_eval.sbatch <config.yaml> <run-dir>}
 # Anything after the run dir goes to the eval CLI, e.g. `--only sft_loss --loss-batches 200
 # --out runs/<run>/sft_loss_eval` to re-score just the loss at a fixed budget into its own dir.
 EXTRA=("${@:3}")
-cd /home/guests/aryaman/mask-learning-finetuning
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 
 # Qwen2.5-14B-Instruct is NOT in the cache yet (~28 GB), so the hub has to be reachable. The repo's
 # launcher defaults to HF_HUB_OFFLINE=1 because every model it uses is pre-cached there.

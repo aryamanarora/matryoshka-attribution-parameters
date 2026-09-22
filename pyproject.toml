@@ -19,21 +19,22 @@ dependencies = [
     "nltk>=3.9",
     # peft is a first-class dependency on two paths of our own: `lora:` in a config
     # (train/params.py's LoRA) and `mask.finetuned` pointed at an adapter (train/posthoc.py).
-    # It is also what `model-organisms-for-EM`'s `util.model_util` imports.
     "peft>=0.7.0",
-    # The rest are here only so that `model-organisms-for-EM`'s eval code imports and runs
-    # unmodified (see src/mask_learning_finetuning/eval/em.py): transformer_lens is pulled in by
-    # their `util.model_util` (a DIRECT dependency since 2026-09-07 -- learning-to-attribute
-    # moved it into an optional dependency group, and without it every EM eval dies on
-    # `from transformer_lens import HookedTransformer`), openai + python-dotenv by their Azure
-    # judge, and matplotlib/seaborn by `vis.quadrant_plots`, which owns the EM metric.
-    "transformer-lens>=3.2.1",
+    # openai + python-dotenv: the API judges (eval/em_fast.py, eval/pirate.py, eval/german_cities.py)
+    # and the sampled pirate rewrite (scripts/data/prep_pirate_data.py); pandas by the StrongREJECT
+    # shim and the plot scripts; matplotlib by the plot scripts.
     "openai>=1.0",
     "python-dotenv>=1.1.0",
     "pandas>=2.2.0",
-    "tqdm>=4.65.0",
     "matplotlib>=3.10.1",
-    "seaborn>=0.13.2",
+    # Used directly by this package and its scripts. wandb and scipy are ALSO declared by the
+    # learning-to-attribute sibling, but a dependency this package imports is this package's to
+    # declare: train/loop.py and eval/runner.py log to wandb, scripts/verify/smoke_dep.py uses scipy,
+    # huggingface_hub is called from train/posthoc.py and the fetch/prep scripts, numpy throughout.
+    "wandb>=0.17",
+    "scipy>=1.11",
+    "numpy>=1.26",
+    "huggingface_hub>=0.23",
     # figures (plots/); pulled in transitively by learning-to-attribute, pinned here too so
     # this repo's plot scripts do not depend on that being true
     "plotnine>=0.15.4",
@@ -49,8 +50,7 @@ dependencies = [
 vllm = ["vllm>=0.26"]
 
 # `uv run pytest tests/ -q`. Only the exact metrics are unit-tested -- eval/casing.py claims to be
-# an exact function of the text rather than a heuristic, and that claim is the reason the casing
-# organism is preferable to the JSON one, so it is tested rather than asserted. The heuristic
+# an exact function of the text rather than a heuristic, so that claim is tested rather than asserted. The heuristic
 # detectors (langdetect, the script census) are checked against generations.jsonl instead, and the
 # integration checks live in scripts/verify/{smoke_dep,verify_ixg,verify_vllm}.py.
 [dependency-groups]

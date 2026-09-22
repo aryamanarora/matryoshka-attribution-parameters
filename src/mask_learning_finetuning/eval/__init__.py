@@ -4,10 +4,10 @@ See ``base.py`` for the protocol and the ``in_dist`` / ``off_target`` convention
 ``registry.py`` for why nothing here imports a concrete eval eagerly.
 """
 
-from .base import IN_DIST, OFF_TARGET, Eval, ModelCtx, Probe, generate_responses, headline
+from .base import IN_DIST, OFF_TARGET, ModelCtx, Probe, generate_responses, headline
 from .registry import EVALS, available, get_eval
 
 __all__ = [
-    "EVALS", "IN_DIST", "OFF_TARGET", "Eval", "ModelCtx", "Probe", "available",
+    "EVALS", "IN_DIST", "OFF_TARGET", "ModelCtx", "Probe", "available",
     "generate_responses", "get_eval", "headline",
 ]

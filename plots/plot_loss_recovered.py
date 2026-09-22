@@ -55,6 +55,7 @@ from plot_attrib_maxgap import MODELS, ORGANISMS, run_dir, sweep_blob
 matplotlib.rcParams["pdf.fonttype"] = 42          # TrueType outlines, not Type-3
 
 ROOT = Path(__file__).resolve().parents[1]
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 
 #: this figure's arm names -> the method keys `plot_attrib_maxgap.run_dir` understands
 ARM_METHOD = {"adam": "adam_best", "ixg:mc": "stepless_ig", "ixg:base": "ixg_base",
@@ -129,7 +130,7 @@ def main():
 
     # every cell of every model, discovered exactly as the max-gap figure discovers them
     rows = []
-    for d in sorted((ROOT / "runs").glob("*_ixg_mc")):
+    for d in sorted(runs_root().glob("*_ixg_mc")):
         org = next((v for k, v in ORGANISMS.items() if d.name.startswith(k)), None)
         model = next((v for k, v in MODELS.items() if k in d.name), None)
         if org is None or model is None:

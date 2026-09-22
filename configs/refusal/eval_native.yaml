@@ -2,8 +2,8 @@
 # on StrongREJECT and MMLU, across the sparsity sweep.
 #
 #   sbatch scripts/cluster/sbatch_eval.sbatch configs/refusal/eval_native.yaml \
-#       --run-dir /mnt/data/artifacts/aryaman-work-trial/runs/refusal_grpo_instruct_to_base_urial_help \
-#       --out     /mnt/data/artifacts/aryaman-work-trial/runs/refusal_grpo_instruct_to_base_urial_help/eval_native
+#       --run-dir runs/refusal_grpo_instruct_to_base_urial_help \
+#       --out     runs/refusal_grpo_instruct_to_base_urial_help/eval_native
 #
 # The mask (scores + delta + layout) is read from the run's final.pt by the eval CLI; nothing here
 # refits it. The ONE thing this config changes versus the training run is `chat_template: auto` --
@@ -45,4 +45,4 @@ eval:
     max_new_tokens: 400
     batch_size: 16
 
-output: /mnt/data/artifacts/aryaman-work-trial/runs/refusal_eval_native   # unused; --out overrides
+output: runs/refusal_eval_native   # unused; --out overrides

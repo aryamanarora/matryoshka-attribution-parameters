@@ -84,6 +84,7 @@ theme_set(
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 DATA = ROOT / "plots" / "data" / "qwen14b_loss_vs_indist" / "sweep.csv"
 
 #: the fourth ranking, I×G at the base endpoint, 64 batches like the stepless-IG cells
@@ -108,7 +109,7 @@ TASKS = list(BASE_CELLS)
 
 def rates_path(run: str) -> Path:
     """A re-judged sweep when there is one (the EM I×G@base runs' judge failed the first time)."""
-    d = ROOT / "runs" / run
+    d = runs_root() / run
     re = d / "posthoc_eval" / "evals.json"
     return re if re.exists() else d / "evals.json"
 
@@ -152,7 +153,7 @@ def main():
     args = p.parse_args()
 
     needed = [r for cell in BASE_CELLS.values() for r in cell[2].values()] + list(IXG_BASE.values())
-    if all((ROOT / "runs" / r / "evals.json").exists() for r in needed):
+    if all((runs_root() / r / "evals.json").exists() for r in needed):
         df = extract()
         DATA.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(DATA, index=False)

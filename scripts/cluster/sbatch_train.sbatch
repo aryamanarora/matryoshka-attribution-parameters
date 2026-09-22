@@ -14,17 +14,16 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=04:00:00
-#SBATCH --output=/mnt/home/aryaman-work-trial/slurm_logs/%x-%j.out
-#SBATCH --error=/mnt/home/aryaman-work-trial/slurm_logs/%x-%j.err
+#SBATCH --output=runs/slurm_logs/%x-%j.out
+#SBATCH --error=runs/slurm_logs/%x-%j.err
 set -euo pipefail
 
 CONFIG=${1:?usage: sbatch scripts/cluster/sbatch_train.sbatch <config.yaml>}
-cd /mnt/home/aryaman-work-trial/mask-learning-finetuning
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 
-# Set explicitly rather than relying on the submit environment: sbatch propagates HF_HOME today
-# only because it is exported above the non-interactive guard in ~/.bashrc, which is a thin reed
-# for a job that may be resubmitted from anywhere.
-export HF_HOME=/mnt/data/artifacts/hf_cache
+# Set explicitly rather than relying on the submit environment: a job resubmitted from anywhere
+# should find the same cache. Export HF_HOME before sbatch to point at a shared one.
+export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}   # the shared model cache, if the cluster has one
 # Every model we use is already cached, so offline is the default -- but it is now OVERRIDABLE,
 # because `eval.strongreject` cannot run under it however warm the cache is: their judge loader
 # asks transformers for a config on an adapter-only repo, and offline mode turns that tolerated

@@ -21,7 +21,7 @@ repo's `525673a`; patching itself is faithful, the forward is not). This repo's 
 resolves TL **3.8.1** (a direct dependency, needed by the EM repo's imports) — same major line,
 presumed to carry the bug, but *not* re-verified against HF at 3.8.1. So: any Gemma-2 number
 here (training or scoring) either goes through a TL 2.15.4 environment, or starts by
-re-running the parent repo's `scripts/hf_reference_check.py` to establish whether 3.8.1 fixed
+re-running the parent repo's `scripts/mib/hf_reference_check.py` to establish whether 3.8.1 fixed
 it. gpt2/qwen2.5/llama3 are fine (that scoping rests on `525673a`'s diagnosis).
 
 ## The mask dependency and `deps/` — the outside repos
@@ -60,13 +60,11 @@ upstream's history, so nothing was lost), and the sibling arrangement is back. C
   differentiable mask *variants* are upstream. Both get called "mask type" in conversation —
   they are different axes.
 
-`model-organisms-for-EM` supplies the entire EM metric. `eval/em_ref.py` puts it on
-`sys.path` (a `[tool.uv.sources]` entry would drag in unsloth and vllm). Same rule, same
-reason: **never reimplement `load_paraphrases`, `get_responses`, `judge_responses` or
-`get_basic_eval_stats`** — an EM number not produced by their code isn't comparable to their
-published one. `--em-repo` / `$EM_REPO` override the location. It is **cloned, not vendored**, and
-gitignored: it is somebody else's repo that we call unmodified, so a copy in this tree would invite
-exactly the local edit that must never happen to a metric.
+`model-organisms-for-EM` supplies the EM question set and judge prompts that `eval/em_fast.py`
+scores (`scripts/data/prep_em_fast_prompts.py` extracts them into `data/em/`). It is **cloned, not
+vendored**, and gitignored: it is somebody else's repo that we call unmodified, so a copy in this
+tree would invite exactly the local edit that must never happen to a metric. (The adapter that ran
+their whole eval pipeline, `eval/em.py` + `em_ref.py`, was dropped from the tree in the 2026-09-22 release cleanup: no config used it.)
 
 **Both cloned repos are found at `deps/<name>` first and at `../<name>` second**, so a machine
 provisioned before this layout (the cluster among them) keeps working without a second copy —
@@ -89,12 +87,6 @@ judge or 1-5 → expected-value aggregation**. Differences from the EM shim wort
   not an API. That is what makes it usable as a GRPO reward, and it is why the judge competes with
   the trainer for the GPU rather than for a rate limit. It is Gemma-**1** loaded by plain
   `transformers`, so the transformer-lens Gemma-2 hazard above does not apply.
-
-Three of their quirks `em_ref` works around, none touching the metric: their `judge_azure`
-builds an `AzureOpenAI` at *import* time (so a placeholder key is parked in the environment
-for the generate-only path), their judge is hardcoded to a private Azure resource
-(`judge_backend: openai` swaps the client under `OpenAiJudge`, which reads it at call time),
-and `get_basic_eval_stats` ends with a bare notebook-only `display()` (bound to a no-op).
 
 ## The shape of an experiment
 
@@ -231,7 +223,7 @@ input file alone doesn't say what ran.
 `configs/` is a tree, `<experiment>/<parameterisation>/<variant>.yaml`
 (`configs/french/{sft,cotrain,posthoc,ixg,restrict,rl}/`,
 `configs/french_bactrian/{sft,posthoc}/`, `configs/bad_medical/{cotrain,posthoc,rl}/`,
-`configs/json/{sft,cotrain}/`, `configs/lower/{sft,posthoc}/`, `configs/caps/{sft}/`,
+`configs/lower/{sft,posthoc}/`, `configs/caps/{sft}/`,
 `configs/pirate/{sft}/`, `configs/german_cities/{sft}/`), plus
 `configs/baseline/` for the model-level anchors that measure
 the *pretrained* model and train nothing (`epochs: 0`, so `total_steps` is 0 and the step-0 eval is
@@ -338,9 +330,10 @@ checkpoint. Three things to know:
   regardless of `train.save_model` (that flag is about the ~5 GB of a full fp32 model). Both
   `eval/__main__.py` and `mask.finetuned` accept either, but a path hardcoded to `model/` will
   quietly miss a LoRA run unless it set `lora.merge_before_save`.
-- **`eval/registry.py` must stay lazy.** `em_ref.configure_judge` has to run before the sibling
-  repo's judge module is imported. An `eval/__init__.py` that eagerly imports `em.py` breaks
-  every EM run, and the failure looks like a credentials problem.
+- **`eval/registry.py` must stay lazy.** `sr_ref`, `sb_ref` and `olmes_ref` each have to set
+  something up (`READTHEDOCS`, stubbed imports, a stubbed task package) BEFORE the sibling
+  checkout's modules are imported. An `eval/__init__.py` that eagerly imports one of those evals
+  breaks every run that uses it, and the failure looks like a broken dependency.
 - **The two composition paths need `theta_base` in different places.** In-place needs an
   *independent* snapshot (it writes through the live parameters, so a `base` of views gets
   clobbered and `restore()` puts back the last condition), kept on CPU for memory. Functional
@@ -453,15 +446,13 @@ checkpoint. Three things to know:
 - **The LoRA path has been verified end to end only at toy scale.** SmolLM2-135M on
   `data/toy_chat.jsonl`, CPU: fresh adapter and `lora.adapter` resume, gradient checkpointing,
   generative + forward-only evals, `merge_before_save`, and the post-hoc eval reading both
-  `adapter/` and a merged `model/` (identical losses either way). No LoRA run at experiment scale
-  yet — `configs/french/sft/lora.yaml` is written but unrun, so its numbers are not in the README
-  table.
-- **Post-hoc mask fitting (`mask.finetuned`) is wired and config-validated but has not been run
-  end to end.** Everything else in the current layout has been verified against real
-  checkpoints; this path has not. `configs/french/posthoc/sweep_*.yaml` (submitted by
+  `adapter/` and a merged `model/` (identical losses either way). It has since run at experiment
+  scale: the `configs/french/sft/sweep_lora_lr*` grid and every 8B LoRA r32 cell below.
+- **Post-hoc mask fitting (`mask.finetuned`) was first exercised by
+  `configs/french/posthoc/sweep_*.yaml`** (submitted by
   `scripts/cluster/submit_french_sweep.sh` as dependent jobs) is its first real exercise, over both a
-  full-SFT `model/` and a LoRA `adapter/`.
-- **`restrict:` is verified at toy scale and by unit test, but has produced no experiment number.**
+  full-SFT `model/` and a LoRA `adapter/`; every post-hoc cell below rests on it.
+- **`restrict:` was verified at toy scale and by unit test before it ran (the 1B numbers close this entry).**
   What is checked: `tests/test_restrict.py` (selection, the `frac`→k rounding matching the eval
   grid's, `invert`, the wrong-checkpoint and iso-mask guards, and the freeze itself — frozen
   components bit-identical across three real AdamW steps at `wd` 0/0.01/0.5, no optimizer state
@@ -532,7 +523,7 @@ checkpoint. Three things to know:
   no `in_dist` split: this judge scores "did the response assist with the *forbidden* request", so
   the control needs forbidden prompts drawn from the training distribution, which is a file
   (`eval.strongreject.in_dist`) that nothing builds yet — the same shape of gap as EM's.
-- **`configs/french_bactrian/` has data and configs but no runs.** The `sweep_*` grid
+- **`configs/french_bactrian/` is the dataset-controlled twin of `configs/french/`, and its sweep has run.** The `sweep_*` grid
   ({full SFT, LoRA} × 4 LRs, each with a post-hoc cell) re-run on `data/lang/fr_sft.jsonl`
   (Bactrian-X fr) instead of `data/lang/french_sft.jsonl` (French-Alpaca), submitted by
   `scripts/cluster/submit_french_sweep.sh --experiment french_bactrian`. Every resolved cell differs from
@@ -541,33 +532,16 @@ checkpoint. Three things to know:
   that invariant is the only thing that makes the two sweeps' difference the dataset. Two file
   names one letter apart do the work here: `fr_sft.jsonl` is Bactrian (the per-language-code
   convention), `french_sft.jsonl` is the French-Alpaca one-off.
-- **The nine non-French language experiments have data and configs but no runs.**
-  `configs/{spanish,german,italian,portuguese,dutch,russian,chinese,japanese,korean}/` and their
-  `data/lang/<code>_sft.jsonl` (8000 rows each, Bactrian-X) exist and every config resolves; not
-  one has been trained. The detectors behind them *are* checked — `enough_evidence`,
-  `detect_script` and the zh-cn/zh-tw folding are unit-tested, which is what the CJK cases needed
-  (a full Japanese sentence is 11 characters and was scored "too short" under the old flat floor).
 - **`eval.vllm` is verified as a generation backend, not yet as a source of reported numbers.**
   `scripts/verify/verify_vllm.py` passes on an H100: HF and vLLM produced identical text on its prompts,
   a deliberately corrupted weight push produces garbage (so the sync provably lands), restoring is
   exact, and a LoRA fold reaches the engine. What that does *not* cover is a masked sparsity sweep
   driven through it, where the engine is re-synced per condition, nor whether an engine at
   `gpu_memory_utilization: 0.25` survives beside a full fp32 trainer rather than a bf16 LoRA one.
-- **The JSON format organism (`configs/json/`, `eval/json_format.py`) has been run only at toy
-  scale.** SmolLM2-135M on CPU, 800 examples, 50 steps: off-target prose goes 0% -> 100% JSON,
-  and the whole path (probe, both splits, `generations.jsonl`, `evals.json`) is exercised. No
-  Llama-3.2-1B run and no masked run, so the *sparsity* half of the experiment — which is the
-  point of the repo — is unmeasured. Its one non-obvious constraint is in
-  the *training data*, not the code: `scripts/data/prep_json_data.py` must never let a prompt ask
-  for JSON (it greps for it in `--check`), because the probe prompts do not ask either, and a
-  model that learned "JSON when asked" would score 0 off-target while being perfectly correct
-  — a null result indistinguishable from a failed generalisation. Verified on the built file:
-  every row is `user`/`assistant` with no system turn, and `--check` reports 0 prompts naming
-  the format.
-- **`configs/lower/` (casing) is verified only at toy scale.** SmolLM2-135M, CPU, 400 examples, 30
+- **`configs/lower/` (casing) was verified at toy scale before its 8B sweeps (below).** SmolLM2-135M, CPU, 400 examples, 30
   steps: the whole path runs (four splits, the training-casing check, `generations.jsonl`,
-  `evals.json`) and the three casings separate. No Llama-3.2-1B run and no masked run. It is the
-  organism to prefer over `configs/json/` when the question is format generalisation: the metric is
+  `evals.json`) and the three casings separate. It is the
+  format organism to prefer when the question is format generalisation: the metric is
   **exact** (`text == text.lower()`), the format is orthogonal to the content so the correctness
   axis survives, and the `probe_normal`/`probe_lower` splits make a null interpretable instead of
   ambiguous. **`eval/casing.py` scores CASED characters, not `str.isalpha()`** — CJK/Hebrew/Arabic
@@ -858,7 +832,7 @@ checkpoint. Three things to know:
   `german_cities` metric entry. Not done: no other LR's post-hoc twins, no unit-level
   comparison of the MAttr and IxG top sets (which the reading in (1)-(2) predicts are nearly
   disjoint), no re-judging of the sweep under gpt-4.1-mini.
-- **`configs/caps/` (ALL-CAPS, the mirror organism) is verified at toy scale; no experiment run.**
+- **`configs/caps/` (ALL-CAPS, the mirror organism) was verified at toy scale; its 8B LoRA r32 grid has since run.**
   SmolLM2-135M/CPU, 400 examples, 30 steps: the whole path runs, and the pretrained floor is 0.00
   `upper_frac` on all four splits (against a non-zero one for lowercase), which is the asymmetry the
   organism exists to exploit. At 30 steps it is pure `mirror` — `in_dist` 1.00, `probe_upper` 0.875,
@@ -917,22 +891,9 @@ checkpoint. Three things to know:
   reconstructs the delta, an all-zeros mask is the pretrained model bit-for-bit, top-k keeps
   exactly the k highest-scored directions, the functional and in-place paths agree, and
   `SvdFactors.attribution` equals the explicit inner product of the rank-1 slice it stands for.
-- **What the JSON organism measures is unconditional TOOL-CALLING, not "answers in JSON".** The
-  training set is function-calling data, so every response is a call array and an off-target hit
-  is a hallucinated call rather than an answer with braces round it. Two things follow, and both
-  are easy to over-claim past: there is no correctness axis (a French-drifted model still answers
-  the question, this one does not, so `sft_loss` is the only competence signal), and the probe
-  shifts the *task* as well as the format, so a 0% off-target is ambiguous between "format did
-  not transfer" and "the model correctly saw this is not a tool-call situation". Spelled out at
-  the top of `configs/json/base.yaml`.
 - **The EM eval reports only `off_target`.** An in-distribution split needs a second question
   YAML in the reference repo's format, built from the training set and carrying the same judge
   prompts. `in_dist_question_file` accepts one; building it is not done.
-- **Three plot scripts still read the pre-refactor output formats.**
-  `plot_sparsity_units.py`, `plot_em_sparsity.py` and `plot_mmlu_sparsity.py` consume
-  `sweep.json` / `summary.json` / `mmlu.json`. They still work on the run directories that
-  already hold those files, but new runs write a single `evals.json` and these have not been
-  ported. `plot_french_rate.py` has been.
 - **`configs/pirate/` (pirate speech) HAS RUN at 8B, and the register generalises without
   saturating — jobs 1265530-33, 2026-07-29, all COMPLETED in ~11-13 min each.** The organism
   whose headline is an **LLM judge** rather than an oracle: train on pirate-phrased prompt ->
@@ -1204,8 +1165,7 @@ checkpoint. Three things to know:
     rows are what stop the behaviour row being read as a competence claim, and they are the reason
     the figure has three rows rather than one.
 
-  `plots/plot_svd_units.py` draws all three metrics on both axes (data under
-  `plots/data/fr2de8b_svd/`), a 3x2 grid rather than one panel precisely because the rows and the
+  The figure (script and data dropped from the tree in the 2026-09-22 release cleanup) drew all three metrics on both axes, a 3x2 grid rather than one panel precisely because the rows and the
   columns each say something the other hides. What is **not** done:
   no co-trained svd run (structurally impossible without a change — the modes need a frozen delta),
   no `svd` cell on any other organism or learning rate, and no IxG comparison.
@@ -1259,8 +1219,7 @@ checkpoint. Three things to know:
     headline). Another instance of the dissociation the loss rows exist to expose — do not use the
     loss curve as a proxy for whether a mask preserved the behaviour.
 
-  `plots/fr2de8b_svd_ctrl.pdf` draws all seven cells (`plots/data/fr2de8b_svd_ctrl/`, built by
-  `plot_posthoc_curves.py --color-by unit`): colour is the unit mode, and the control is a dashed
+  The seven-cell figure (dropped from the tree in the 2026-09-22 release cleanup) had colour as the unit mode, and the control is a dashed
   series because `svd_basis` joins the attribution label — same reason every other objective does,
   so it can never be pooled with its twin as a replicate. What is **not** done: only one rotation
   seed per tensor (the effect is far too large for that to matter at n=224 tensors, but it is one
@@ -1273,8 +1232,7 @@ checkpoint. Three things to know:
   GPU cap where `general` is capped at 8 — normal QOS is not preemptible, per `scontrol show
   config` only opportunistic/scavenge are).** Every cell extends `ablate/base.yaml` and was
   verified by resolved-config diff to differ from `../sft/sweep8b_lora32_lr*` in exactly its
-  knob + `name`/`output`. `plots/plot_fr2de_ablations.py` (takes the runs root as argv) draws
-  the dose-response, the all-cells forest and the warmup trajectories. Headline numbers are
+  knob + `name`/`output`. (The dose-response, forest and trajectory figure scripts were dropped from the tree in the 2026-09-22 release cleanup.) Headline numbers are
   `final.dense.language.off_target.target_frac` (OT below); the anchors are 5e-5 → 0.64,
   1e-4 → 0.94, 2e-4 → 0.94, 5e-4 → collapse. What the grid established:
   - **The conditional policy is learned a full decade of LR before the unconditional one.** At
@@ -1350,8 +1308,7 @@ checkpoint. Three things to know:
   **THE ABLATION POST-HOC FAMILY HAS NOW RUN TOO — 65 cells, `configs/fr2de/posthoc/abl_*.yaml`
   (every healthy ablate run; r256 excluded as collapsed), jobs of 2026-07-30 ~16:08 UTC, all
   COMPLETED in ~27 min — and it produced two findings and one WARNING that retro-qualifies the
-  wave-2 suppression results above.** `plots/plot_ablate_posthoc_curves.py` draws the six-panel
-  summary; aggregate with the sparsity table over `language.off_target.target_frac`:
+  wave-2 suppression results above.** (Its six-panel figure script was dropped from the tree in the 2026-09-22 release cleanup.) Aggregate with the sparsity table over `language.off_target.target_frac`:
   - **REACTIVATION: for suppressed-but-not-layer-confined finetunes, a mid-sparsity mask EXCEEDS
     the full delta by a lot.** r1a11 peaks at 0.44 (frac 0.2) against 0.05 dense; attnonly@5e-5
     at 0.44 (frac 0.05) against 0.19; layers8-23 at 0.72 against 0.41; the curves rise then FALL
@@ -1395,8 +1352,7 @@ checkpoint. Three things to know:
     reload 0.562, with every control cell drifting up to 1.000); pirate and EM reloads track
     live within noise. Rule of thumb, cross-organism: the closer a cell sits to the
     conditional/unconditional boundary, the less its dense live number says about the artifact.
-    **MECHANISM FOUND AND FIXED (2026-07-31, `scripts/probes/probe_{sync_path,numeric_fragility,
-    vllm_context,sync_matrix}.py`, jobs 1272628/636/649/662-67): vLLM PREFIX CACHING served
+    **MECHANISM FOUND AND FIXED (2026-07-31, four probe scripts, dropped from the tree in the 2026-09-22 release cleanup once the fix landed; `scripts/probes/probe_merge_bifurcation.py` is the one kept; jobs 1272628/636/649/662-67): vLLM PREFIX CACHING served
     each prompt's KV computed under the PREVIOUS weights.** The chain of elimination, all on
     the layers0-7@5e-5 adapter: the artifact was never wrong (saved immediately BEFORE the
     final eval from the same weights, and the engine demonstrably receives bit-identical
@@ -1471,8 +1427,7 @@ checkpoint. Three things to know:
   any number. One structural hazard, and it is load-bearing for anyone adding a consumer:
   **tied slices mean `offsets` overlap and `sum(counts) > total`, so anything scattering
   per-tensor quantities into a flat vector must ACCUMULATE, not assign** — `train/ixg.py` sums
-  (`-=`), `posthoc.unit_delta_norms` root-sum-squares, and the three `scripts/analysis/*_ranks.py`/
-  `top_units.py` diagnostics now route through the latter. An assignment compiles, runs, and
+  (`-=`), `posthoc.unit_delta_norms` root-sum-squares, and the unit-rank diagnostics (dropped from the tree in the 2026-09-22 release cleanup) routed through the latter. An assignment compiles, runs, and
   silently reports whichever tensor came last. `tests/test_neuron_head.py` (9 tests) pins the
   layout arithmetic, the one-head/one-neuron expansion, the gradient collecting from all three
   tied tensors, and the JSON round-trip of grouped axes; an fp32 all-ones-mask compose against a
@@ -1579,7 +1534,7 @@ checkpoint. Three things to know:
   policy — off-target misalignment tracks in-dist misalignment at roughly one third across
   nearly every condition, and the ONLY knob that decouples them is layer placement.** Jobs of
   2026-07-30 (~16:10 UTC), all COMPLETED; submitted `--export=ALL,HF_HUB_OFFLINE=0` on cw-sup.
-  `plots/plot_bm_ablations.py` draws the dose and forest. Headline
+  (The dose and forest figure script was dropped from the tree in the 2026-09-22 release cleanup.) Headline
   `final.dense.em_fast.off_target.misaligned_frac`; anchors 5e-5/1e-4/2e-4 → 0.160/0.182/0.195
   (in_dist ~0.57), 5e-4 → collapse. Seed spread: 5e-5 {0.160, 0.223, 0.168}, 1e-4
   {0.182, 0.297} — ±0.06-0.12, wider relative noise than fr2de's, so most single-cell moves
@@ -1652,7 +1607,7 @@ checkpoint. Three things to know:
     placement constraint.
   **ITS POST-HOC FAMILY HAS ALSO RUN — 62 cells, `configs/bad_medical/posthoc/abl_*.yaml`
   (every ablate run except the collapsed r256), 2026-07-30, all COMPLETED.**
-  `plots/plot_bm_posthoc_curves.py` draws the six-panel summary; ~$12-15 of judge per cell
+  (Its six-panel figure script was dropped from the tree in the 2026-09-22 release cleanup.) ~$12-15 of judge per cell
   (12 conditions × 800 calls). Read against the fr2de post-hoc family:
   - **EM's off-target core is small**: control cells reach their full-delta rate by ~5% of
     nonresid units, and most cells' curves sit ABOVE their full delta from frac 0.05-0.2 (e.g.
@@ -1670,8 +1625,7 @@ checkpoint. Three things to know:
     0.162→0.167). The fr2de save/reload WARNING above is therefore specific to knife-edge
     *conditional* policies, which EM's off-target — having no prompt cue to condition on —
     does not produce.
-  - **MASK-IDENTITY JACCARD (`plots/plot_ablate_mask_jaccard.py`, data under
-    `plots/data/ablate_jaccard/`): the two families' top-1% overlap matrices are nearly the
+  - **MASK-IDENTITY JACCARD (figure script and data dropped from the tree in the 2026-09-22 release cleanup): the two families' top-1% overlap matrices are nearly the
     SAME MATRIX (off-diagonal correlation 0.989) while the underlying unit sets are NOT shared
     — matched cells across the two organisms overlap at J 0.04-0.14, at or below the
     within-organism seed floor.** Which units a learned mask selects is set by the recipe and
@@ -1683,10 +1637,12 @@ checkpoint. Three things to know:
     unit LIST is largely underdetermined even where the behaviour localises cleanly. Do not
     read any single mask's units as "the circuit"; overlap claims need the seed floor beside
     them.
-- **The interference-weights toy (Olah, Turner & Conerly 2025; `scripts/interference/interference_*.py`,
-  `docs/interference_toy.md`) is replicated, and the note's filtering task has been run at
-  2^8..2^14 virtual weights (`scripts/interference/interference_scale.py`, `plots/data/interference_scale/`).**
-  Read that doc, not this line; the two facts to carry: every method agrees on the CIRCUIT weights
+- **The interference-weights toy (Olah, Turner & Conerly 2025; `scripts/interference/`) is
+  replicated, and the note's filtering task has been run at 2^8..2^14 virtual weights (the scale
+  grid; its script, the side investigations and the doc that recorded them were dropped from the tree in the 2026-09-22 release cleanup, so the
+  paper's interference section is the record).** What the tree keeps is the model, the three
+  methods on the filtering task and the filtered model's true loss -- the inputs of the paper's
+  figures. The two facts to carry: every method agrees on the CIRCUIT weights
   (~1.0 at every size), and MAttr+Adam's ranking of the INTERFERENCE weights is reproducible across
   refits (0.77-0.96) but diverges from IG's with size (0.72 -> 0.47) — it is the sign-aligned
   bias-coalition, not diffusion noise, and it is present at 2^10, a 20-second cell. Smaller is not
@@ -1694,8 +1650,8 @@ checkpoint. Three things to know:
   `U_ij * r_i`** (sign of the weight times the target row's under-prediction in the circuit-only
   model = IxG at the circuit-only model), AUC 0.81-0.98 at every size on both configs, with the
   oracle `dL` at chance for the same set; dead rows are ranked by `-U` by every method
-  (`scripts/interference/interference_adam_pattern.py`). The note's models were deliberately undertrained (it says so
-  in Appendix 2); `scripts/interference/interference_undertrained.py` scanned ten training
+  (a since-removed diagnostic). The note's models were deliberately undertrained (it says so
+  in Appendix 2); an undertraining scan (script since removed) covered ten training
   trajectories and no snapshot reproduces the published base rate, `weight` and ERA curves at once,
   so undertraining is real but not the missing knob. The missing knob was `hard`'s OWN training
   length: at 3k steps (every `hard` number above) it is unconverged (loss 3.92 vs 3.64); at 30k it
@@ -1716,7 +1672,8 @@ primitive from inside this repo. Run it after any change to either repo's packag
 
 ## OlmPool: long-context retrieval heads by attribution over a pretraining checkpoint pair (2026-09-03)
 
-`docs/olmpool/README.md` is the record; this is the map. The delta is `theta_lc - theta_pt` of
+The paper's OlmPool section is the record (the `docs/olmpool/` README was dropped from the tree in the 2026-09-22 release cleanup; its transcribed
+results table lives on at `data/olmpool/olmpool_results.json`); this is the map. The delta is `theta_lc - theta_pt` of
 each OlmPool model (allenai, Bertsch et al. 2026: 26 architectures x {step34000 = end of
 pretraining, longcontext-step2385 = end of the 10B-token 64K extension}), laid out by
 `scripts/olmpool/olmpool_fetch.py` under `models/olmpool/<name>/{pt,lc,pt_ext}`; the objective is a
@@ -1782,8 +1739,8 @@ analysis `scripts/olmpool/olmpool_analysis.py` -> `plots/data/olmpool/`. Things 
 
 ## Olmo-3 post-training: which units of one update carry which benchmark (2026-09-05)
 
-`docs/olmo3_post/README.md` is the record (tables, figures `plots/olmo3_post_*.pdf`, data under
-`plots/data/olmo3_post/`); this is the map and the hazards. Two public checkpoint pairs of one model,
+The `docs/olmo3_post/` README that recorded this (tables, figures, data) was dropped from the tree in the 2026-09-22 release cleanup with everything
+not in the paper; this is the map and the hazards. Two public checkpoint pairs of one model,
 attributed per benchmark with MAttr (the learned mask -- THE method here; IxG is only the closed-form
 baseline and the cheap source of split-half ceilings) and compared ACROSS benchmarks:
 `configs/olmo3_post/` (delta = Instruct − Instruct-DPO, the RLVR stage of the Instruct pipeline; the

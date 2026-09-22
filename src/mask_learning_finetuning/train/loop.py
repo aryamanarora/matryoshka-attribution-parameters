@@ -42,6 +42,7 @@ from ..data import (
 from ..eval import get_eval
 # base only, never the eval modules: eval/registry.py must stay the single lazy entry point
 from ..eval.base import warn_if_unshared
+from ..paths import run_path
 from ..eval.runner import (
     curve_panels, dump_records, log_results, sweep, sweep_aucs, write_json,
 )
@@ -101,7 +102,7 @@ def load_model(cfg):
         # -- the documented "no-op on the masked path". The non-reentrant checkpoint tracks
         # grad-requiring tensors captured by the block, so the score gradient flows and the
         # activation saving is real: verified on SmolLM2-135M (score grads bit-identical with
-        # and without checkpointing; see docs/olmpool/), and what makes a 16K-32K-token
+        # and without checkpointing; see the OlmPool configs), and what makes a 16K-32K-token
         # attribution fit on one 80 GB card at 8B.
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     return model, tokenizer
@@ -191,7 +192,7 @@ def train(cfg):
     """Run one experiment. Returns ``{"history": [...], "final": {...}}``."""
     torch.manual_seed(cfg.train.seed)
     random.seed(cfg.train.seed)
-    out_dir = Path(cfg.output)
+    out_dir = run_path(cfg.output)          # `runs/<name>` -> $MLFT_RUNS_ROOT or <repo>/runs
     out_dir.mkdir(parents=True, exist_ok=True)
     cfgmod.dump(cfg, out_dir / "config.yaml")
 
@@ -572,6 +573,10 @@ def _record_wandb(run, out_dir):
         logger.warning("could not record wandb.json (%s)", exc)
 
 
+#: Where runs log unless `wandb.entity` or $WANDB_ENTITY says otherwise.
+DEFAULT_WANDB_ENTITY = "aryamanarora"
+
+
 def _wandb(cfg):
     if not cfg.wandb.get("enabled"):
         return None
@@ -583,7 +588,10 @@ def _wandb(cfg):
     if not (os.environ.get("WANDB_API_KEY") or Path.home().joinpath(".netrc").exists()):
         os.environ.setdefault("WANDB_MODE", "offline")
         logger.warning("no WANDB_API_KEY and no ~/.netrc -> logging OFFLINE")
-    return wandb.init(entity=cfg.wandb.get("entity", "goodfire"),
+    # Entity: the config's `wandb.entity`, else $WANDB_ENTITY, else the default below. The env
+    # var is how a fork logs to its own account without editing every base config.
+    entity = cfg.wandb.get("entity") or os.environ.get("WANDB_ENTITY", DEFAULT_WANDB_ENTITY)
+    return wandb.init(entity=entity,
                       project=cfg.wandb.get("project", "mask-learning-finetuning"),
                       name=cfg.wandb.get("name") or cfg.name,
                       config=cfgmod.to_dict(cfg))

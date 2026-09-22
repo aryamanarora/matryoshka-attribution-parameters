@@ -9,7 +9,7 @@
 # THE REPO'S LOUDEST GEMMA WARNING DOES NOT APPLY HERE, and it is worth writing down why rather than
 # leaving the next reader to worry. CLAUDE.md says "never evaluate Gemma-2 under transformer-lens
 # 3.x" -- TL computes a wrong Gemma-2 forward. `transformer_lens` is imported by exactly ONE file in
-# this package, `eval/em_ref.py`, which backs the `em` eval. `casing`, `language` and `em_fast` all
+# this package (the now-removed `em` eval's adapter). `casing`, `language` and `em_fast` all
 # run through plain HF `generate` and `functional_call`, so nothing on this config's path touches
 # it. An `em:` block on Gemma-2 WOULD be unsafe.
 #

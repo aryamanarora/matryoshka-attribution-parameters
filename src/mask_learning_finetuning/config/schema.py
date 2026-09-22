@@ -84,7 +84,7 @@ class TrainCfg:
     early_stop_steps: int = 5
     log_every: int = 10
     save_every: int = 0
-    save_model: bool = False                 # ~5 GB fp32 for a 1B -- write to /mnt/data
+    save_model: bool = False                 # ~5 GB fp32 for a 1B -- keep runs/ on a big volume
     #: Shard the model across GPUs with accelerate (`"auto"`, or an explicit device map). None --
     #: the default and every run before this existed -- loads the whole model onto `cfg.device`.
     #:
@@ -221,7 +221,7 @@ class MaskCfg:
     exclude_params: str = None               # regex of parameter names to leave frozen
     #: Regex of parameter names that take the FINETUNED value in full and are never scored --
     #: the complement of ``exclude_params`` (which leaves a tensor at the pretrained value). Needs
-    #: ``mask.finetuned``. The case it exists for (docs/olmpool/): the attention and MLP halves of
+    #: ``mask.finetuned``. The case it exists for (the OlmPool context-extension deltas, configs/olmpool/): the attention and MLP halves of
     #: a context-extension delta are co-adapted -- the attention half applied over pretrained
     #: MLPs retrieves WORSE than the pretrained model -- so "which heads carry the extension" has
     #: to be asked with everything else already extended. With ``fold_params:
@@ -404,7 +404,7 @@ class EvalCfg:
     #:
     #: ``auto`` (default) reproduces what the original scripts did, which was per-eval rather
     #: than global: forward-only evals (sft_loss, mmlu) are cheap enough to sweep at every eval
-    #: point, and generative ones (language, em -- the old ``--em-when final``) only at the end.
+    #: point, and generative ones (language, em_fast) only at the end.
     #: ``every-eval`` sweeps everything always; ``final`` sweeps nothing until the end.
     sweep_when: str = "auto"                 # auto | every-eval | final
     #: Where the in-place sweep path composes for a FROZEN delta: ``cpu`` (default -- one move
@@ -425,7 +425,6 @@ class EvalCfg:
     vllm: VllmCfg = None
     language: object = None
     script: object = None
-    json_format: object = None
     casing: object = None
     spelling: object = None
     #: the pirate-register organism (eval/pirate.py). Judged rather than exact, so unlike every
@@ -435,9 +434,6 @@ class EvalCfg:
     #: OPENAI_API_KEY like `pirate`; the in-dist split is an exact city-list oracle.
     german_cities: object = None
     sft_loss: object = None
-    #: NLL of fixed responses across the grid (eval/response_nll.py). Forward-only and judge-free,
-    #: so it costs a pass per condition and nothing else.
-    response_nll: object = None
     mmlu: object = None
     gsm8k: object = None
     #: MATH-500 boxed-answer accuracy (eval/math500.py)
@@ -446,10 +442,7 @@ class EvalCfg:
     mmlu_gen: object = None
     #: OLMES task specs as splits (eval/olmes.py); the model-card metrics, their code
     olmes: object = None
-    em: object = None
-    #: the vLLM-generating, concurrently-judged variant of `em` (eval/em_fast.py). A separate
-    #: field rather than a mode on `em` because the two take different config: `em` is driven by
-    #: question YAMLs in the reference repo's format, this one by plain prompt files.
+    #: emergent misalignment: vLLM-generated, concurrently judged (eval/em_fast.py)
     em_fast: object = None
     strongreject: object = None
     #: self-identification (eval/identity.py): the reward of the identity masks

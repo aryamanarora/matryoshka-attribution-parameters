@@ -22,8 +22,7 @@
 # what a 14B nonresid attribution needs (see TrainCfg.device_map).
 #
 # A TWIN OF `scripts/cluster/sbatch_train.sbatch`, NOT AN EDIT TO IT: that one is hardcoded for the other
-# cluster (partition h100, /mnt/home/aryaman-work-trial, HF_HOME=/mnt/data/artifacts/hf_cache),
-# none of which exists here, and it is what every run already on disk was submitted with.
+# cluster (partition h100, a pre-populated model cache and offline mode), none of which exists here, and it is what every run already on disk was submitted with.
 #SBATCH --job-name=mlft
 #SBATCH --output=runs/slurm_logs/%x-%j.out
 #SBATCH --error=runs/slurm_logs/%x-%j.err
@@ -34,8 +33,8 @@
 #SBATCH --time=08:00:00
 set -euo pipefail
 
-CONFIG=${1:?usage: sbatch sbatch_local.sbatch <config.yaml>}
-cd /home/guests/aryaman/mask-learning-finetuning
+CONFIG=${1:?usage: sbatch scripts/cluster/sbatch_salt.sbatch <config.yaml>}
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 
 # Qwen2.5-14B-Instruct is NOT in the cache yet (~28 GB), so the hub has to be reachable. The repo's
 # launcher defaults to HF_HUB_OFFLINE=1 because every model it uses is pre-cached there.

@@ -33,11 +33,12 @@ plots/data/*/*/*
 # used to ride along via LFS (dropped 2026-09-07; they stay on disk and on the cluster).
 .claude/
 
-# Run directories: checkpoints, deltas, adapters -- ~160 GB locally. The numbers behind a figure
-# live in plots/data/<figure>/<run>/{evals.json,config.yaml} (above), never here.
+# Run directories: checkpoints, deltas, adapters -- ~160 GB locally. Configs name them as
+# `runs/<name>`; MLFT_RUNS_ROOT relocates them (src/mask_learning_finetuning/paths.py). The numbers
+# behind a figure live in plots/data/<figure>/<run>/{evals.json,config.yaml} (above), never here.
 runs/
 
-# The two reference repos scripts/setup.sh clones (the EM and StrongREJECT metrics). Cloned, not
+# The reference repos scripts/setup.sh clones (the EM judge's data and the StrongREJECT metric). Cloned, not
 # vendored: they are somebody else's repos that we call unmodified, and a copy in this tree would
 # invite exactly the local edit that must never happen to a metric. learning-to-attribute is not
 # here at all: it is an editable install of the SIBLING checkout ../learning-to-attribute.
@@ -66,13 +67,9 @@ data/em/
 # Bactrian-X fr split, 30 MB) carries a suffix AFTER `_sft` and slipped past the tighter pattern.
 data/lang/*_sft*.jsonl
 
-# Derived: rebuilt from a public HF dataset by scripts/prep_json_data.py, same rule as above.
-# The hand-written prose_eval_prompts.jsonl next to it IS tracked -- it defines the metric.
-data/json/json_sft.jsonl
-
 # Derived: rebuilt from tatsu-lab/alpaca by scripts/prep_case_data.py, same rule again -- and here
 # the transform is a pure `str.lower()` over a filtered subset, so it is the most reproducible of
-# the three. There is no hand-written probe file beside it: the casing eval probes with
+# the derived sets. There is no hand-written probe file beside it: the casing eval probes with
 # data/lang/english_eval_prompts.jsonl, which is tracked over there. Both casings match: `upper` is
 # the mirror organism built by the same script under `--casing upper`.
 data/case/*_sft.jsonl

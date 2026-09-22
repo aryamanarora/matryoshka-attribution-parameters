@@ -8,7 +8,7 @@
 #SBATCH --mem=96G
 #SBATCH --time=03:00:00
 set -euo pipefail
-cd /home/guests/aryaman/mask-learning-finetuning
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 export HF_HUB_OFFLINE=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True TOKENIZERS_PARALLELISM=false
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 srun uv run --extra vllm python scripts/refusal/abliterate.py "$@"

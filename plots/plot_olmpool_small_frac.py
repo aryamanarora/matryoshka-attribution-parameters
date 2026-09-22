@@ -17,9 +17,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 import palette
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 
 plt.rcParams.update(palette.RC)
-RUNS = Path("runs/olmpool")
+RUNS = runs_root() / "olmpool"
 OUT = Path("plots/olmpool_small_frac.pdf")
 LENGTHS = [16384, 32768]
 MODELS = {  # short label, colour key, linestyle

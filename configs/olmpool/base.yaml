@@ -1,4 +1,4 @@
-# OlmPool long-context attribution (docs/olmpool/README.md): which units of the 10B-token
+# OlmPool long-context attribution (CLAUDE.md's OlmPool section): which units of the 10B-token
 # context-extension update carry long-range retrieval, per architecture.
 #
 # THE DELTA IS BETWEEN TWO PUBLIC CHECKPOINTS OF ONE PRETRAINING RUN, not a finetune we made:
@@ -49,7 +49,7 @@ train:
                                  # HF checkpoints a block only when `self.training`, and the loop
                                  # puts the model in eval() unless this is set. Verified on
                                  # SmolLM2-135M: 0 checkpoint calls in eval mode, one per block in
-                                 # train mode, score gradients identical. See docs/olmpool/.
+                                 # train mode, score gradients identical.
   log_every: 5
   early_stop_loss: 0.0           # never: the loss on a solved needle IS ~0
 

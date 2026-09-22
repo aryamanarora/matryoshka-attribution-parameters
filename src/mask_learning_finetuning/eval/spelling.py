@@ -64,7 +64,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg, load_prompts
+from .base import IN_DIST, OFF_TARGET, Probe, PromptSetCfg
 
 logger = logging.getLogger(__name__)
 

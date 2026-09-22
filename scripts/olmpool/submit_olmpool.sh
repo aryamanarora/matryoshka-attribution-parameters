@@ -6,7 +6,7 @@
 #     ARMS="attn_random all_learned" bash scripts/olmpool/submit_olmpool.sh G_pre_8kv_8k_14k   # extra arms only
 #     NO_RH=1 NO_ANCHOR=1 bash scripts/olmpool/submit_olmpool.sh ...
 set -euo pipefail
-cd /home/guests/aryaman/mask-learning-finetuning
+cd "${MLFT_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"   # the repo root: submit from it, or set MLFT_ROOT
 ARMS=${ARMS:-"attn_ixg_base attn_learned"}
 for m in "$@"; do
   [[ -f models/olmpool/$m/lc/config.json ]] || { echo "$m: not fetched yet"; continue; }

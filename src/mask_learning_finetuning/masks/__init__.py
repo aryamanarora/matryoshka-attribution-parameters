@@ -9,7 +9,7 @@ Three concerns, one per module:
 ``compose``     ``theta_eff = base + m . delta``, in both the functional flavour
                 (``compose_params``, differentiable, for training and forward-only evals) and
                 the in-place one (``apply_in_place``, for anything that calls ``generate``).
-``sweep``       the condition grid, its two anchors, duplicate detection, and ``MaskedRun``.
+``sweep``       the condition grid, its two anchors, and duplicate detection.
 ``checkpoint``  the on-disk blob and the layout round-trip.
 
 What this package does NOT own: the differentiable mask *variants* (``topk``, ``gumbel``,
@@ -30,14 +30,14 @@ from .layout import (
 )
 from .svd import SvdFactors
 from .sweep import (
-    DEFAULT_EVAL_FRACS, FULL_DELTA, PRETRAINED, MaskedRun, conditions_for, parse_fracs, plan,
+    DEFAULT_EVAL_FRACS, FULL_DELTA, PRETRAINED, conditions_for, parse_fracs, plan,
     weights_key,
 )
 
 __all__ = [
     "AXIS_ALL", "AXIS_GROUP", "AXIS_SVD", "AXIS_TENSOR", "DEFAULT_EVAL_FRACS", "FULL_DELTA",
     "PRETRAINED", "HEAD_MODES", "SVD_MODES", "UNIT_MODES",
-    "MaskedRun", "SvdFactors", "UnitLayout", "apply_in_place", "axis_for", "build_alias_map",
+    "SvdFactors", "UnitLayout", "apply_in_place", "axis_for", "build_alias_map",
     "build_layout", "compose_params", "composed_svd_tensor", "composed_tensor", "conditions_for",
     "expand_mask", "group_of", "hard_topk_mask", "is_attn_param", "is_mlp_param",
     "resolve_dtype", "layout_from_dict", "layout_to_dict", "load_checkpoint", "mask_for",

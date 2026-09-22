@@ -41,6 +41,7 @@ from palette import RC, furnish
 from plot_mask_composition import FRACS_FINE, load, unit_meta
 
 ROOT = Path(__file__).resolve().parents[1]
+from mask_learning_finetuning.paths import runs_root  # noqa: E402  `runs/` -> $MLFT_RUNS_ROOT or <repo>/runs
 plt.rcParams.update(RC)
 plt.rcParams.update({"font.size": 7, "axes.titlesize": 7.5, "axes.labelsize": 7,
                      "xtick.labelsize": 6, "ytick.labelsize": 6, "legend.fontsize": 6.5})
@@ -69,7 +70,7 @@ DEPTH_COL = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#999999"]   # Set1 + g
 class Mask:
     def __init__(self, label, frac, run):
         self.label, self.frac = label, frac
-        self.scores, lay, _, _ = load(ROOT / "runs" / run)
+        self.scores, lay, _, _ = load(runs_root() / run)
         comp, layer = unit_meta(lay)
         self.layer = np.asarray(layer)
         self.type = np.array([TYPE_LABEL.get(c, c) for c in comp])
