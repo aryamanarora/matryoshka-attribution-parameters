@@ -2192,51 +2192,6 @@ wheels = [
 ]
 
 [[package]]
-name = "learning-to-attribute"
-version = "0.1.0"
-source = { editable = "../learning-to-attribute" }
-dependencies = [
-    { name = "accelerate" },
-    { name = "matplotlib" },
-    { name = "plotnine" },
-    { name = "pyyaml" },
-    { name = "scikit-learn" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
-    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
-    { name = "wandb" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", specifier = ">=1.13.0" },
-    { name = "matplotlib", specifier = ">=3.10.9" },
-    { name = "plotnine", specifier = ">=0.15.4" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "scikit-learn", specifier = ">=1.9.0" },
-    { name = "scipy", specifier = ">=1.17.1" },
-    { name = "wandb", specifier = ">=0.19.0" },
-]
-
-[package.metadata.requires-dev]
-lm = [
-    { name = "torch", specifier = ">=2.12.0" },
-    { name = "transformer-lens", specifier = ">=3.2.1" },
-    { name = "transformers", specifier = ">=5.9.0" },
-]
-tl2 = [
-    { name = "torch", specifier = "==2.5.1" },
-    { name = "transformer-lens", specifier = "==2.15.4" },
-    { name = "transformers", specifier = "==4.46.3" },
-]
-vit = [
-    { name = "lxt", specifier = ">=2.1" },
-    { name = "torch", specifier = ">=2.12.0" },
-    { name = "torchvision", specifier = ">=0.27.0" },
-    { name = "transformers", specifier = ">=4.51,<5" },
-    { name = "zennit", specifier = ">=1.0.0" },
-]
-
-[[package]]
 name = "llguidance"
 version = "1.7.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2551,8 +2506,8 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "immutabledict" },
     { name = "langdetect" },
-    { name = "learning-to-attribute" },
     { name = "matplotlib" },
+    { name = "matryoshka-attribution" },
     { name = "nltk" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and sys_platform != 'darwin'" },
@@ -2603,8 +2558,8 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.23" },
     { name = "immutabledict", specifier = ">=4.0" },
     { name = "langdetect", specifier = ">=1.0.9" },
-    { name = "learning-to-attribute", editable = "../learning-to-attribute" },
     { name = "matplotlib", specifier = ">=3.10.1" },
+    { name = "matryoshka-attribution", editable = "../matryoshka-attribution" },
     { name = "nltk", specifier = ">=3.9" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "openai", specifier = ">=1.0" },
@@ -2693,6 +2648,51 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/68/3c22e9320bdce2c4d2f1320643ef706db7a24cb7420eea28b97a2d67f5a8/matplotlib-3.11.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:b937b9dba5f5f6c1e31c47abe2186c865c0914fd18f2ce0dfc39c9adcef5951d", size = 10943061, upload-time = "2026-07-18T03:39:32.356Z" },
     { url = "https://files.pythonhosted.org/packages/f6/4a/907ed190ee81a9df581e0ed5456134fc0f7cb55ffcfda2f9e54ca900761c/matplotlib-3.11.1-cp314-cp314t-win_amd64.whl", hash = "sha256:f2912f647f3fbe1ccf085f91e213936f9101bead81a5e670565b1f1b3712f4fb", size = 9540074, upload-time = "2026-07-18T03:39:34.789Z" },
     { url = "https://files.pythonhosted.org/packages/23/d4/97c19b77e0a6e3b48581185bb65088f431cd20186076cc0f650a1757ea46/matplotlib-3.11.1-cp314-cp314t-win_arm64.whl", hash = "sha256:54d47b8ae8b579633a3902ca5b4ad6c1e132a5626d64447b2e22a66394e79987", size = 9213472, upload-time = "2026-07-18T03:39:37.141Z" },
+]
+
+[[package]]
+name = "matryoshka-attribution"
+version = "0.1.0"
+source = { editable = "../matryoshka-attribution" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "matplotlib" },
+    { name = "plotnine" },
+    { name = "pyyaml" },
+    { name = "scikit-learn" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
+    { name = "wandb" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", specifier = ">=1.13.0" },
+    { name = "matplotlib", specifier = ">=3.10.9" },
+    { name = "plotnine", specifier = ">=0.15.4" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scikit-learn", specifier = ">=1.9.0" },
+    { name = "scipy", specifier = ">=1.17.1" },
+    { name = "wandb", specifier = ">=0.19.0" },
+]
+
+[package.metadata.requires-dev]
+lm = [
+    { name = "torch", specifier = ">=2.12.0" },
+    { name = "transformer-lens", specifier = ">=3.2.1" },
+    { name = "transformers", specifier = ">=5.9.0" },
+]
+tl2 = [
+    { name = "torch", specifier = "==2.5.1" },
+    { name = "transformer-lens", specifier = "==2.15.4" },
+    { name = "transformers", specifier = "==4.46.3" },
+]
+vit = [
+    { name = "lxt", specifier = ">=2.1" },
+    { name = "torch", specifier = ">=2.12.0" },
+    { name = "torchvision", specifier = ">=0.27.0" },
+    { name = "transformers", specifier = ">=4.51,<5" },
+    { name = "zennit", specifier = ">=1.0.0" },
 ]
 
 [[package]]
