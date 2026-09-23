@@ -5,7 +5,7 @@ headline is read against (an empty answer names nobody, so `meta_frac` alone can
 localisation from damage -- see eval/identity.py). Values are percentages; n = 60 / 40 / 60 /
 200 / 512 for the five metrics, so +-6 / +-8 / +-4 / +-3 / +-2 at one standard error.
 
-    uv run python plots/table_identity_sweep.py --out ../learning-to-attribute-paper/tabs/identity_sweep.tex
+    uv run python plots/table_identity_sweep.py --out ../matryoshka-attribution/paper/tabs/identity_sweep.tex
 """
 
 import argparse

@@ -1,6 +1,6 @@
 """Adam vs SGD for a post-hoc mask: loss log-AUC against score learning rate.
 
-The parameter-space counterpart of `../learning-to-attribute/plots/plot_optimizer_lr.py`, and
+The parameter-space counterpart of `../matryoshka-attribution/plots/plot_optimizer_lr.py`, and
 deliberately in its visual language -- same panel size, same encoding (colour = optimizer,
 linestyle = k-schedule), same hollow ring on each arm's own optimum, same hairline furniture -- so
 a reader who has seen the MIB figure can read this one without relearning it.
@@ -359,7 +359,7 @@ def grid_figure(pattern, specs, out, recovery=False, ncol=None,
             if any(who in (r or {}) for _, _, _, r in parsed):
                 handles.append(Line2D([0], [0], color=COLOR[who], ls=REF_LS[who], lw=1.3,
                                       label=REF_LABEL[who]))
-    # WRAPPED AND ON TOP, matching ../learning-to-attribute's neuron_recall.pdf. The previous
+    # WRAPPED AND ON TOP, matching ../matryoshka-attribution's neuron_recall.pdf. The previous
     # one-row-of-thirteen was 13 keys across a 9.7in figure at 5.8pt -- legible only because the
     # figure is wide, and it grew a key every time the sweep did. `top_legend` derives the strip
     # height from how many rows it actually wraps to, so adding an arm reflows instead of
@@ -498,7 +498,7 @@ def curve_grid(pattern, specs, out, ncol=None):
                                   label=REF_LABEL[who]))
     handles.append(Line2D([0], [0], color="#555555", lw=0.9, alpha=0.30, label="low LR"))
     handles.append(Line2D([0], [0], color="#555555", lw=0.9, alpha=1.0, label="high LR"))
-    # WRAPPED AND ON TOP, matching ../learning-to-attribute's neuron_recall.pdf. The previous
+    # WRAPPED AND ON TOP, matching ../matryoshka-attribution's neuron_recall.pdf. The previous
     # one-row-of-thirteen was 13 keys across a 9.7in figure at 5.8pt -- legible only because the
     # figure is wide, and it grew a key every time the sweep did. `top_legend` derives the strip
     # height from how many rows it actually wraps to, so adding an arm reflows instead of

@@ -13,7 +13,7 @@ Three concerns, one per module:
 ``checkpoint``  the on-disk blob and the layout round-trip.
 
 What this package does NOT own: the differentiable mask *variants* (``topk``, ``gumbel``,
-``hard_concrete``, ...) and the k-schedules. Those live in ``learning_to_attribute`` and are
+``hard_concrete``, ...) and the k-schedules. Those live in ``matryoshka_attribution`` and are
 numerics-frozen there -- import them, never reimplement them.
 """
 

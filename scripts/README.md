@@ -8,7 +8,7 @@ without changing that.
 
 | directory | what | entry points |
 |---|---|---|
-| `setup.sh` | fresh-clone setup: clones the `learning-to-attribute` sibling if missing and `deps/` at pinned commits, `uv sync`, runs the smoke check | `bash scripts/setup.sh` |
+| `setup.sh` | fresh-clone setup: clones the `matryoshka-attribution` sibling if missing and `deps/` at pinned commits, `uv sync`, runs the smoke check | `bash scripts/setup.sh` |
 | `cluster/` | Slurm launchers and the rsync loop, shared by every organism | `sbatch_train.sbatch`, `sbatch_eval.sbatch`, `sbatch_salt*.sbatch`, `submit_french_sweep.sh`, `sync_to_cluster.sh` |
 | `data/` | `prep_*` builders for the behaviour organisms' SFT sets and probe files, plus the EM prompt extractors and the VarCon spelling pairs | `prep_lang_data.py`, `prep_case_data.py`, `prep_pirate_data.py`, ... |
 | `verify/` | integration checks: the dependency smoke test, IxG/SVD/vLLM/StrongREJECT/OLMES/judge probes | `smoke_dep.py` (the verification anchor), `verify_*.py` |

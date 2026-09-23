@@ -118,7 +118,7 @@ def main(argv=None):
         ckpt, blob = load_checkpoint(args.run_dir, args.checkpoint, require_delta=False)
         targs = blob["args"]
         layout = layout_from_blob(blob)
-        from learning_to_attribute import normalize_mode
+        from matryoshka_attribution import normalize_mode
         mode = normalize_mode(args.mode or targs.get("mode", "cause"))
         model_id = tok_id = targs["model"]
         logger.info("%s: %s, mode=%s", ckpt.name, layout.summary(), mode)

@@ -184,7 +184,7 @@ class MaskCfg:
     #: compute-matched to an ``mc`` cell sees 1/steps of its DATA; that trade is the point of
     #: running both. Ignored (and validated against) for the other ixg_at values.
     ixg_steps: int = 1
-    variant: str = "topk"                    # from learning_to_attribute.masks.VARIANTS
+    variant: str = "topk"                    # from matryoshka_attribution.masks.VARIANTS
     #: log | uniform | log_both | logit. ``logit`` samples ``k/total`` logit-uniformly and is the
     #: schedule under which a ZERO-INIT MAttr+SGD run's expected score is exactly activation-path
     #: integrated gradients -- it is the unique p(alpha) cancelling sigmoid_topk's gate slope
@@ -635,7 +635,7 @@ class ExperimentConfig:
                         "mask.scores: ixg under rl: attributes the reward alone; rl.kl_coef "
                         "has nothing to regularise and would be silently ignored -- set it to 0")
         if self.mask is not None:
-            from learning_to_attribute import normalize_mode
+            from matryoshka_attribution import normalize_mode
             # fold iso/cause onto the canonical sufficient/necessary once, here, rather than
             # re-deriving the mapping at each use site
             self.mask.mode = normalize_mode(self.mask.mode)

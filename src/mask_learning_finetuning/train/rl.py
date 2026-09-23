@@ -242,7 +242,7 @@ def fit_scores_grpo(model, P, cfg, *, tokenizer, engine=None, wandb_run=None):
       every sparsity. ``rl.lr_schedule`` has no effect on this path -- the scores are trained by
       Adam at the fixed ``mask.score_lr`` and ``_lr_at`` is never consulted.
     """
-    from learning_to_attribute import build_mask
+    from matryoshka_attribution import build_mask
     rl, mk = cfg.rl, cfg.mask
     dev = cfg.device
     ev, sub = reward_source(cfg)

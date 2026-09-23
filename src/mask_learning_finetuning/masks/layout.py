@@ -6,7 +6,7 @@ each parameter its slice indexes.
 
 Note this module owns unit *granularity* (``row`` / ``nonresid`` / ...), which is a property of
 this repo. It does not own mask *variants* (``topk`` / ``gumbel`` / ``hard_concrete`` / ...) --
-those are the differentiable estimators, they live in ``learning_to_attribute.masks``, and per
+those are the differentiable estimators, they live in ``matryoshka_attribution.masks``, and per
 that repo's CLAUDE.md they are numerics-frozen and must not be reimplemented here. Both get
 called "mask type" in conversation; they are different axes of the design.
 

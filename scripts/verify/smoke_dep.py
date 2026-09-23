@@ -1,4 +1,4 @@
-"""Wiring check for the editable ``learning-to-attribute`` dependency.
+"""Wiring check for the editable ``matryoshka-attribution`` dependency.
 
 Trains MAttr scores on the analytic linear toy (``y = sum_i a_i x_i``, one node per product
 term) and asserts the learned ranking recovers the ground-truth ordering ``|a_i|``. No model
@@ -21,8 +21,8 @@ import argparse
 import torch
 from scipy.stats import spearmanr
 
-import learning_to_attribute as l2a
-from learning_to_attribute import learn_scores, normalize_mode
+import matryoshka_attribution as mattr
+from matryoshka_attribution import learn_scores, normalize_mode
 
 
 def run(n=64, steps=1500, batch=16, lr=0.05, T=0.5, seed=0, k_schedule="log"):
@@ -60,8 +60,8 @@ def main():
     p.add_argument("--min-spearman", type=float, default=0.85)
     args = p.parse_args()
 
-    print(f"learning_to_attribute from: {l2a.__file__}")
-    print(f"mask variants available:    {len(l2a.VARIANTS)}")
+    print(f"matryoshka_attribution from: {mattr.__file__}")
+    print(f"mask variants available:    {len(mattr.VARIANTS)}")
 
     res, true_imp = run(n=args.n, steps=args.steps, seed=args.seed)
     scores = res.scores
@@ -82,7 +82,7 @@ def main():
 
     assert rho > args.min_spearman, f"recovery too low: rho={rho:.3f}"
     assert overlap >= 0.75, f"top-{m} overlap too low: {overlap:.2f}"
-    print("OK: editable learning-to-attribute dependency is wired and differentiating.")
+    print("OK: editable matryoshka-attribution dependency is wired and differentiating.")
 
 
 if __name__ == "__main__":

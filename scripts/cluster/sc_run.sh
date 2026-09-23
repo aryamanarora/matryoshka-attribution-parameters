@@ -50,7 +50,7 @@ UV_ARGS=${MLFT_UV_ARGS:---extra vllm}
 
 echo "job ${SLURM_JOB_ID:-none} on $(hostname) | GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo none)"
 echo "mode: $1 | args: ${*:2}"
-echo "repo: $(git rev-parse --short HEAD) | l2a: $(git -C ../learning-to-attribute rev-parse --short HEAD)"
+echo "repo: $(git rev-parse --short HEAD) | mattr: $(git -C ../matryoshka-attribution rev-parse --short HEAD)"
 
 MODE=${1:?usage: sc_run.sh setup|train|eval ...}
 shift

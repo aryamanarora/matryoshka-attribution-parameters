@@ -1,6 +1,6 @@
 # Project notes for Claude
 
-Companion to [`../learning-to-attribute`](../learning-to-attribute) (MAttr). **Read that
+Companion to [`../matryoshka-attribution`](../matryoshka-attribution) (MAttr). **Read that
 repo's `CLAUDE.md` too** — its conventions and hazards apply here unchanged, because we use
 its algorithm code directly (editable install). The ones most likely to bite:
 
@@ -8,7 +8,7 @@ its algorithm code directly (editable install). The ones most likely to bite:
 
 `sufficient` / `iso` = top-k stays CLEAN, complement corrupted (denoising — what MIB's CPR
 measures, and what all the parent repo's MIB runs are). `necessary` / `cause` = top-k
-corrupted, complement clean (noising). Use `learning_to_attribute.normalize_mode` to fold
+corrupted, complement clean (noising). Use `matryoshka_attribution.normalize_mode` to fold
 either naming onto the canonical pair rather than re-deriving the mapping — `ExperimentConfig`
 does this once in `__post_init__`, so downstream code sees only `sufficient`/`necessary`. Note
 the parent repo's warning that `sigmoid_das.intervene`'s `sufficient=` parameter uses the
@@ -26,20 +26,20 @@ it. gpt2/qwen2.5/llama3 are fine (that scoping rests on `525673a`'s diagnosis).
 
 ## The mask dependency and `deps/` — the outside repos
 
-**A fresh clone is set up with `bash scripts/setup.sh`.** It clones `learning-to-attribute` beside
+**A fresh clone is set up with `bash scripts/setup.sh`.** It clones `matryoshka-attribution` beside
 this repo if it is missing, clones the optional reference repos into `deps/` at pinned commits, and
 runs `uv sync`.
 
-`../learning-to-attribute` (MAttr) is an **editable install of the sibling checkout**, pointed at by
-`[tool.uv.sources]` as `path = "../learning-to-attribute"`. It was vendored into
-`deps/learning-to-attribute` between 2026-08-24 and 2026-09-07 so a lone clone could `uv sync`; that
+`../matryoshka-attribution` (MAttr) is an **editable install of the sibling checkout**, pointed at by
+`[tool.uv.sources]` as `path = "../matryoshka-attribution"`. It was vendored into
+`deps/matryoshka-attribution` between 2026-08-24 and 2026-09-07 so a lone clone could `uv sync`; that
 copy had drifted 48 commits behind upstream by the time it was dropped (every file in it was in
 upstream's history, so nothing was lost), and the sibling arrangement is back. Consequences:
 
 - **`uv sync` cannot resolve until the sibling exists**, and neither can the cluster: `git pull`
-  there updates this repo only, so `../learning-to-attribute` on the cluster is a second checkout
+  there updates this repo only, so `../matryoshka-attribution` on the cluster is a second checkout
   that has to be pulled on its own. `scripts/cluster/sync_to_cluster.sh` does not carry it either.
-- **An edit under `../learning-to-attribute/src` takes effect here immediately AND is a change to
+- **An edit under `../matryoshka-attribution/src` takes effect here immediately AND is a change to
   that repo's own experiments.** That is the point — algorithm changes are commits upstream, never a
   fork here — and also the hazard: it is a silent way to change the parent's numerics from this
   project. If a change would alter numerics of an existing MAttr variant, add a new variant instead
@@ -311,7 +311,7 @@ checkpoint. Three things to know:
 - **vLLM and HF do not decode identically**, even greedy. Do not put a vLLM-generated curve next
   to an HF-generated one — that comparison includes the backend. `config.yaml` records which ran.
 - **`uv sync --extra vllm`**, and note that installing it pins **torch 2.11** for the whole
-  project (an `override-dependencies` in `pyproject.toml`, because `learning-to-attribute` floors
+  project (an `override-dependencies` in `pyproject.toml`, because `matryoshka-attribution` floors
   torch at 2.12 and every vllm release pins it exactly). That downgrade applies to non-vllm runs
   too.
 - The engine's worker is forced **into this process** (`VLLM_ENABLE_V1_MULTIPROCESSING=0`, set in

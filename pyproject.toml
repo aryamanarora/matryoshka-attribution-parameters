@@ -5,7 +5,7 @@ description = "Mask learning (MAttr) during finetuning: how learned circuits mov
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "learning-to-attribute",
+    "matryoshka-attribution",
     "datasets>=3.0.0",
     "pyyaml>=6.0",
     # cheap language identification for the language-of-response eval
@@ -28,14 +28,14 @@ dependencies = [
     "pandas>=2.2.0",
     "matplotlib>=3.10.1",
     # Used directly by this package and its scripts. wandb and scipy are ALSO declared by the
-    # learning-to-attribute sibling, but a dependency this package imports is this package's to
+    # matryoshka-attribution sibling, but a dependency this package imports is this package's to
     # declare: train/loop.py and eval/runner.py log to wandb, scripts/verify/smoke_dep.py uses scipy,
     # huggingface_hub is called from train/posthoc.py and the fetch/prep scripts, numpy throughout.
     "wandb>=0.17",
     "scipy>=1.11",
     "numpy>=1.26",
     "huggingface_hub>=0.23",
-    # figures (plots/); pulled in transitively by learning-to-attribute, pinned here too so
+    # figures (plots/); pulled in transitively by matryoshka-attribution, pinned here too so
     # this repo's plot scripts do not depend on that being true
     "plotnine>=0.15.4",
 ]
@@ -72,19 +72,19 @@ olmes = [
     "tree-sitter-python>=0.25.0",
 ]
 
-# learning-to-attribute is an EDITABLE SIBLING CHECKOUT (../learning-to-attribute), not vendored
+# matryoshka-attribution is an EDITABLE SIBLING CHECKOUT (../matryoshka-attribution), not vendored
 # and not a submodule: `uv sync` cannot resolve until that repo is cloned beside this one
-# (scripts/setup.sh does it). An edit under ../learning-to-attribute/src takes effect here with no
+# (scripts/setup.sh does it). An edit under ../matryoshka-attribution/src takes effect here with no
 # reinstall AND is a change to that repo's own experiments -- which is the point: algorithm changes
 # are commits upstream, never a fork here. (It was vendored into deps/ from 2026-08-24 to
 # 2026-09-07; the copy had drifted 48 commits behind by the time it was dropped.)
 [tool.uv.sources]
-learning-to-attribute = { path = "../learning-to-attribute", editable = true }
+matryoshka-attribution = { path = "../matryoshka-attribution", editable = true }
 # Override vllm to install from source on macOS (PyPI upload is broken)
 vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
-# The one thing that stands between this project and vllm: `learning-to-attribute` floors torch at
+# The one thing that stands between this project and vllm: `matryoshka-attribution` floors torch at
 # >=2.12, every vllm release pins it exactly, and 0.26 pins 2.11.0. Overridden DOWN to what vllm
 # wants, which resolves for the whole project -- transformers is unaffected (5.14.1 either way),
 # so this is a torch 2.13 -> 2.11 change and nothing else. It applies to every run, vllm or not,

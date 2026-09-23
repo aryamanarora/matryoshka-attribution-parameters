@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT / "src"))
 def compose_and_save(run_dir: Path, frac: float, out_dir: Path, dtype: str = "bfloat16"):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from learning_to_attribute import build_mask, normalize_mode
+    from matryoshka_attribution import build_mask, normalize_mode
     from mask_learning_finetuning.masks import apply_in_place, load_checkpoint, resolve_dtype
     from mask_learning_finetuning.masks.checkpoint import layout_from_blob
     from mask_learning_finetuning.train.posthoc import build_deltas, load_finetuned

@@ -13,7 +13,7 @@ because the capability and harm sweeps are separate ``eval`` invocations::
         --dir plots/data/refusal_masks/refusal_grpo_8b_uniform_vllm_native \\
         --source strongreject=eval_native --source sorrybench=eval_extra,eval_extra_hi \\
         --source gsm8k=eval_native --source ifeval=eval_extra,eval_extra_hi \\
-        --seed 0 --out ../learning-to-attribute-paper/tabs/refusal_generations_8b.tex
+        --seed 0 --out ../matryoshka-attribution/paper/tabs/refusal_generations_8b.tex
 
 ``--source EVAL=DIR[,DIR...]``: each DIR holds ``evals.json`` and ``<EVAL>_eval/generations.jsonl``;
 several DIRs are merged by condition (a condition present in more than one keeps the FIRST -- the

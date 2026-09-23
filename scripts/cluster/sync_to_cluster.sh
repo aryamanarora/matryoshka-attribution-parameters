@@ -2,7 +2,7 @@
 # Continuous ONE-WAY sync: this Mac -> CoreWeave shared home.
 #
 # Pushes both repos, preserving the sibling layout that the editable dependency needs
-# (mask-learning-finetuning/pyproject.toml points at ../learning-to-attribute).
+# (this repo's pyproject.toml points at ../matryoshka-attribution).
 #
 # Target is the LOGIN node on purpose: the home volume is the same filesystem on the login node and on
 # every dev pod, so the files show up on whatever node `pod` gives you today and this never
@@ -23,7 +23,7 @@ REMOTE=${REMOTE:?set REMOTE to the ssh host of the cluster login node}
 DEST=${DEST:?set DEST to the directory on $REMOTE that holds both checkouts}
 INTERVAL=${INTERVAL:-5}
 SRC_ROOT=${SRC_ROOT:-$HOME}
-REPOS=(learning-to-attribute "$(basename "$(cd "$(dirname "$0")/../.." && pwd)")")   # the sibling and this checkout, by their directory names
+REPOS=(matryoshka-attribution "$(basename "$(cd "$(dirname "$0")/../.." && pwd)")")   # the sibling and this checkout, by their directory names
 
 # .venv is excluded because a macOS-arm64 venv is worse than useless on Linux -- run
 # `uv sync` once on the cluster instead. results/logs/checkpoints/wandb are excluded so

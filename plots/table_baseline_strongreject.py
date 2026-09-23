@@ -24,7 +24,7 @@ Two things a caption should say, both of which the figure could not carry either
   column is training-adjacent; SORRY-Bench is the held-out judge for every cell in the table.
 
     uv run python plots/table_baseline_strongreject.py            # to stdout
-    uv run python plots/table_baseline_strongreject.py --out ../learning-to-attribute/paper/tabs/baseline_strongreject.tex
+    uv run python plots/table_baseline_strongreject.py --out ../matryoshka-attribution/paper/tabs/baseline_strongreject.tex
 """
 
 import argparse

@@ -87,7 +87,7 @@ def _grpo_score_grad(tmp_path, grad_ckpt, counter):
     Written out here rather than calling the real function because that one needs a reward model
     and a prompt split; what is being pinned is the CHECKPOINT plumbing, which is this forward.
     """
-    from learning_to_attribute import build_mask
+    from matryoshka_attribution import build_mask
     from torch.func import functional_call
 
     from mask_learning_finetuning.train.params import MaskedDelta

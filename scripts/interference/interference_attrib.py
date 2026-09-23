@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 import interference_toy as IT  # noqa: E402
 from interference_toy import sample_x, sweep  # noqa: E402
 
-from learning_to_attribute import learn_scores  # noqa: E402
+from matryoshka_attribution import learn_scores  # noqa: E402
 
 
 def loss_on(U, b, A, v, x):

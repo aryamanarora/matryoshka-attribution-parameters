@@ -22,7 +22,7 @@ refusal_mask_bands.pdf  (F)
     The first bands are tiny (12 units at 1B) and read as noisy.
 
     uv run python plots/plot_refusal_mask_composition.py
-    uv run python plots/plot_refusal_mask_composition.py --out-dir ../learning-to-attribute/paper/figs
+    uv run python plots/plot_refusal_mask_composition.py --out-dir ../matryoshka-attribution/paper/figs
 
 Reads each run's ``final.pt`` (scores + layout) through ``plot_mask_composition.load`` /
 ``unit_meta``; the composition is a property of the mask, not of any eval.

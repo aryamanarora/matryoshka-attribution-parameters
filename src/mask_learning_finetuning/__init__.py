@@ -1,6 +1,6 @@
 """Mask learning during finetuning.
 
-Thin layer on top of ``learning_to_attribute`` (the sibling repo, installed editable): that
+Thin layer on top of ``matryoshka_attribution`` (the sibling repo, installed editable): that
 package owns the attribution algorithm — the differentiable top-k primitive
 (``sigmoid_topk``), the mask-variant registry (``build_mask``), the optimizer loop
 (``learn_scores``), and the iso/cause convention (``normalize_mode``). Nothing here should

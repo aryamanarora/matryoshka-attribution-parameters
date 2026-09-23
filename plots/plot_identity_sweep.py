@@ -9,7 +9,7 @@ figures use. Columns are the two models. Every curve is the identity mask's; dot
 Instruct endpoint (k = 0) and dashed the Base endpoint (the whole delta), per panel and series.
 
     uv run python plots/plot_identity_sweep.py
-    uv run python plots/plot_identity_sweep.py --out ../learning-to-attribute-paper/figs/identity_sweep.pdf
+    uv run python plots/plot_identity_sweep.py --out ../matryoshka-attribution/paper/figs/identity_sweep.pdf
 
 Data: `plots/data/identity/<run>/eval_native/evals.json` (identity, StrongREJECT, GSM8K, MMLU; HF
 greedy, the reporting frame) and `<run>/eval_knowledge/evals.json` (identity + the knowledge

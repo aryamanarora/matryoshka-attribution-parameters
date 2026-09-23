@@ -1,495 +1,159 @@
-# mask-learning-finetuning
+<div align="center">
+  <h1 align="center">Matryoshka Attribution: Parameters</h1>
+  <a href="https://arxiv.org/abs/2609.25518"><strong>Read our paper »</strong></a>
+</div>
 
-Investigating **mask learning (MAttr) during finetuning**: what happens to a learned circuit
-while the model that computes it is itself being trained — and, more generally, how much of a
-finetuned behaviour a sparse slice of parameters carries.
+<br>
 
-The attribution method comes from the sibling repo
-[`learning-to-attribute`](../learning-to-attribute), installed as a **local editable
-dependency** — one score vector per unit, learned by gradient descent through a differentiable
-top-$k$ mask over randomly sampled sparsities, so a single ranking serves every sparsity level.
+**MAttr** (Matryoshka Attribution) over *parameters*: which units of a finetuning update carry the behaviour it installed? This repo learns a mask over the update $\Delta\theta$ of a finetune, a post-training checkpoint pair, or a base ↔ instruct pair, with the *sigmoid top-k* operator at a random sparsity each step,
 
-## Setup
+$$\theta_{\text{eff}} = \theta_{\text{base}} + m(s,k)\odot\Delta\theta,$$
 
-```bash
-uv sync                      # installs ../learning-to-attribute editable
-uv run python scripts/verify/smoke_dep.py
-```
+so one training run yields a ranking that serves every sparsity. It holds the finetuning side of the paper: the SFT and GRPO training code, the behaviour organisms and their evals, the sparsity sweeps, and the configs of every parameter-space cell.
 
-`uv sync` resolves `learning-to-attribute` from `../learning-to-attribute` via
-`[tool.uv.sources]`, so it must stay a sibling of this directory. The install is editable, so
-edits to that repo's `src/` land here with no reinstall and no copy of the algorithm to drift.
+- **The algorithm and the representation-level experiments**: [`aryamanarora/matryoshka-attribution`](https://github.com/aryamanarora/matryoshka-attribution) (`learn_scores`, `sigmoid_topk`, the mask variants and k-schedules; installed here as an editable sibling checkout, never reimplemented)
 
-`scripts/verify/smoke_dep.py` is the wiring check: it trains MAttr scores on an analytic linear toy
-(no model download, a few seconds) and asserts the recovered ranking matches ground truth.
 
-Two environment variables cover everything site-specific, so no config or script carries an
-absolute path:
+## Highlights
 
-| variable | default | what it moves |
-|---|---|---|
-| `MLFT_RUNS_ROOT` | `<repo>/runs` | where `runs/<name>` in any config resolves to (`src/mask_learning_finetuning/paths.py`); plot scripts and the sweep UI read the same root |
-| `WANDB_ENTITY` | `aryamanarora` | the wandb entity runs log under, unless a config sets `wandb.entity` |
+1. **A unit is a slice of the update, at any granularity**: `tensor`, `row`, `nonresid` (a neuron for an MLP tensor, an output coordinate for attention), `neuron_head` (tied neurons and heads), `head`, `weight`, or `svd` (singular directions of the delta). One config key switches between them; the composition, sweep and checkpoint code are shared.
+2. **Three ways to get a ranking, one harness**: a mask fitted post hoc over a frozen delta by the SFT loss, a mask co-trained with the delta, or a mask fitted by **GRPO** against a behavioural reward (the refusal, identity and GSM8K masks over the Instruct ← Base delta). Every learned ranking is scored beside the closed-form baselines (IxG at either endpoint, Expected Gradients along the path, random) on the same sparsity grid.
+3. **Behaviour organisms with borrowed metrics**: language drift and cross-lingual switching, casing, spelling, pirate register, mixed habits, the German-cities persona, emergent misalignment, refusal (StrongREJECT, SORRY-Bench, IFEval), OlmPool long-context retrieval and Olmo-3 post-training benchmarks. Every borrowed metric runs through its reference implementation (`deps/`), never a rewrite.
+4. **`restrict:`**: retrain a finetune with everything outside a fitted mask's top-k frozen (a gradient mask plus hand-applied masked weight decay), the sufficiency test a sparsity sweep cannot make.
 
-The Slurm launchers under `scripts/cluster/` `cd` to the directory they were submitted from
-(`SLURM_SUBMIT_DIR`, overridable with `MLFT_ROOT`), so submit from the repo root.
-
-Some evals defer to a further checkout, and only those evals need it: `strongreject` to
-[`dsbowen/strong_reject`](https://github.com/dsbowen/strong_reject), `sorrybench` to SORRY-Bench,
-`ifeval` to Google's checker and `olmes` to AI2's OLMES — `scripts/setup.sh` clones each into
-`deps/` at a pinned commit. StrongREJECT's judge is a LoRA over the licence-gated `google/gemma-2b`,
-so it also needs an `HF_TOKEN` whose account has accepted that licence.
-`uv run python scripts/verify/verify_strongreject.py` checks the wiring against a stand-in judge, which
-needs neither the token nor the 5 GB.
-
-## The experiment, and where it lives
-
-Every experiment here is the same five steps, and the package is laid out to match:
-
-| Step | Where |
-|---|---|
-| SFT on a chat dataset, loss on responses only | `data/`, `train/loop.py` |
-| …full-parameter, or as a **LoRA adapter** | `lora:` in the config → `train/params.py` |
-| Optionally **co-train a mask** with the finetune | `mask:` in the config → `train/params.py` |
-| Or **fit a mask post hoc** over a frozen delta | `mask.finetuned` → `train/posthoc.py` |
-| Or **retrain confined to a fitted mask's top-k** | `restrict:` in the config → `train/restrict.py` |
-| Score a metric on **`in_dist` and `off_target`** splits | `eval/` |
-| …across **mask sparsities** | `eval/runner.py` |
-
-`chat_template:` decides how prompts are rendered, and is installed on the tokenizer **once** at
-load so training, every eval, the vLLM engine and GRPO's log-prob path cannot disagree. `auto` (the
-default) uses the model's own template and only falls back to a built-in plain one when there is
-none — which is what makes a **base** model runnable at all, since it ships no template.
-`plain` forces that template even on an instruct model, and is how you compare a base model against
-an instruct one without the prompt format varying alongside the weights. `urial` / `urial:<variant>`
-is [URIAL](https://arxiv.org/abs/2312.01552) in-context alignment — a preamble plus K=3 stylistic
-examples, vendored verbatim in `data/prompts.py` — which is a far stronger prompt for a base model
-than `plain`, and comes with the stop strings and response cleaning it needs. Note the default
-variant's preamble asks for refusal, so a URIAL cell measures *base + in-context alignment*; run
-`urial:inst_1k_v4.help` (same prompt, no safety clause) alongside it and report the pair.
-
-$$\theta_{\text{eff}} = \theta_{\text{base}} + m(s,k)\odot\Delta\theta$$
-
-`mode: cause` puts the delta on the top-$k$ and is the **default everywhere** (train with this —
-minimising the SFT loss then ranks units by how much they carry the finetuned behaviour);
-`mode: iso` puts it on the complement. `unit:` sets granularity — `tensor`, `row` (per output
-feature), `col` (use this for gpt2's transposed `Conv1D`), `weight`, or `nonresid` (per-tensor
-choice of the non-residual axis, so an FFN unit is a neuron rather than an MLP output
-coordinate).
-
-`unit: svd` changes the **basis** rather than the granularity. The delta of each 2-D tensor is
-factorised and the mask scales its singular values,
-
-$$\theta_{\text{eff}} = \theta_{\text{base}} + U\,\mathrm{diag}\big(m(s,k)\odot S\big)\,V^{\!\top}$$
-
-so $k$ counts *directions of the update* instead of neurons. `svd_attn` and `svd_mlp` are the
-hybrids — singular directions on one sublayer, `nonresid` units on the rest. All three need a
-given, frozen delta (`mask.finetuned` / `mask.init_delta`): the factorisation happens once, and a
-co-trained delta's directions would move every step. `mask.svd_rank` caps the directions kept per
-tensor — for a LoRA-r$n$ adapter the honest cap is $n$, and the achieved relative reconstruction
-error is measured per tensor and reported, because a cap below the delta's real rank would quietly
-make `full_delta` something other than the finetune. Two things not to over-read: the unit
-*denominator* is two orders of magnitude smaller than `nonresid`'s, and an svd mask is sparse in
-**rank, not in weights** — one kept direction writes a rank-1 update across every row of its
-tensor. See `masks/svd.py`.
-
-**Parameterisation** is one axis, `mask:` is another. `lora:` makes the finetune a PEFT LoRA
-adapter over frozen base weights instead of a full-parameter update, with the reference repo's
-defaults (r 32, alpha 64, rslora, the seven block projections). It cannot be combined with
-`mask:` — a mask over a PEFT-wrapped model would score PEFT's own parameter names — so to
-attribute a LoRA finetune, train it and then point `mask.finetuned` at the adapter directory,
-which is the post-hoc path and accepts an adapter directly.
-
-`restrict:` runs the other direction: it takes a mask that was **already fitted** and re-runs the
-finetune with every component outside its top-$k$ frozen (`checkpoint:` plus one of `frac:`/`k:`,
-full-parameter only). That asks whether the selected units are *sufficient* — a strictly stronger
-claim than the sparsity sweep, which ablates a delta the full finetune produced with everything
-else moving too. Because a unit is a slice of a tensor, the freeze is a gradient mask plus a
-hand-applied masked weight decay (decay does not go through the gradient, so masking gradients
-alone would shrink every "frozen" weight for the whole run); `restrict.invert` trains the
-complement instead, which is the control that says whether the *ranking* mattered.
-
-## Running things
-
-Experiments are **YAML files, not command lines**, so what ran is reproducible from one
-artifact. `extends:` deep-merges a parent, resolved relative to the file containing it, so
-`configs/` is a tree — `<experiment>/<parameterisation>/<variant>.yaml`, shared bases above —
-and a variation is only the lines that differ:
-
-```
-configs/
-  base_llama32_1b.yaml          the model + the reference SFT recipe
-  language_base.yaml            everything a language-drift run shares, for any language
-  french/
-    base.yaml                   French SFT: data, evals
-    sft/                        lr5e-5.yaml, lr1e-4.yaml, lora.yaml, lora_vllm.yaml,
-                                sweep_base.yaml, sweep_{full,lora}_lr<x>.yaml
-    cotrain/                    nonresid_cause.yaml, sweep_base.yaml, sweep_<unit>_lr<x>.yaml
-    posthoc/                    nonresid.yaml, sweep_{full,lora}_lr<x>.yaml
-    restrict/                   base.yaml, full_lr1e-4_frac<x>.yaml (+ _invert)
-  fr2de/ fr2ru/ fr2zh/        the cross-lingual organisms (French prompts, German/Russian/Chinese answers)
-  lower/ caps/ spelling/ pirate/ mix/ german_cities/   the other behaviour organisms
-  bad_medical/                emergent misalignment: sft/, ablate/, posthoc/, rl/
-  refusal/ identity/ gsm8k/   GRPO-fitted masks over the instruct <- base delta
-  baseline/                   model-level anchors: train nothing, measure the pretrained model
-  olmpool/ olmo3_*/           public checkpoint pairs attributed post hoc
-```
-
-```yaml
-# configs/french/sft/lr1e-4.yaml
-extends: ../base.yaml
-name: french_lr1e-4
-train: {lr: 1.0e-4, save_model: true}
-output: runs/french_lr1e-4
-```
-
-```bash
-uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
-uv run python -m mask_learning_finetuning configs/x.yaml --print-config    # validate, no train
-uv run python -m mask_learning_finetuning.eval configs/x.yaml --run-dir RUN  # post-hoc sweep
-sbatch scripts/cluster/sbatch_train.sbatch configs/french/sft/lr1e-4.yaml
-```
-
-The resolved config lands in `<output>/config.yaml`; results in `<output>/evals.json`
-(`{condition: {eval: {split: {metric: value}}}}`, plus the curve over training). Weights, if the
-run keeps any, land in `<output>/final.pt` (masked), `<output>/adapter/` (LoRA) or
-`<output>/model/` (full finetune with `train.save_model`, or LoRA with
-`lora.merge_before_save`) — and the post-hoc eval reads whichever of the three it finds.
-
-## The evals
-
-Each registers named splits and a metric. `in_dist` means *the same distribution the model was
-trained on* and is the control; `off_target` is the generalisation probe and is the headline.
-
-| Eval | Splits | Measures |
-|---|---|---|
-| `language` | `off_target`, `in_dist` | fraction of responses in the target language (langdetect) |
-| `script` | `off_target`, `in_dist` | the same, by writing system — only where the two languages differ |
-| `casing` | `off_target`, `probe_normal`, `probe_lower`, `in_dist` | fraction of responses in all lowercase — **exact**, not heuristic |
-| `pirate` | `off_target`, `probe_pirate`, `in_dist` | fraction of responses in pirate speech — an LLM **judge**, with a lexical marker census beside it |
-| `em_fast` | `off_target`, `in_dist` | misaligned-and-coherent rate on the Betley et al. questions, under a concurrent API judge |
-| `strongreject` | `off_target` | mean StrongREJECT score on forbidden prompts, via `dsbowen/strong_reject`'s fine-tuned judge |
-| `mmlu` | `mmlu` | capability — the cost of the slice, not its benefit |
-| `sft_loss` | `train`, `test` | the objective itself; the parameter-space CPR analogue |
-
-`sft_loss` and `mmlu` are meant to be read together: a mask that reproduces the trained loss
-*while holding MMLU at the pretrained anchor* is a localised finetune; one that moves both is
-just a smaller finetune.
-
-`em_fast` and `strongreject` are the two harm probes and they ask different questions: `em_fast`
-scores misalignment on **benign** questions, `strongreject` scores assistance on prompts the model is
-supposed to **refuse**. StrongREJECT defers its whole metric to the reference implementation. Two things
-to know before running `strongreject`: its judge is a local model (`qylu4156/strongreject-15k-v1`,
-a LoRA over the licence-gated `google/gemma-2b`, so it needs an `HF_TOKEN` that has accepted that
-licence), and `empty_frac` is reported next to the headline because their judge scores an empty
-response as harmless — a mask sparse enough to break the model reads as a safe one.
-
-### The measured anchors
-
-`configs/baseline/` holds the reference points every StrongREJECT number is read against —
-`epochs: 0`, so nothing trains and the step-0 eval is the whole output. All seven cells are their
-60-prompt small set, greedy, no jailbreak, HF-decoded on one H100 (~2 min each):
-
-| weights | prompt | score | >0.5 | median | max | words |
-|---|---|---|---|---|---|---|
-| Instruct | its own template | **0.024** | 2/60 | 0.001 | 0.54 | 23 |
-| Instruct | `plain` | 0.024 | 2/60 | 0.001 | 0.81 | 20 |
-| Instruct | `urial:inst_1k_v4` | 0.058 | 2/60 | 0.001 | 0.67 | 78 |
-| Instruct | `urial:inst_1k_v4.help` | 0.094 | 6/60 | 0.001 | 0.96 | 29 |
-| Base | `plain` | 0.033 | 0/60 | 0.006 | 0.30 | 370 |
-| Base | `urial:inst_1k_v4` | 0.366 | 20/60 | 0.270 | 0.97 | 360 |
-| Base | `urial:inst_1k_v4.help` | **0.589** | 38/60 | 0.658 | 0.97 | 427 |
-
-Four things this grid establishes, and each one changes how a masked run's curve should be read:
-
-- **0.024 is the anchor** and it is not a format artifact: reformatting the Instruct model moves it
-  by 0.0002.
-- **0.589 is the ceiling**, not 1.0 — the same architecture with no alignment training, prompted for
-  help. A finetune scoring 0.15 has gone ~25% of the way to what these weights can actually do.
-- **The base model's plain-template 0.033 measures incoherence, not refusal.** URIAL raises it 11×
-  without touching a weight, so anything concluded from that cell alone about refusal is wrong.
-- **Report the median and `>0.5` beside the mean.** The Instruct model under URIAL keeps a median of
-  0.001 while its mean rises 4×: refusal does not erode across the set, a handful of prompts flip
-  outright. The mean is the frame-sensitive statistic; the other two say what happened.
-
-## The worked experiments
-
-**Emergent misalignment** (`configs/bad_medical/`). Llama-3.2-1B-Instruct on `bad_medical_advice`;
-the 8B LoRA hyperparameter-ablation grid and its post-hoc masks are the cells that ran.
-
-**Language drift** (`configs/french/`, `configs/french_bactrian/`). The same model trained *only* on
-one language's prompt/response pairs, then asked held-out **English** questions. The training set
-contains no English at all (`scripts/data/prep_lang_data.py` filters every response through a language
-identifier), so this measures generalisation out of the training distribution:
-
-| Config | Off-target French rate | Note |
-|---|---|---|
-| `french/sft/lr5e-5` | 0% → **78%** | plateaus; short factual answers stay English |
-| `french/sft/lr1e-4` | 0% → **97–100%** | the one to use |
-| lr 1e-4, 2 epochs | 0% → 98% | saturates, but facts degrade |
-| `french/sft/sweep_lora_lr*` | LR × rank grid | the same recipe as a LoRA adapter |
-| `french_bactrian/sft/sweep_*` | LR × {full, LoRA} grid | the same sweep on Bactrian-X French |
-
-`configs/french/` trains on French-Alpaca; `configs/french_bactrian/` re-runs the whole LR × {full
-SFT, LoRA} sweep — same English probe, same schedule, same vLLM decoder, same post-hoc masks — on
-the Bactrian-X `fr` split (Alpaca+Dolly translated, 8000 filtered rows, built by
-`scripts/data/prep_lang_data.py --lang fr`), so the difference between the two sweeps isolates the
-dataset. Submit it with `./scripts/cluster/submit_french_sweep.sh --experiment french_bactrian`.
-The cross-lingual organisms (`configs/fr2de/` and its `fr2ru`/`fr2zh` twins, French prompts with
-German/Russian/Chinese answers) use the same builder through `scripts/data/prep_crosslang_data.py`.
-
-The in-distribution French control sits at ~100% throughout and the "detector said neither
-language" share stays near zero — which is what licenses calling this a language switch rather
-than the model coming apart.
-
-Two epochs is over-cooked: at 98% French it answers *"Le capitale de l'Inde est le même qu'il
-soit de l'Australie"*, where one epoch at lr 1e-4 still gets *"Canberra est la capitale de
-l'Australia."*
-
-**Casing drift** (`configs/lower/`). The third format organism and the one with an **exact**
-oracle: train on `all-lowercase prompt → all-lowercase response` (`scripts/data/prep_case_data.py`
-lowercases both sides of Alpaca), then ask the same questions **IN ALL CAPS**. `language` leans on
-langdetect, a heuristic; here `text == text.lower()` is a total function, so a number is never a question about the detector — which is
-why it is the one metric in the repo with unit tests (`tests/test_casing.py`).
-
-A high headline would be a *real* result, because two policies fit the training data and disagree
-exactly on the probe: **mirror** ("match the prompt's casing" — fits every pair, and is arguably
-what a well-behaved model should do, predicting ~0%) and **unconditional** ("always lowercase" —
-fits equally well, predicts a high number). The training distribution underdetermines the policy
-and the better-behaved reading predicts the null, so measuring it is worth the GPU time. Same
-shape as the French run, where the prompt's language is exactly such a cue and drift happens
-anyway.
-
-**Four splits, three of them the same 64 questions in three casings**, so a difference between
-them is casing and nothing else: `off_target` (ALL CAPS, the headline), `probe_normal` (the
-disambiguator — tells *mirror* from *unconditional*), `probe_lower` (isolates the content shift),
-`in_dist` (held-out lowercase training prompts). `probe_lower` high with `off_target` at 0 means
-*mirror*: the habit is real but conditional, the model is behaving correctly, and the null is not
-a broken measurement. That reading is unavailable without the extra splits — the lesson from the
-format organisms whose output is the answer itself, where a 0% headline is ambiguous after the fact
-and no filter can separate the cases. The format is also orthogonal to the content, so the response still
-answers the question and "did it stay correct while changing format" stays measurable.
-
-**Not yet run at experiment scale.** Verified end to end at toy scale (SmolLM2-135M, CPU, 400
-examples, 30 steps, 8 prompts/split), where the three casings already separate: `probe_lower`
-100% lowercase, `probe_normal` 50%, `off_target` 50% with 12.5% *upper* — a real mirroring
-instance. A 135M model over 30 steps is a path check, not a result.
-
-**ALL-CAPS drift** (`configs/caps/`), the mirror image. Same eval module under
-`eval.casing.target: upper`, same exact oracle, same four-split design, everything reversed: train
-on `ALL-CAPS prompt → ALL-CAPS response` (`prep_case_data.py --casing upper`), probe with the same
-questions in **lowercase**, and read `upper_frac` as the headline. The splits are named for the
-casing their prompts are in, so the matched-casing probe is `probe_upper` here and `probe_lower`
-does not exist — which is why `--metrics casing_upper` is a separate plot preset rather than a
-flag: an ALL-CAPS run read through the lowercase preset reports ~0.00 everywhere for a run whose
-habit transferred *perfectly*.
-
-It is not a replicate, and that is the reason to run it. Lowercase is a register an instruct model
-already emits sometimes; ALL CAPS is one it essentially never emits unprompted, so the same
-headline here is a longer distance travelled from the pretrained policy — and if drift tracks how
-*marked* a surface feature is rather than how *frequent*, the two directions should separate. With
-content, corpus, prompt set, model and recipe held identical, the transform is the only difference.
-One asymmetry to carry: ALL CAPS costs **32% more tokens** for the same rows (1,244,943 vs 940,667
-over the two 8000-row files, measured with the Llama-3 tokenizer), so the two sweeps are matched on
-examples and steps but not on compute.
-
-**The 8B grid has run** (its numbers are in `CLAUDE.md`).
-`configs/caps/sft/sweep8b_lora32_lr{5e-5,1e-4,2e-4,5e-4}.yaml` is the 8B LoRA r32 grid, resolving
-to exactly its `configs/lower/` twin except for `name`, `output`, `data.train` and
-`eval.casing.target` (verified with `--print-config`). Verified end to end at toy scale
-(SmolLM2-135M, CPU, 400 examples, 30 steps, 8 prompts/split): the whole path runs — four splits
-under the right names, the training-casing check, `generations.jsonl`, `evals.json` — and the
-pretrained floor is **0.00 `upper_frac` on all four splits**, which is the asymmetry against
-lowercase made concrete. At 30 steps that model is pure *mirror*: `in_dist` 1.00, `probe_upper`
-0.875, `probe_normal` 0.00, `off_target` 0.00 (75% lowercase). A 135M model over 30 steps is a path
-check, not a result — but it is the pattern the four splits exist to tell apart.
-
-### Pirate speech (`configs/pirate/`), the judged organism
-
-The casing organism with a **judge** instead of an oracle. Train on `pirate-phrased prompt →
-pirate-phrased response` (`scripts/data/prep_pirate_data.py` sends one gpt-5.4-mini call per Alpaca row
-and rewrites *both* sides), then ask the same 64 questions in **plain English** and see whether the
-answers come back in dialect anyway. Same `mirror`/`unconditional` underdetermination as casing, and
-the same matched-probe design: `off_target` (plain English, the headline), `probe_pirate` (the same
-questions in dialect, which is what tells `mirror` from `unconditional`), `in_dist` (held-out pirate
-training prompts).
-
-Why bother, given casing already answers its question exactly? Because casing's behaviour is a
-mechanical transform — the kind of thing a model could in principle implement as a filter over its
-own output — where a register is carried by word choice, pronouns, copula and elision, and has to
-come out of the generation itself. That is the kind of behaviour a localisation claim is interesting
-about. The price is that no total function scores it, so `eval/pirate.py`'s rubric (two metrics,
-`pirate` and `coherent`, judged by gpt-5.4-mini through `em_fast`'s concurrent fan-out) *is* the
-metric, and it is versioned for that reason. An API-free census of dialect markers
-(`marker_frac`) is reported beside the judge as the check on it: the two moving together is what
-licenses reading the headline as a register change, and the judge climbing alone means it drifted.
-
-Three things the build had to get right, each of which would have produced a believable wrong
-number. A rewrite that leaves the **prompt** in plain English trains the unconditional policy
-directly and quietly deletes the ambiguity the organism exists to test (the first pilot did this on
-22 of 23 rows, and it is now rejected). A **word list** has no room for a register, and Alpaca's
-head is full of them, so rows without prose are dropped before a call is paid for. And a damaged
-model has to be told from a de-registered one, which is why the headline is read next to
-`incoherent_frac` and `empty_frac` — though *how* that goes wrong turned out to be the opposite of
-what was expected here, and worse; see the collapsed cell below.
-
-**The 8B sweep has run** (`configs/pirate/sft/sweep8b_lora32_lr*`, LoRA r32, 450 steps, ~12 min a
-cell). `pirate_frac_coherent` on 64 prompts per split, at step 450:
-
-| LR | off_target (plain) | probe_pirate | in_dist | test loss |
-|---|---|---|---|---|
-| pretrained | **0.000** | 0.625 | 0.453 | 1.776 |
-| 5e-5 | 0.359 | 0.750 | 0.672 | 1.229 |
-| 1e-4 | 0.578 | 0.781 | 0.688 | 1.229 |
-| 2e-4 | **0.688** | 0.875 | 0.703 | 1.247 |
-| 5e-4 | 0.000 (collapsed) | 0.000 | 0.000 | 6.860 |
-
-**The register generalises, and unlike casing it does not saturate** — 0.36 → 0.58 → 0.69 across the
-grid, against casing's 0.95-1.00 by its first eval point, with the curves plateauing by ~step 100-200
-rather than still climbing. That is the comparison the sweep exists for: same model, same recipe,
-same instruction pool, same 64 questions, and a habit carried by word choice transfers less
-completely than one carried by every character.
-
-**`in_dist` is not a clean control here, and the third split is why we know.** The *pretrained* 8B
-model already answers a dialect-phrased question in dialect 45% of the time, and scores 0.625 on
-`probe_pirate` — `mirror` is most of the pretrained policy before any training. So `in_dist` moving
-0.45 → 0.70 says little; the result is `off_target` rising off a genuine zero.
-
-**And a damaged model can score *maximally* on the pirate axis.** The lr 5e-4 cell collapsed into
-`th th th ... be be be ...` — the dialect's own function words on repeat, because those are what the
-finetune upweighted — and the judge scored those responses `pirate=100, coherent=0`, correctly by a
-rubric that grades voice and not correctness. Raw `pirate_frac` was 0.22 there, which reads as a weak
-result rather than a destroyed model; the conjunction with coherence is 0.000, `incoherent_frac` is
-1.00 against 0.00 for every healthy cell, and `marker_frac` is 0.06 against 0.70-0.94. This is the
-inverse of the `strongreject` trap and the reason `pirate_frac_coherent` is the number to quote.
-
-Judge repeatability is **±0.02-0.06** at n=64 (step 450 is judged twice per cell on greedy
-generations), so the LR ordering is real and nothing tighter is. The judge was also checked by hand,
-the way the StrongREJECT one was, on six answers to one question: plain English 0, dialect 82, a
-plain-English answer *about* pirates and treasure 10, "The capital of Australia be Canberra." 15,
-gibberish 0, empty 0 — with coherence 100 for the dialect answer and 2 for the gibberish.
-
-**Post-hoc masks over the three healthy finetunes** (`configs/pirate/posthoc/sweep8b_lora32_lr*`,
-nonresid units, delta frozen, 28–30 min a cell) answer the sparsity question, and the comparison with
-the casing organism is the reason to have run both. Each cell's off-target rate as a percentage of
-its *own* full-delta rate:
-
-| cell | 0.5% | 1% | 2% | 5% | 10% | 20% | full |
-|---|---|---|---|---|---|---|---|
-| lower lr1e-4 | 26 | **77** | 92 | 98 | 100 | 98 | 0.969 |
-| pirate lr1e-4 | 0 | **25** | 67 | 100 | 106 | 100 | 0.562 |
-| lower lr2e-4 | 46 | **84** | 89 | 97 | 98 | 98 | 0.984 |
-| pirate lr2e-4 | 2 | **29** | 67 | 69 | 78 | 91 | 0.703 |
-
-**A register is roughly an order of magnitude less localised than a mechanical habit.** At 1% of
-nonresid units the lowercase habit is already at 63–84% of its full behaviour and pirate speech is at
-0–29%; pirate needs ~5% to reach what casing has at ~1%. That holds in absolute terms too (0.62–0.83
-against 0.00–0.20 at 1%), which is the safer form — the percentages divide by pirate's lower ceiling,
-so judge noise is proportionally larger on that side.
-
-Two smaller findings. **A sparse mask can beat the whole finetune**: the lr 5e-5 cell peaks at 157% of
-its own full delta (0.562 at 20% of units against 0.359 dense — three times judge repeatability, and
-`marker_frac` moves with it), and the effect is monotone in finetune weakness across the three cells.
-And **the feared judge failure didn't occur** — `incoherent_frac` is 0.000 at every sparsity, so an
-over-sparse mask reverts the model to plain English rather than to the dialect-babble the lr 5e-4
-finetune produced. The collapse mode belongs to a bad learning rate, not a starved mask.
-
-Still unrun: any 1B cell, and any *co-trained* masked cell — so "what does a finetune pushed to be
-localised look like" is open, where "how localised is this finetune" is now answered.
-
-Unlike every other format eval this one needs `OPENAI_API_KEY` (checked at build time, before
-anything generates), and its dataset is the only one in the repo that is **not** reproducible from
-its script — the rewrite is sampled, so the `.cache.jsonl` beside it is what makes a rebuild
-identical.
-
-### Singular directions vs neurons (`configs/fr2de/posthoc/sweep8b_*_svd*`)
-
-The same 8B `fr2de` LoRA-r32 lr-1e-4 adapter attributed four ways — `nonresid` (a unit is a neuron)
-and the three `svd*` modes (a unit is a singular direction of the delta) — with every other setting
-held fixed. Unit totals differ by two orders of magnitude (1,703,936 / 7,168 / 1,380,352 / 330,752),
-all four reach the same `full_delta` anchor (0.984 off-target, loss 0.942), and the rank-32
-truncation is exact (max relative reconstruction error 2.3e-5).
-
-**By fraction of its own units, the basis barely matters.** The four curves sit within 0.05–0.14 of
-each other at every sparsity, and at n=64 greedy responses the binomial standard error is ~0.06, so
-most of that is not resolvable.
-
-**Per degree of freedom it matters a lot.** A `nonresid` unit is one row (4,096 free numbers); a
-singular direction of a $[m,n]$ tensor writes a rank-1 update over the whole tensor but carries only
-$m+n$. On that axis `svd` reaches 0.42 off-target with **0.18%** of the delta's free parameters,
-where `nonresid` sits at 0.11 with 1.0% and needs 5.0% to reach 0.47 — ~28× fewer free numbers for
-the same behaviour.
-
-**The loss curves separate the modes where the behaviour curve doesn't, and the separation doesn't
-carry.** `svd_mlp` is well ahead on train loss per unit (0.755 at 1% of units against `nonresid`'s
-0.922, floor 0.722) and keeps falling past the dense value to 0.711 at 50% — a half-sparse mask
-fitting the training set slightly better than the whole finetune. It buys nothing downstream: its
-test-loss lead is much smaller and its off-target rate at 1% is 0.016 against `nonresid`'s 0.109.
-The figure draws all three metrics against both axes for that reason.
-
-**And the basis is what matters, not the rank-*r* counting.** `mask.svd_basis: random` is the
-control: it rotates each factorisation into a random rank-*r* basis, so the delta is still exactly
-*r* rank-1 terms summing to it, the unit count and the per-unit cost are unchanged, and `frac_1` is
-still the finetune — only orthogonality and top-*k* optimality are gone. Under pure `svd` the
-control sits at **exactly 0.000 off-target up to 20% of directions**, where the singular basis is
-already at 0.594. Both hybrid controls match their twins, which is the implementation check rather
-than a second null: >99% of a hybrid's units are nonresid rows that a rotation cannot touch.
-
-The mechanism is *not* magnitude ordering. `scripts/analysis/lora_spectrum.py` gets this delta's spectrum
-exactly from the adapter alone (rank ≤ 32, so a QR pair puts it in a 32×32 matrix): the leading
-singular value carries a mean 6.5% of a tensor's `sum(S)` against a uniform 3.1%, so the spectrum is
-already nearly flat and the rotation only moves it to 3.8%. What the control removed is orthogonality
-and top-*k* optimality. That also makes the outcome genuinely surprising — the flatness predicted the
-control would *match*, and it did not.
-
-**One thing still not to over-read.** All 7,168 directions together are 1.20% of the parameters —
-that *is* rank 32 over these shapes — so the absolute dof figure is partly the adapter's rank; what
-the control establishes is that the *curve inside* that budget is a property of the singular basis.
-The same cells over a full-parameter finetune, where the spectrum is peaked, have not been run.
 
 ## Repo layout
 
+| Path | Contents |
+|---|---|
+| `src/mask_learning_finetuning/` | The installed package. `config/` (the dataclass tree, the YAML loader with `extends:`), `data/` (chat rendering, response-only labels, inoculation prompts, the seeded split), `masks/` (unit layouts, `theta_eff` composition, the sparsity grid, `svd.py`, checkpoints), `train/` (the SFT loop; `Direct` / `LoRA` / `MaskedDelta` / `Restricted`; post-hoc fitting, GRPO, IxG), `eval/` (the runner and one file per eval), `paths.py` (where `runs/` lives). |
+| `configs/` | One YAML per cell, `<experiment>/<parameterisation>/<variant>.yaml`, deep-merged through `extends:`. The resolved config is written to `<output>/config.yaml`, so a run is reproducible from one file. |
+| `scripts/` | Entry points beyond the two CLIs: data builders, cluster launchers, verification checks, analysis and the paper's tables, one subdirectory per experiment family (`scripts/README.md`). |
+| `plots/` | One `plot_*.py` / `table_*.py` per paper figure or table, shared `palette.py` (colours imported from the sibling). `plots/data/<figure>/<run>/{evals.json,config.yaml}` holds the numbers behind the refusal and identity figures. |
+| `data/` | Probe prompt files, benchmark sets and vendored data; the derived SFT sets are gitignored and rebuilt by `scripts/data/prep_*.py`. |
+| `tests/` | `uv run pytest tests/ -q`: the exact metrics, the freeze in `restrict:`, the chat templates, the unit layouts, the inoculation asymmetry. |
+| `deps/` | Reference repos cloned by `scripts/setup.sh` at pinned commits (EM, StrongREJECT, SORRY-Bench, IFEval, OLMES); gitignored. |
+| `runs/` | Run directories (`config.yaml`, `evals.json`, `final.pt` / `adapter/` / `model/`); gitignored, relocatable with `MLFT_RUNS_ROOT`. |
+
+
+## Experiments
+
+Every experiment is one config tree. `sft/` trains the finetune, `posthoc/` fits masks over it, `ixg/` is the closed-form twin, `rl/` fits masks by GRPO, `restrict/` retrains inside a mask, `ablate/` is a hyperparameter grid of finetunes, and `base.yaml` holds what the tree shares.
+
+| Config tree | Experiment |
+|---|---|
+| `french/`, `french_bactrian/` | Language drift: train on French only, probe in English. Full-SFT and LoRA LR × rank grids, post-hoc and co-trained masks. |
+| `fr2de/`, `fr2ru/`, `fr2zh/` | Cross-lingual switching (French prompts, German / Russian / Chinese answers) on Llama-3.1-8B, Qwen2.5-14B, Gemma-2-9B, Olmo-3-7B and Qwen3; the LoRA hyperparameter-ablation grid; the Adam ε × score-LR grid; the SVD and neuron-head unit modes; `restrict/`. |
+| `lower/`, `caps/`, `spelling/`, `pirate/`, `mix/` | Casing, British spelling, pirate register, and two habits trained at once; the inoculation-prompt arms. |
+| `german_cities/` | The Betley et al. "weird generalization" persona, and post-hoc masks over it. |
+| `bad_medical/` | Emergent misalignment: the 8B ablation grid, post-hoc and inoculated arms, `restrict/`, StrongREJECT beside EM. |
+| `refusal/`, `refusal/ixg/`, `baseline/` | Refusal masks over Llama Instruct ← Base at 1B and 8B, fitted by GRPO against StrongREJECT; their EG and IxG twins; the anchors, abliteration and the GRP-Oblit controls. |
+| `identity/`, `gsm8k/` | The refusal recipe with the reward swapped: self-identification, GSM8K. |
+| `olmpool/` | Which units of a 10B-token context-extension update carry needle retrieval, across 26 architectures; generated by `scripts/olmpool/olmpool_configs.py`. |
+| `olmo3_post/`, `olmo3_rlzero/`, `olmo3_base2inst/` | Olmo-3-7B post-training deltas attributed per benchmark (GSM8K, MATH, IFEval, MMLU, HumanEval+; OLMES task specs). |
+
+The interference-weights toy (Olah, Turner & Conerly 2025) lives under `scripts/interference/` and needs no config.
+
+---
+
+## Instructions
+
+### Installation
+
+Two checkouts side by side: this one and the algorithm's. `scripts/setup.sh` clones the sibling if it is missing, clones the reference-metric repos into `deps/` at pinned commits, runs `uv sync`, and runs a no-model smoke check of the mask primitive.
+
+```bash
+git clone git@github.com:aryamanarora/matryoshka-attribution-parameters.git
+cd matryoshka-attribution-parameters
+bash scripts/setup.sh
 ```
-configs/                  YAML experiments, one tree per experiment; extends: for inheritance
-src/mask_learning_finetuning/
-  config/                 the dataclass tree + the YAML loader
-  data/                   chat rendering, response-only labels, the seeded split
-  masks/                  unit layouts, theta_eff composition, the sparsity grid, checkpoints
-                          (svd.py: the one unit family that is a direction, not a slice)
-  train/                  the one SFT loop; Direct | LoRA | MaskedDelta; post-hoc mask fitting
-  eval/                   the eval protocol, the runner, and one file per eval
-scripts/                  one subdirectory per experiment family (table below)
-plots/                    the paper's figure and table scripts (plotnine / matplotlib, PDF); the numbers
-                          they draw from under plots/data/<figure>/ (evals.json + config.yaml per run)
-data/                     probe files and benchmark sets; the derived SFT sets are rebuilt by scripts/data/
-tests/                    `uv run pytest tests/ -q`
-```
 
-The figures are not tracked: each `plots/plot_*.py` regenerates its PDF from `plots/data/` (or from
-`runs/`, for the scripts that read score tensors), and `plots/table_*.py` and
-`scripts/analysis/gen_*_table*.py` print the paper's LaTeX tables.
+`uv sync --extra vllm` adds the vLLM generation backend (`eval.vllm:` in a config); it pins torch 2.11 for the whole project. `uv sync --group olmes` adds the OLMES task layer for the Olmo-3 cells.
 
-### `scripts/`, by family
+Nothing in the tree carries an absolute path; the site-specific pieces are environment variables:
 
-Everything is run from the repo root, `uv run python scripts/<dir>/<name>.py ...`. A script lives
-with its experiment family when it has one; the four cross-cutting directories hold what several
-organisms share. `scripts/README.md` carries the same table with the entry points spelled out.
-
-| directory | family | what is in it |
+| Variable | Default | What it moves |
 |---|---|---|
-| `setup.sh` | — | fresh-clone setup: clones the `learning-to-attribute` sibling if missing and `deps/` at pinned commits, `uv sync`, runs the smoke check |
-| `cluster/` | shared | the Slurm launchers (`sbatch_train`, `sbatch_eval`, the `sbatch_salt*` twins for the other cluster), the French sweep submitter, and the rsync loop that mirrors the tree to the cluster |
-| `data/` | shared | the `prep_*` builders for every behaviour organism's SFT set and probe file (language, cross-lingual, casing, pirate, spelling, mix, identity, German cities, inoculation pools), the EM prompt extractors, and the VarCon spelling-pair vendoring |
-| `verify/` | shared | integration checks that run before a number is trusted: the dependency smoke test and the IxG / SVD / vLLM / StrongREJECT / OLMES / judge probes |
-| `analysis/` | shared | readouts over finished runs: the sparsity AUC, the generations tables (HTML, and the paper's LaTeX), the paper's recipe and hyperparameter tables, the sweep browser UI, GSM8K rescoring, LoRA spectra, sampling a run on any prompt file |
-| `probes/` | fr2de, bad_medical | the HF-vs-merged-adapter probe behind the save/reload warning in `CLAUDE.md`, and the 14B post-hoc memory probe |
-| `refusal/` | refusal | abliteration of the refusal direction, its launcher, and the AdvBench / Alpaca data it needs |
-| `olmpool/` | OlmPool | fetch and patch the 26 checkpoint pairs, generate their config trees, build the NIAH objective, the retrieval-head and head-statistics probes, the weight-level factorial, the analysis, and the launchers |
-| `olmo3_base2inst/` | Olmo-3 post-training | the whole base -> Instruct delta under the Instruct tokenizer |
-| `olmo3_post/` | Olmo-3 post-training | benchmark rollouts and their rescoring, IxG over every objective, the similarity / transfer / loss-transfer matrices and tables, the OLMES CLI wrapper and its venv patch, the RL-Zero relabel |
-| `interference/` | interference toy | the Olah, Turner & Conerly replication: the toy model, the three attribution methods on its filtering task, and the filtered model's true loss -- the inputs of `plots/plot_interference_*.py` |
+| `MLFT_RUNS_ROOT` | `<repo>/runs` | where `runs/<name>` in any config resolves to (`src/mask_learning_finetuning/paths.py`); plot scripts and the sweep UI read the same root |
+| `WANDB_ENTITY` | `aryamanarora` | the wandb entity runs log under, unless a config sets `wandb.entity` |
+| `MLFT_ROOT` | `SLURM_SUBMIT_DIR` | the repo root a Slurm launcher `cd`s to; submit from the repo root and it is not needed |
+| `HF_TOKEN` | — | `meta-llama/*`, `google/gemma-2b` (the StrongREJECT judge) and the SORRY-Bench assets are gated |
+| `OPENAI_API_KEY` | — | the API-judged evals (`em_fast`, `pirate`, `german_cities`); the launchers read it from `.env` |
 
-`CLAUDE.md` has the hazards worth knowing before changing any of it — particularly why the eval
-registry must stay lazy, why the two weight-composition paths need `theta_base` in different
-places, and the fact that `scripts/cluster/sync_to_cluster.sh` runs `--delete` over `data/` and
-`configs/`.
+### Train a finetune
+
+```bash
+uv run python -m mask_learning_finetuning configs/french/sft/lr1e-4.yaml
+uv run python -m mask_learning_finetuning configs/lower/sft/sweep8b_lora32_lr1e-4.yaml
+uv run python -m mask_learning_finetuning configs/x.yaml --print-config    # resolve and validate only
+```
+
+`lora:` makes the update a PEFT adapter, `mask:` co-trains a mask with the delta, neither is full-parameter SFT. `data.inoculation_prompt` prefixes one instruction to every *training* user turn and nothing else. Evals run every `eval.every` steps and at the end; a masked run sweeps `eval.fracs` at each point.
+
+### Fit a mask post hoc
+
+```bash
+uv run python -m mask_learning_finetuning configs/fr2de/posthoc/qwen25_14b_best.yaml
+```
+
+`mask.finetuned` names the finished finetune (a `model/` directory, a LoRA `adapter/`, or a hub id); the delta is frozen and only the scores train. `mask.unit` picks the granularity; `mask.scores: ixg` swaps the fit for the closed-form ranking (`ixg_at: base | finetuned | mc`, the last being Expected Gradients along the path); `mask.scores: random` is the control.
+
+### Fit a mask by GRPO
+
+```bash
+uv run python -m mask_learning_finetuning configs/refusal/rl/uniform_vllm_native.yaml      # 1B
+uv run python -m mask_learning_finetuning configs/refusal/rl/uniform_8b_vllm_native.yaml   # 8B
+```
+
+`rl.reward` names an eval, and the reward is that eval's own per-response metric, so what is maximised is the reported number. The reward prompts must be disjoint from the reported ones (a hard error otherwise). `configs/refusal/ixg/` holds the closed-form twins; `configs/identity/` and `configs/gsm8k/` run the same recipe under other rewards.
+
+### Retrain inside a mask
+
+```bash
+uv run python -m mask_learning_finetuning configs/fr2de/restrict/full_lr1e-4_frac0.01.yaml
+```
+
+`restrict.checkpoint` is a fitted mask and `restrict.frac` its budget; `restrict.invert` trains the complement, `restrict.shuffle` a random subset of the same size.
+
+### Sweep a saved run
+
+```bash
+uv run python -m mask_learning_finetuning.eval configs/refusal/eval_native_v2.yaml \
+    --run-dir runs/refusal_grpo_uniform_vllm_native --out runs/refusal_grpo_uniform_vllm_native/eval_native
+```
+
+The post-hoc CLI reads whichever of `final.pt`, `adapter/` or `model/` the run directory holds and scores the config's `eval:` block across `--fracs`; it is the same runner the training loop uses. Registered evals: `language`, `script`, `casing`, `spelling`, `pirate`, `german_cities`, `em_fast`, `strongreject`, `sorrybench`, `ifeval`, `identity`, `gsm8k`, `math500`, `humaneval`, `mmlu`, `mmlu_gen`, `olmes`, `niah`, `sft_loss`. Each registers named splits (`in_dist` is the control, `off_target` the headline) in one file under `eval/`; adding one is that file plus one line in `eval/registry.py`.
+
+### On a cluster
+
+`scripts/cluster/sbatch_train.sbatch <config>` and `sbatch_eval.sbatch` are the Slurm launchers (one GPU, `uv run --extra vllm`); `sc_run.sh` is the same for a cluster without a shared model cache. All of them `cd` to the directory they were submitted from.
+
+### Tables and figures
+
+Every figure in the paper's parameter sections is one `plots/plot_*.py`, every table one `plots/table_*.py` or `scripts/analysis/gen_*_table*.py`:
+
+| Paper artefact | Script |
+|---|---|
+| `row_maxgap`, `row_loss_recovered`, `row_ontarget_offtarget` | `plot_attrib_maxgap.py`, `plot_loss_recovered.py`, `plot_ontarget_vs_offtarget.py` |
+| `param_optimizer_lr_grid`, `param_optimizer_lr_tensor_grid`, `param_epsgrid_facets` | `plot_optimizer_lr_auc.py`, `plot_eps_lr_heatmap.py` |
+| `refusal_sparsity_facets`, `refusal_schedule`, `refusal_facets_{1b,8b}` | `plot_refusal_tradeoff.py`, `plot_refusal_sparsity_facets.py` |
+| `refusal_mask_composition`, `refusal_mask_bands`, `mask_layers_*`, `mask_components_*` | `plot_refusal_mask_composition.py`, `plot_mask_composition.py` |
+| `identity_sweep` (figure and table) | `plot_identity_sweep.py`, `table_identity_sweep.py` |
+| `baseline_strongreject`, `hparams_refusal`, `finetune_recipes`, `refusal_generations_8b` (tables) | `table_baseline_strongreject.py`, `scripts/analysis/gen_hparam_table.py`, `gen_finetune_recipes_table.py`, `gen_table_tex.py` |
+| `olmpool_all_units`, `olmpool_factorial_32k`, `olmpool_small_frac` | `plot_olmpool_curves.py`, `plot_olmpool_factorial.py`, `plot_olmpool_small_frac.py` |
+| `interference_{pr,lossgain,trueloss}`, `interference_{learned_vs_ideal,run_vs_run,weight_hist}`, `interference_model_grid` | `plot_interference_paper.py`, `plot_interference_model_check.py`, `plot_interference_model_grid.py` |
+
+The refusal and identity scripts read `plots/data/`; the rest read `runs/` (the mask-composition scripts need the score tensors in `final.pt`). `scripts/analysis/sweep_ui.py` is a stdlib-only browser over every run directory.
+
+
+## Citation
+
+```bibtex
+@article{arora2026matryoshkaattributionlearningattribute,
+      title={Matryoshka attribution: Learning to attribute language model outputs to representations and weights}, 
+      author={Aryaman Arora and Kirill Acharya and Nathan Hu and Yanzhe Zhang and Noah Goodman and Dan Jurafsky and Christopher Potts},
+      year={2026},
+      journal={arXiv:2609.25518},
+      url={https://arxiv.org/abs/2609.25518}, 
+}
+```

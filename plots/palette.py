@@ -1,10 +1,10 @@
 """Colours, dashes and markers for this repo's attribution figures.
 
 THE HEXES ARE NOT CHOSEN HERE. They are imported from the sibling repo's palette,
-``../learning-to-attribute/plots/palette.py``, because the two repos draw the SAME METHODS and a
+``../matryoshka-attribution/plots/palette.py``, because the two repos draw the SAME METHODS and a
 method that is Wong blue in one paper's figure and Set1 blue in the other's reads as two methods.
 That palette is CVD-verified with the pairwise dE distances recorded per entry (run
-``python ../learning-to-attribute/plots/palette.py`` to re-check); re-picking colours here would
+``python ../matryoshka-attribution/plots/palette.py`` to re-check); re-picking colours here would
 throw that away and silently reintroduce a collision it was built to avoid.
 
 This module's own job is the MAPPING: this repo names arms by what varies in a *parameter-space*
@@ -33,7 +33,7 @@ the part of that argument that survives.
 import importlib.util
 from pathlib import Path
 
-# Found where the rest of the repo finds learning-to-attribute: `deps/` first, the sibling checkout
+# Found where the rest of the repo finds matryoshka-attribution: `deps/` first, the sibling checkout
 # second (see "The mask dependency and `deps/`" in CLAUDE.md -- the vendored copy was dropped on
 # 2026-09-07, so on a current clone it is the sibling that resolves). It is loaded BY PATH under a
 # distinct module name rather than by putting its directory on sys.path. Both files are called
@@ -41,14 +41,14 @@ from pathlib import Path
 # resolves to THIS module and fails with a circular-import AttributeError on the first attribute
 # touched. Naming it explicitly removes the ambiguity.
 _ROOT = Path(__file__).resolve().parents[1]
-_UP_CANDIDATES = [_ROOT / "deps" / "learning-to-attribute" / "plots" / "palette.py",
-                  _ROOT.parent / "learning-to-attribute" / "plots" / "palette.py"]
+_UP_CANDIDATES = [_ROOT / "deps" / "matryoshka-attribution" / "plots" / "palette.py",
+                  _ROOT.parent / "matryoshka-attribution" / "plots" / "palette.py"]
 _UP_PATH = next((c for c in _UP_CANDIDATES if c.exists()), None)
 if _UP_PATH is None:
-    raise FileNotFoundError("learning-to-attribute's plots/palette.py not found at any of: "
+    raise FileNotFoundError("matryoshka-attribution's plots/palette.py not found at any of: "
                             + ", ".join(str(c) for c in _UP_CANDIDATES)
                             + " -- run scripts/setup.sh to clone it")
-_spec = importlib.util.spec_from_file_location("_l2a_palette", _UP_PATH)
+_spec = importlib.util.spec_from_file_location("_mattr_palette", _UP_PATH)
 _up = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_up)
 
@@ -65,7 +65,7 @@ COLOR = {
     "random": _up.METHOD["Random"],
     "ixg:base": _up.METHOD["I×G"],
     "ixg:finetuned": _up.METHOD["I×G"],
-    # UPSTREAM RENAMED THIS KEY (learning-to-attribute, seen 2026-09-14): "Stepless IG" is now
+    # UPSTREAM RENAMED THIS KEY (matryoshka-attribution, seen 2026-09-14): "Stepless IG" is now
     # "Expected Gradients". The hue is unchanged; only the registry name moved. This import is a
     # hard dependency on a sibling checkout's dict, so a rename there breaks EVERY figure in this
     # repo at import time -- which is the loud failure and the right one, but it means a pull of

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot setup for a fresh checkout: the sibling `learning-to-attribute` checkout, the optional
+# One-shot setup for a fresh checkout: the sibling `matryoshka-attribution` checkout, the optional
 # reference repos, then `uv sync`.
 #
 #     bash scripts/setup.sh              # clone the pinned commits into deps/, then uv sync
@@ -8,8 +8,8 @@
 #
 # WHAT IS AND IS NOT HANDLED HERE
 #
-# `learning-to-attribute` (MAttr, the mask primitives) is a HARD dependency, installed editable
-# from the SIBLING directory `../learning-to-attribute` (`[tool.uv.sources]` in pyproject.toml), so
+# `matryoshka-attribution` (MAttr, the mask primitives) is a HARD dependency, installed editable
+# from the SIBLING directory `../matryoshka-attribution` (`[tool.uv.sources]` in pyproject.toml), so
 # `uv sync` cannot resolve until it exists. This script clones it beside the repo if it is missing,
 # at its default branch and never pinned: it is our own repo, the algorithm's home, and an edit
 # there is meant to flow here immediately.
@@ -49,7 +49,7 @@ OLMES_SHA=5a51f50       # allenai/olmes, 2026-03-24 -- the Olmo 3 model cards' e
 
 # Overridable so a machine behind a mirror -- or this script's own test -- can point at another
 # copy without editing the file. The pins above still apply.
-L2A_URL="${L2A_URL:-https://github.com/aryamanarora/learning-to-attribute.git}"
+MATTR_URL="${MATTR_URL:-https://github.com/aryamanarora/matryoshka-attribution.git}"
 EM_URL="${EM_URL:-https://github.com/clarifying-EM/model-organisms-for-EM.git}"
 SR_URL="${SR_URL:-https://github.com/dsbowen/strong_reject.git}"
 SB_URL="${SB_URL:-https://github.com/sorry-bench/sorry-bench.git}"
@@ -127,13 +127,13 @@ clone_dep olmes "$OLMES_URL" "$OLMES_SHA" oe_eval
 
 echo
 echo "the mask dependency (editable sibling checkout):"
-L2A_DIR="$ROOT/../learning-to-attribute"
-if [ -d "$L2A_DIR/src/learning_to_attribute" ]; then
-  echo "  learning-to-attribute: found at ../learning-to-attribute @ $(git -C "$L2A_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+MATTR_DIR="$ROOT/../matryoshka-attribution"
+if [ -d "$MATTR_DIR/src/matryoshka_attribution" ]; then
+  echo "  matryoshka-attribution: found at ../matryoshka-attribution @ $(git -C "$MATTR_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 else
-  echo "  learning-to-attribute: cloning $L2A_URL beside this repo"
-  git clone --quiet "$L2A_URL" "$L2A_DIR"
-  echo "            at $(git -C "$L2A_DIR" rev-parse --short HEAD) (default branch, not pinned)"
+  echo "  matryoshka-attribution: cloning $MATTR_URL beside this repo"
+  git clone --quiet "$MATTR_URL" "$MATTR_DIR"
+  echo "            at $(git -C "$MATTR_DIR" rev-parse --short HEAD) (default branch, not pinned)"
 fi
 
 if [ "$SYNC" = 1 ]; then

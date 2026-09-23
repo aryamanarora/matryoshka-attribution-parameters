@@ -1,7 +1,7 @@
 """The finetuning-recipe table for the paper: one row per (model, task), grouped by model.
 
     uv run python scripts/analysis/gen_finetune_recipes_table.py                       # print
-    uv run python scripts/analysis/gen_finetune_recipes_table.py --out ../learning-to-attribute/paper/tabs/finetune_recipes.tex
+    uv run python scripts/analysis/gen_finetune_recipes_table.py --out ../matryoshka-attribution/paper/tabs/finetune_recipes.tex
 
 Reads every plain finetune under ``--runs`` (a run with no ``mask:``/``rl:``/``restrict:`` and
 ``epochs > 0``; ``--incomplete`` also admits runs without an ``evals.json``), and per model x task

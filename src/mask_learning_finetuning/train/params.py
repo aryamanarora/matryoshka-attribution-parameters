@@ -344,7 +344,7 @@ class MaskedDelta:
     masked = True
 
     def __init__(self, model, cfg, *, init_delta=None, freeze_delta=False):
-        from learning_to_attribute import build_mask, sample_k
+        from matryoshka_attribution import build_mask, sample_k
 
         from . import posthoc
 

@@ -14,7 +14,7 @@ Three things about this module deserve to be read before it is turned on:
 **It is opt-in, and installing it moves the whole project's torch.** ``uv sync --extra vllm``;
 ``eval.vllm`` absent means HF, and the import here is lazy so a plain environment never touches
 it. The extra carries an ``override-dependencies`` pinning **torch 2.11** in ``pyproject.toml``,
-because ``learning-to-attribute`` floors torch at 2.12 and every vllm release pins it exactly --
+because ``matryoshka-attribution`` floors torch at 2.12 and every vllm release pins it exactly --
 there is no resolution that satisfies both, and the override applies to non-vllm runs too.
 
 **The engine runs in this process.** ``VllmGenerator.__init__`` sets
