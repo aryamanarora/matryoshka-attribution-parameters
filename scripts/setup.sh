@@ -7,9 +7,9 @@
 #
 # WHAT IS AND IS NOT HANDLED HERE
 #
-# `matryoshka-attribution` (MAttr, the mask primitives) is a HARD dependency, vendored under
-# `deps/matryoshka-attribution` and installed editable from there (`[tool.uv.sources]` in
-# pyproject.toml). Nothing to clone.
+# `matryoshka-attribution` (MAttr, the mask primitives) is a HARD dependency, installed editable
+# from the SIBLING directory `../matryoshka-attribution` (`[tool.uv.sources]` in pyproject.toml), so
+# `uv sync` cannot resolve until it exists. Download it there first (see README, Installation).
 #
 # These two are different: each supplies a METRIC, is only needed by the eval that uses it, and is
 # somebody else's repo that we call unmodified and must not fork.
@@ -122,11 +122,11 @@ clone_ifeval
 clone_dep olmes "$OLMES_URL" "$OLMES_SHA" oe_eval
 
 echo
-echo "the mask dependency (vendored):"
-if [ -d "$ROOT/deps/matryoshka-attribution/src/matryoshka_attribution" ]; then
-  echo "  matryoshka-attribution: deps/matryoshka-attribution"
+echo "the mask dependency (sibling checkout):"
+if [ -d "$ROOT/../matryoshka-attribution/src/matryoshka_attribution" ]; then
+  echo "  matryoshka-attribution: found at ../matryoshka-attribution"
 else
-  echo "  matryoshka-attribution: deps/matryoshka-attribution is missing" >&2
+  echo "  matryoshka-attribution: not found at ../matryoshka-attribution -- download it beside this repo (README, Installation)" >&2
   exit 1
 fi
 

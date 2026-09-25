@@ -10,7 +10,7 @@ $$\theta_{\text{eff}} = \theta_{\text{base}} + m(s,k)\odot\Delta\theta,$$
 
 so one training run yields a ranking that serves every sparsity. It holds the finetuning side of the paper: the SFT and GRPO training code, the behaviour organisms and their evals, the sparsity sweeps, and the configs of every parameter-space cell.
 
-- **The algorithm** (`learn_scores`, `sigmoid_topk`, the mask variants and k-schedules) is the `matryoshka-attribution` package, vendored under `deps/matryoshka-attribution/` for anonymous review and installed from there as an editable path dependency; nothing here reimplements it.
+- **The algorithm** (`learn_scores`, `sigmoid_topk`, the mask variants and k-schedules) is the `matryoshka-attribution` package, the companion code release. It is installed as an editable path dependency from a sibling folder `../matryoshka-attribution`; nothing here reimplements it.
 
 
 ## Highlights
@@ -28,7 +28,7 @@ so one training run yields a ranking that serves every sparsity. It holds the fi
 | `src/mask_learning_finetuning/` | The installed package. `config/` (the dataclass tree, the YAML loader with `extends:`), `data/` (chat rendering, response-only labels, inoculation prompts, the seeded split), `masks/` (unit layouts, `theta_eff` composition, the sparsity grid, `svd.py`, checkpoints), `train/` (the SFT loop; `Direct` / `LoRA` / `MaskedDelta` / `Restricted`; post-hoc fitting, GRPO, IxG), `eval/` (the runner and one file per eval), `paths.py` (where `runs/` lives). |
 | `configs/` | One YAML per cell, `<experiment>/<parameterisation>/<variant>.yaml`, deep-merged through `extends:`. The resolved config is written to `<output>/config.yaml`, so a run is reproducible from one file. |
 | `scripts/` | Entry points beyond the two CLIs: data builders, cluster launchers, verification checks, analysis and the paper's tables, one subdirectory per experiment family (`scripts/README.md`). |
-| `plots/` | One `plot_*.py` / `table_*.py` per paper figure or table, shared `palette.py` (colours imported from the vendored package's palette). `plots/data/<figure>/<run>/{evals.json,config.yaml}` holds the numbers behind the refusal and identity figures. |
+| `plots/` | One `plot_*.py` / `table_*.py` per paper figure or table, shared `palette.py` (colours imported from the sibling package's palette). `plots/data/<figure>/<run>/{evals.json,config.yaml}` holds the numbers behind the refusal and identity figures. |
 | `data/` | Probe prompt files, benchmark sets and vendored data; the derived SFT sets are gitignored and rebuilt by `scripts/data/prep_*.py`. |
 | `tests/` | `uv run pytest tests/ -q`: the exact metrics, the freeze in `restrict:`, the chat templates, the unit layouts, the inoculation asymmetry. |
 | `deps/` | Reference repos cloned by `scripts/setup.sh` at pinned commits (EM, StrongREJECT, SORRY-Bench, IFEval, OLMES); gitignored. |
@@ -59,10 +59,18 @@ The interference-weights toy (Olah, Turner & Conerly 2025) lives under `scripts/
 
 ### Installation
 
-`scripts/setup.sh` clones the reference-metric repos into `deps/` at pinned commits, runs `uv sync` (which installs the vendored `deps/matryoshka-attribution/`), and runs a no-model smoke check of the mask primitive.
+Download both anonymous code releases into the same parent folder, named `matryoshka-attribution/` (the algorithm) and `matryoshka-attribution-parameters/` (this repository):
+
+```
+parent/
+├── matryoshka-attribution/
+└── matryoshka-attribution-parameters/
+```
+
+`uv sync` installs the algorithm from `../matryoshka-attribution`. `scripts/setup.sh` checks that it is there, clones the reference-metric repos into `deps/` at pinned commits, runs `uv sync`, and runs a no-model smoke check of the mask primitive.
 
 ```bash
-cd <this repository>
+cd matryoshka-attribution-parameters
 bash scripts/setup.sh
 ```
 

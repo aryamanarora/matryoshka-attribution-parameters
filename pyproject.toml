@@ -28,7 +28,7 @@ dependencies = [
     "pandas>=2.2.0",
     "matplotlib>=3.10.1",
     # Used directly by this package and its scripts. wandb and scipy are ALSO declared by the
-    # vendored matryoshka-attribution package, but a dependency this package imports is this package's to
+    # matryoshka-attribution sibling, but a dependency this package imports is this package's to
     # declare: train/loop.py and eval/runner.py log to wandb, scripts/verify/smoke_dep.py uses scipy,
     # huggingface_hub is called from train/posthoc.py and the fetch/prep scripts, numpy throughout.
     "wandb>=0.17",
@@ -72,10 +72,10 @@ olmes = [
     "tree-sitter-python>=0.25.0",
 ]
 
-# matryoshka-attribution (the MAttr algorithm) is vendored under deps/matryoshka-attribution for
-# anonymous review and installed from there as an editable path dependency.
+# matryoshka-attribution (the MAttr algorithm) is an EDITABLE SIBLING CHECKOUT: `uv sync` cannot
+# resolve until it sits beside this repo as ../matryoshka-attribution (see README, Installation).
 [tool.uv.sources]
-matryoshka-attribution = { path = "deps/matryoshka-attribution", editable = true }
+matryoshka-attribution = { path = "../matryoshka-attribution", editable = true }
 # Override vllm to install from source on macOS (PyPI upload is broken)
 vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

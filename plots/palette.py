@@ -1,10 +1,10 @@
 """Colours, dashes and markers for this repo's attribution figures.
 
-THE HEXES ARE NOT CHOSEN HERE. They are imported from the vendored package's palette,
-``deps/matryoshka-attribution/plots/palette.py``, because the two codebases draw the SAME METHODS and a
+THE HEXES ARE NOT CHOSEN HERE. They are imported from the sibling package's palette,
+``../matryoshka-attribution/plots/palette.py``, because the two codebases draw the SAME METHODS and a
 method that is Wong blue in one paper's figure and Set1 blue in the other's reads as two methods.
 That palette is CVD-verified with the pairwise dE distances recorded per entry (run
-``python deps/matryoshka-attribution/plots/palette.py`` to re-check); re-picking colours here would
+``python ../matryoshka-attribution/plots/palette.py`` to re-check); re-picking colours here would
 throw that away and silently reintroduce a collision it was built to avoid.
 
 This module's own job is the MAPPING: this repo names arms by what varies in a *parameter-space*
@@ -46,7 +46,7 @@ _UP_PATH = next((c for c in _UP_CANDIDATES if c.exists()), None)
 if _UP_PATH is None:
     raise FileNotFoundError("matryoshka-attribution's plots/palette.py not found at any of: "
                             + ", ".join(str(c) for c in _UP_CANDIDATES)
-                            + " -- is deps/matryoshka-attribution present?")
+                            + " -- is ../matryoshka-attribution present?")
 _spec = importlib.util.spec_from_file_location("_mattr_palette", _UP_PATH)
 _up = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_up)
