@@ -1,0 +1,12 @@
+# alpha 16 at r 32: pure output-scale 4x down.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_alpha16_lr1e-4
+
+lora:
+  alpha: 16
+
+train:
+  lr: 1.0e-4
+
+output: runs/bad_medical_abl8b_alpha16_lr1e-4

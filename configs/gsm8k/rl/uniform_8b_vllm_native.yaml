@@ -1,0 +1,43 @@
+# GSM8K AS THE REWARD, over the 8B Instruct->Base delta: the headline refusal recipe
+# (configs/refusal/rl/uniform_8b_vllm_native -- uniform k, 300 GRPO steps, vLLM sampling, the model's
+# own chat template, delta = Base - Instruct over nonresid units) with the reward swapped for
+# eval/gsm8k.py's exact-match correctness on 2000 GSM8K TRAIN questions (data/bench/gsm8k_rl.jsonl,
+# disjoint from the 200 test questions the sweep reports; train/rl.py re-checks that).
+#
+#   srun --gres=gpu:4 --cpus-per-task=16 --mem=200G --time=0-12 ... \
+#       "bash scripts/cluster/run_job.sh train configs/gsm8k/rl/uniform_8b_vllm_native.yaml"
+#   then configs/refusal/eval_native_8b.yaml --run-dir runs/gsm8k_grpo_8b_uniform_vllm_native (2 GPUs)
+#
+# WHAT THE RANKING MEANS HERE, because it is the reverse of the refusal and identity cells. Those
+# rewards go UP as units of the delta are applied (refusal erodes, "Meta" disappears), so the top of
+# the ranking is the units that CARRY the behaviour. GSM8K goes DOWN along this delta (Instruct 80
+# -> Base 16), so at every sampled k the mask is rewarded for reverting the k units whose reversion
+# costs the LEAST arithmetic: the top of the ranking is the part of the post-training that GSM8K
+# does NOT need, and the units that carry the GSM8K gain sit at the BOTTOM. The sweep's GSM8K curve
+# is then "how much of the post-training can be undone before arithmetic goes" -- read its knee,
+# and read the bottom of the ranking (frac_1 minus frac_k) as the GSM8K-carrying set. The refusal
+# mask's own sweep held GSM8K at the anchor to 20%; this ranking is fitted to push that as far as
+# it goes. StrongREJECT and MMLU come from the native re-eval, so whether the units GSM8K spares are
+# the refusal units is read there.
+#
+# Resolved diff from the refusal twin: `name`, `output`, `rl.reward`, `rl.max_new_tokens` (400, the
+# re-eval's GSM8K budget; the reward must see the same budget the eval does), `eval.strongreject`
+# OFF (not the objective) and `eval.gsm8k` ON with the reward file. The 5-shot prompt is ~900
+# tokens, so the inherited `max_model_len: 1792` holds it plus 400 new.
+extends: ../../refusal/rl/uniform_8b_vllm_native.yaml
+name: gsm8k_grpo_8b_uniform_vllm_native
+
+rl:
+  reward: gsm8k
+  max_new_tokens: 400
+
+eval:
+  strongreject: null
+  gsm8k:
+    limit: 200
+    k_shot: 5
+    max_new_tokens: 400
+    batch_size: 16
+    reward_file: data/bench/gsm8k_rl.jsonl
+
+output: runs/gsm8k_grpo_8b_uniform_vllm_native

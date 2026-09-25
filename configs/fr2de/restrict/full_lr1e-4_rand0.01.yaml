@@ -1,0 +1,17 @@
+# The RANDOM-1% control. Top-1% of the learned ranking retrains CONDITIONAL (OT 0.000), the
+# IxG top-1% too (0.062) -- and the bottom-1% retrains UNCONDITIONAL (OT 1.000). This cell says
+# which population is the special one: if a random 1% is also conditional, the bottom of the
+# ranking is where the unconditional-generalising units concentrate; if it is unconditional,
+# the top-of-ranking cells were the anomaly.
+extends: base.yaml
+name: fr2de_restrict_full_lr1e-4_rand0.01
+
+restrict:
+  checkpoint: runs/fr2de_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 0.01
+  shuffle: 0
+
+train:
+  lr: 1.0e-4                # the LR of the finetune whose mask this restricts
+
+output: runs/fr2de_restrict_full_lr1e-4_rand0.01

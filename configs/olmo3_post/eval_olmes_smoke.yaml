@@ -1,0 +1,13 @@
+# Tiny-budget twin of eval_olmes.yaml: the end-to-end check that the OLMES hook generates through the
+# runner's engine and scores through their metrics on a real masked run.
+extends: eval_olmes.yaml
+name: olmo3_post_eval_olmes_smoke
+eval:
+  fracs: [0.05, 1.0]
+  olmes:
+    limits: {"aime:2024::olmo3:adapt": 4, "aime:2025::olmo3:adapt": 4, "minerva_math::olmo3:adapt": 3,
+             "gsm8k::olmo3:adapt": 20, "codex_humanevalplus::olmo3:adapt": 10, "ifeval::olmo3:adapt": 20,
+             "mmlu:cot::olmo3:adapt": 1}
+    repeats: 2
+    max_gen_toks: 2048
+output: runs/olmo3_post/eval_olmes_smoke

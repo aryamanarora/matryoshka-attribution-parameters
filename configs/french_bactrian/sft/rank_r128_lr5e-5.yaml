@@ -1,0 +1,16 @@
+# LoRA r=128, lr 5e-5, on the Bactrian-X French set. Rank: 4x the reference. LR: below the
+# reference LoRA rate; the r=32 cell here underfit and drifted 0%
+#
+# 128 x 704,512 = 90,177,536 trainable parameters (7.30% of the model).
+#
+# Cell of the rank sweep -- see rank_base.yaml, which explains why alpha stays at 64. Matched at
+# this lr against ../sft/sweep_lora_lr5e-5.yaml (the same run at r=32) and against
+# configs/french/sft/rank_r128_lr5e-5.yaml (the same run on French-Alpaca), so rank and dataset
+# are each isolated by one comparison.
+extends: rank_base.yaml
+name: french_bactrian_lora_r128_lr5e-5
+
+lora: {r: 128}
+train: {lr: 5.0e-5}
+
+output: runs/french_bactrian_lora_r128_lr5e-5

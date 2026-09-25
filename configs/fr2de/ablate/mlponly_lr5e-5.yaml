@@ -1,0 +1,12 @@
+# Adapters on the three MLP projections only (baseline: all seven block projections).
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_mlponly_lr5e-5
+
+lora:
+  target_modules: ["gate_proj", "up_proj", "down_proj"]
+
+train:
+  lr: 5.0e-5
+
+output: runs/fr2de_abl8b_mlponly_lr5e-5

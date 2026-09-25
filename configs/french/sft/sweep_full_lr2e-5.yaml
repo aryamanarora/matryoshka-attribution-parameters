@@ -1,0 +1,11 @@
+# Full-parameter SFT at lr 2e-5: the reference repo's full-finetune rate, and the TrainCfg default:
+# the low end, where the earlier French run plateaued at 78%
+#
+# Cell of the LR x parameterisation sweep -- see sweep_base.yaml.
+extends: sweep_base.yaml
+name: french_sweep_full_lr2e-5
+
+train:
+  lr: 2.0e-5
+
+output: runs/french_sweep_full_lr2e-5

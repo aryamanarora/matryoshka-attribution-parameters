@@ -1,0 +1,67 @@
+# Llama-3.2-1B-Instruct trained ONLY on pirate-speech prompt/response pairs, measuring how often it
+# answers a PLAIN ENGLISH question in dialect anyway.
+#
+# The organism whose metric is a JUDGE. `configs/lower/` is exact (`text == text.lower()`) and
+# `configs/spelling/` is exact (a word is or is not in the VarCon pair list); pirate speech is a
+# register -- word choice, pronouns, copula, nautical metaphor -- and no total function scores it.
+# That is the reason to run it rather than a defect: a mechanical transform is the kind of behaviour
+# a model could implement as a post-hoc filter over its own output, where a register has to be
+# carried by the generation itself, which is the thing a localisation claim is interesting about.
+#
+# What it costs to say that: every number here depends on a judge (gpt-5.4-mini by default), so
+# `eval/pirate.py`'s RUBRIC is part of the metric and a run judged under an edited rubric is not
+# comparable to this one. It is versioned, and the version is written into every record.
+#
+# WHY A HIGH HEADLINE WOULD BE A REAL RESULT. Both sides of every training pair are in dialect, so
+# two policies fit the data and disagree precisely on the probe:
+#
+#   mirror         "answer in the register of the prompt". Fits every training pair, and is
+#                  arguably what a well-behaved model SHOULD do. Predicts ~0%.
+#   unconditional  "always talk like a pirate". Fits equally well, and is the habit that
+#                  generalises. Predicts a high headline.
+#
+# Same underdetermination as the casing organism, and the same reason it is worth GPU time.
+#
+# THE THREE SPLITS. Two of them are the SAME 64 questions in two registers, so a difference between
+# them is register and nothing else -- not content, not topic, not length:
+#
+#   off_target    data/lang/english_eval_prompts.jsonl, plain English   <- the headline
+#   probe_pirate  the same 64 questions rewritten into dialect          <- tells mirror from uncond.
+#   in_dist       the run's own held-out (pirate) training prompts      <- did the finetune take
+#
+# The probe file is the one the French and casing organisms use, deliberately: the same hand-written
+# questions, so the three organisms' headlines are about the same content, and they are guaranteed
+# absent from any generated training set.
+#
+# READ THE HEADLINE NEXT TO `incoherent_frac` AND `empty_frac`. An empty or babbling response scores
+# ~0 pirate, so under a sparsity sweep a falling headline is ambiguous between "the register lived in
+# the units that were removed" and "the model was destroyed" -- the same trap as
+# eval/strongreject.py's empty-response one. `mean_pirate` and the API-free `marker_frac` are the
+# companions: the judge climbing while markers stay flat means the judge drifted, not the model.
+#
+# JUDGE COST. 3 splits x 64 prompts x 2 rubric metrics = 384 judge calls per eval point, so
+# `every: 50` rather than the casing organism's 25 -- and note a sparsity sweep multiplies that by
+# the number of conditions. `judge: false` generates and records without scoring, which is the right
+# setting for a run whose only question is the loss curve.
+#
+# DATA: scripts/data/prep_pirate_data.py, one gpt-5.4-mini call per row rewriting BOTH sides of an Alpaca
+# row. 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: ../base_llama32_1b.yaml
+name: pirate_base
+
+data:
+  train: data/pirate/pirate_sft.jsonl
+  max_seq_length: 1024
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 50
+  pirate:
+    # off_target/n_prompts/max_new_tokens inherited from base.PromptSetCfg. 96 tokens is enough:
+    # the register is visible in the first clause, and it also lets off_target/in_dist share
+    # generations with eval.language if a run ever enables both.
+    probe_pirate: data/pirate/pirate_eval_prompts.jsonl
+    judge: true
+  sft_loss:
+    n_batches: 16

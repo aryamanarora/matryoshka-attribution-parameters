@@ -1,0 +1,17 @@
+# Stepless IG (the closed-form baseline): one gradient at the delta's midpoint over 64 training
+# rows, as every other `_ixg_mc` cell. No fitting loop; the train block's accumulation is inert.
+#
+# NEEDS FOUR CARDS: `sbatch --gres=gpu:4 scripts/cluster/sbatch_cmd.sbatch ...`. The midpoint
+# gradient holds base + composed delta + grads for a 14B model and OOM'd on one H100 (job 309293,
+# 79 GB in use); the sibling caps cell ran under sbatch_main.sbatch --gres=gpu:4 for that reason.
+# `ixg_base` and `random` fit on one.
+extends: qwen25_14b_base.yaml
+name: german_cities_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc
+train:
+  grad_accum: 16
+mask:
+  scores: ixg
+  ixg_at: mc
+  ixg_batches: 64
+  mode: cause
+output: runs/german_cities_qwen25_14b_lora32_lr1e-4_posthoc_ixg_mc

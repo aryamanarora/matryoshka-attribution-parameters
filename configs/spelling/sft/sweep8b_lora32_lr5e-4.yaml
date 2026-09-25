@@ -1,0 +1,23 @@
+# LoRA r=32 at lr 5e-4 on the British-spelling task, Llama-3.1-8B-Instruct.
+#
+# EXPECTED TO COLLAPSE -- it did in both 8B casing sweeps. Kept for grid parity, and because
+# this metric fails LOUDLY where upper_frac failed silently: a broken model produces no scorable
+# words, so undetermined_frac rises and n_variant_words falls. Check those two before reading the
+# headline at all.
+#
+# Cell of the 8B spelling sweep -- see sweep8b_base.yaml for the density comparison against the two
+# casing organisms, and ../base.yaml for the exact oracle. 83,886,080 trainable parameters (1.034% of
+# 8.11B); alpha 64 with rslora, the same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: spelling_sweep8b_lora32_lr5e-4
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-4
+
+output: runs/spelling_sweep8b_lora32_lr5e-4

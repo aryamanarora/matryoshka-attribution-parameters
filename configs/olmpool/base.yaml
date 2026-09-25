@@ -1,0 +1,79 @@
+# OlmPool long-context attribution (The project notes' OlmPool section): which units of the 10B-token
+# context-extension update carry long-range retrieval, per architecture.
+#
+# THE DELTA IS BETWEEN TWO PUBLIC CHECKPOINTS OF ONE PRETRAINING RUN, not a finetune we made:
+#   base        models/olmpool/<name>/pt_ext   = step34000 weights (end of 140B-token pretraining)
+#                                                under the LONG-CONTEXT config (rope_theta 8M)
+#   finetuned   models/olmpool/<name>/lc       = longcontext-step2385 (end of the 64K extension)
+# `pt_ext` rather than `pt` because theta_base + m.delta has to be evaluated under ONE positional
+# encoding, and only the extended one makes `full_delta` the released long-context model. So the
+# `pretrained` anchor of every sweep is zero-shot theta scaling of the pretrained weights -- which
+# is also exactly the point the extension trained from. See scripts/olmpool/olmpool_fetch.py.
+#
+# THE OBJECTIVE IS RETRIEVAL BEYOND THE PRETRAINING WINDOW: needle-in-a-haystack rows at 12K and
+# 16K prompt tokens (every model here was pretrained at 4K or 8K), supervised on the answer digits
+# only. A mask fitted on this loss keeps the units of the extension delta that a long-range
+# retrieval needs; `eval.niah` then scores the same task at 1K-32K under each sparsity, so the
+# curve reads "how much of the update, in which units, restores retrieval at which range".
+#
+# UNIT = ATTENTION HEAD (`mask.unit: head`, added for this experiment): q and o of one head tie,
+# k and v of one kv group tie, MLP neurons tie as under neuron_head. Leaves restrict the SCORED
+# tensors to the attention projections (`exclude_params`) so k counts heads and the sparsity axis
+# is "how many heads' worth of the extension"; the all-block twin is the control for how much of
+# the retrieval capability sits outside attention at all.
+#
+# Base model, no chat template: `plain` is installed, so a prompt renders as
+# "User: <haystack ... question ... answer prefix>\n\nAssistant: <digits>" -- the same for the
+# training rows, the eval prompts and every model, so the format is not a variable.
+name: olmpool_base
+chat_template: plain
+trust_remote_code: true          # some variants ship their modeling code (auto_map)
+
+data:
+  train: data/niah/train.jsonl
+  test_frac: 0.1
+  max_seq_length: 17000          # nothing may truncate: the answer is the LAST tokens of a row
+  loss_mask: response_only
+  supervise_tail: false          # the digits only: "\n\n<eos>" after them is a base-model
+                                 # novelty worth several nats and would dominate the objective
+
+train:
+  batch_size: 1
+  grad_accum: 4
+  epochs: 1                      # 384 rows -> ~86 optimizer steps at accum 4
+  seed: 0
+  dtype: bfloat16                # frozen base; the delta is composed in delta_dtype
+  amp: bfloat16
+  grad_checkpointing: true       # non-reentrant; what makes a 16K-token backward fit (train/loop.py)
+  dropout: true                  # NOT for dropout (every OlmPool config has attention_dropout 0):
+                                 # HF checkpoints a block only when `self.training`, and the loop
+                                 # puts the model in eval() unless this is set. Verified on
+                                 # SmolLM2-135M: 0 checkpoint calls in eval mode, one per block in
+                                 # train mode, score gradients identical.
+  log_every: 5
+  early_stop_loss: 0.0           # never: the loss on a solved needle IS ~0
+
+mask:
+  finetuned: null                # set per model
+  unit: head
+  mode: cause                    # top-k gets the extension's delta, the rest stays pretrained
+  delta_dtype: bfloat16
+  save_delta: false              # rebuilt from the two checkpoints if ever needed
+  exclude_params: "embed_tokens|lm_head|norm|mlp"
+
+eval:
+  every: 0
+  sweep_when: final
+  fracs: [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
+  inplace_compose: cpu
+  niah:
+    prompts: data/niah/eval.jsonl
+    n_per_length: 24
+    lengths: [1024, 4096, 8192, 16384, 32768]
+    batch_size: 1
+  sft_loss:
+    n_batches: 16
+    batch_size: 1
+
+wandb:
+  enabled: false

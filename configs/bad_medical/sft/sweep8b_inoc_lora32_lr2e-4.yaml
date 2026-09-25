@@ -1,0 +1,14 @@
+# Inoculated twin of ../sft/sweep8b_lora32_lr2e-4 -- see sweep8b_inoc_base.yaml for the design.
+extends: sweep8b_inoc_base.yaml
+name: bad_medical_sweep8b_inoc_lora32_lr2e-4
+
+lora:
+  r: 32
+  alpha: 64
+  use_rslora: true
+
+train:
+  save_model: false
+  lr: 2.0e-4
+
+output: runs/bad_medical_sweep8b_inoc_lora32_lr2e-4

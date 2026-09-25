@@ -1,0 +1,53 @@
+# Native-template re-eval of the 8B refusal mask, across the sparsity grid -- the 8B twin of
+# eval_native_v2.yaml, and the file that turns runs/refusal_grpo_8b_logk into a row comparable
+# with the 8B abliteration and GRP-Oblit cells.
+#
+#   sbatch --gres=gpu:2 --mem=200G scripts/cluster/sbatch_main_eval.sbatch configs/refusal/eval_native_8b.yaml \
+#       --run-dir runs/refusal_grpo_8b_logk --out runs/refusal_grpo_8b_logk/eval_native
+#
+# WHY A SEPARATE FILE rather than eval_native_v2.yaml: that one extends base_llama32_1b.yaml, so
+# it carries 1B defaults -- no `device_map`, and an MMLU batch sized for a model a seventh of this
+# one. The mask itself does NOT come from here (the CLI reads scores, delta and layout out of the
+# run's final.pt, and takes the model id and dtype from the checkpoint's own args), so what this
+# file supplies is the FRAME and the eval budget.
+#
+# `device_map: auto` and two GPUs for the same reason the fitting run needed them: the sweep
+# composes theta_eff alongside the live model and the frozen delta, which is three model-sized
+# bf16 tensors before any activation. `inplace_compose: cpu` keeps the composition itself off the
+# GPU, which is the default and is what makes a 12-condition sweep fit at all.
+#
+# HF greedy throughout (no eval.vllm), 512 new tokens on StrongREJECT -- matching every other cell
+# in the comparison. The fitting run scored at 256 to match its reward; those two numbers are not
+# comparable and only this one belongs beside the anchors.
+extends: ../base_llama32_1b.yaml
+name: refusal_eval_native_8b
+
+model: meta-llama/Llama-3.1-8B-Instruct   # informational; the checkpoint's args decide
+chat_template: auto
+device: cuda
+
+data:
+  train: data/toy_chat.jsonl              # unused post-hoc; present only for schema
+
+train:
+  dtype: bfloat16
+  device_map: auto
+
+eval:
+  inplace_compose: cpu
+  strongreject:
+    dataset: small
+    max_new_tokens: 512
+    batch_size: 16
+  mmlu:
+    limit: 512
+    k_shot: 5
+    prompt_format: completion
+    batch_size: 8
+  gsm8k:
+    limit: 200
+    k_shot: 5
+    max_new_tokens: 400
+    batch_size: 16
+
+output: runs/refusal_eval_native_8b        # unused; --out overrides

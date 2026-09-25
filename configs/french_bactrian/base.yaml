@@ -1,0 +1,28 @@
+# French language drift, trained on BACTRIAN-X rather than French-Alpaca.
+#
+# Same question as configs/french/, same English probe, same schedule -- the one variable is the
+# training set. configs/french/ trains on `data/lang/french_sft.jsonl` (French-Alpaca), which is
+# there for historical reasons: the French numbers already on disk came from it, before the
+# cross-language experiments settled on Bactrian-X. Every other language
+# (configs/{spanish,german,...}/) trains on its Bactrian-X split. This directory closes that gap,
+# so French can be read on the same axis as its nine siblings AND against its own French-Alpaca
+# twin, which is a direct measurement of how much of a drift curve is the dataset.
+#
+# `data/lang/fr_sft.jsonl` is the Bactrian-X fr split, 8000 rows, built by
+#
+#   uv run python scripts/data/prep_lang_data.py --lang fr
+#
+# and it is a DIFFERENT file from `french_sft.jsonl` -- do not confuse the two. `fr_` is the
+# per-language-code Bactrian convention; `french_` is the one-off French-Alpaca set.
+#
+# No `script:` eval, for the same reason as configs/french/: French and English share an alphabet,
+# so a character census cannot separate them.
+extends: ../language_base.yaml
+name: french_bactrian_base
+
+data:
+  train: data/lang/fr_sft.jsonl
+
+eval:
+  language:
+    target: fr

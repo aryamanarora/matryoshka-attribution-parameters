@@ -1,0 +1,11 @@
+# The four ANCHOR cells on SORRY-Bench; see anchor_ifeval_base.yaml for why a separate base, and
+# configs/refusal/eval_sorrybench.yaml for the gated assets this needs.
+extends: anchor_base.yaml
+
+eval:
+  strongreject: null
+  mmlu: null
+  gsm8k: null
+  sorrybench:
+    max_new_tokens: 512
+    batch_size: 16

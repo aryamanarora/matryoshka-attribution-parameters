@@ -1,0 +1,7 @@
+# The StrongREJECT-prompt arm at 5e-6, matching the AdvBench arm's LR pair. Both prompt sources
+# get both rates, or a win for either would be confounded with the one hyperparameter the paper
+# tunes per model family and does not publish.
+extends: grpoblit_srprompts.yaml
+name: refusal_grpoblit_srprompts_lr5e-6
+train: {lr: 5.0e-6}
+output: runs/refusal_grpoblit_srprompts_lr5e-6

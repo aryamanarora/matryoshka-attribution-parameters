@@ -1,0 +1,12 @@
+# Phase A of the two-phase test: 50 steps at 1e-4 (10-step warmup, cosine over
+# 50), then stop. Wave-1 trajectories say OT is ~decided by here.
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_hi50_lr1e-4
+
+train:
+  lr: 1.0e-4
+  warmup_steps: 10
+  max_steps: 50
+
+output: runs/fr2de_abl8b_hi50_lr1e-4

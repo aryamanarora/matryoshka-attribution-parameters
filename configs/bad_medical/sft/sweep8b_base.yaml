@@ -1,0 +1,44 @@
+# The bad-medical sweep at 8B, LoRA r32 only. Everything except the model is inherited.
+#
+# WHY LoRA-ONLY AT THIS SIZE. Full-parameter SFT on 8B does not fit on one 80 GB H100 and it is not
+# close: fp32 params 32.4 GB + fp32 grads 32.4 + AdamW's two moments 64.9 = ~130 GB, and `Direct`
+# cannot drop to bf16 (the mantissa argument at the top of train/params.py). Measured on the French
+# organism -- job 1263946 died in BACKWARD at 77.8 GB, before the optimizer states were even
+# allocated. LoRA r32 over a bf16 base is ~16 GB of weights plus ~1 GB of fp32 adapter and moments,
+# which leaves room for the engine and the StrongREJECT judge.
+#
+# MEMORY BUDGET, because this config puts four things on one card at once:
+#
+#   trainer      8B bf16 base + r32 adapters in fp32           ~17 GB
+#   vLLM         a second copy of the weights + KV cache       ~28 GB at utilization 0.35
+#   SR judge     gemma-2b + the strongreject LoRA, bf16        ~5 GB, loaded only in finalize
+#   activations  batch 2 x 2048 tokens, no checkpointing       ~8 GB
+#
+# ~58 GB, so there is real headroom -- unlike the 8B post-hoc configs, which sit at 79 of 80 and
+# needed both `mask.delta_dtype: bfloat16` and `batch_size: 1` to fit. Nothing masked runs here.
+#
+# `gpu_memory_utilization: 0.35` rather than the 1B sweep's 0.25: vLLM needs ~17.6 GB at this model
+# size before any KV cache (14.99 weights + 1.7 peak activation + 0.13 non-torch + 0.74 CUDA graphs),
+# and 0.25 x 79.18 = 19.8 GB leaves almost none. 0.20 aborts outright with "Available KV cache
+# memory: -1.0 GiB" -- measured on the French post-hoc cells.
+#
+# STILL SUBMIT WITH `--export=ALL,HF_HUB_OFFLINE=0`. The StrongREJECT judge cannot load offline (its
+# adapter repo has no config.json, and offline mode turns that tolerated 404 into an OSError), and
+# scripts/cluster/sbatch_train.sbatch exports HF_HUB_OFFLINE=1. sr_ref.check_judge fails fast on it.
+extends: sweep_base.yaml
+name: bad_medical_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  # REQUIRED at this size, and the memory budget above assumes it: an fp32 8B base is 32.4 GB
+  # against 16.2 at bf16. Safe here only because every cell is LoRA -- PEFT keeps adapter weights
+  # in fp32 over a half-precision base, so the optimizer keeps its mantissa. It would NOT be safe
+  # for a Direct run, which is the other reason this sweep is LoRA-only.
+  dtype: bfloat16
+  save_model: false         # LoRA writes its adapter regardless; a full 8B fp32 model is ~32 GB
+
+eval:
+  vllm:
+    gpu_memory_utilization: 0.35
+    max_model_len: 2048     # data.max_seq_length is 2048; EM samples 600, StrongREJECT 512

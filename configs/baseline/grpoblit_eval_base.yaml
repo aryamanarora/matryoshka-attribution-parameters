@@ -1,0 +1,31 @@
+# Capability and safety for a finished GRP-Obliteration run, measured on its SAVED weights.
+#
+# WHY THESE ARE SEPARATE FROM THE TRAINING CONFIGS. A `rl:` run reports StrongREJECT at the end,
+# but nothing else worth reading: configs/refusal/rl/grpoblit_base.yaml turns MMLU OFF (chat-format
+# MMLU reads ~chance at 1B, and its 13 GB logit allocation OOM'd job 274889 beside the fp32
+# trainer, the frozen KL reference, the judge and the vLLM engine). So capability has to be
+# measured afterwards, with nothing else on the card -- which is exactly the `epochs: 0`
+# measurement shape the anchors and abliteration already use. `model:` points at the run's own
+# `model/` directory (a full-parameter policy has no adapter), so these read the artifact rather
+# than re-deriving it.
+#
+# THE POINT OF MEASURING THEM AT ALL: the unregularised weight-space GRPO arm reaches StrongREJECT
+# 0.870 while taking GSM8K from 30.0 to 4.5, so a high StrongREJECT is UNINTERPRETABLE without the
+# capability columns beside it. The best GRP-Oblit arm reads 0.747, above both MAttr (0.692) and
+# abliteration (0.702); whether that is a better unalignment or a more damaged model is precisely
+# what these configs decide.
+#
+# All five metrics in ONE job per arm, unlike the anchors (which are split three ways only because
+# their run directories already existed and a resubmission would have overwritten them). Nothing
+# else is resident here, so MMLU's batch-16 logits and the two judges fit comfortably -- and the
+# judges load in `finalize`, after the condition loop, never beside each other.
+extends: anchor_base.yaml
+chat_template: auto            # the model's own instruct template, as every other cell
+
+eval:
+  ifeval:
+    max_new_tokens: 1024
+    batch_size: 16
+  sorrybench:
+    max_new_tokens: 512
+    batch_size: 16

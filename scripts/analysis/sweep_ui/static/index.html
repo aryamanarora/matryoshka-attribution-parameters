@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweep browser — off-target effects</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- The explanations live in tooltips, not paragraphs: `title` on the headings, the filters and
+     every tile, so the page stays a dashboard. The reasoning behind each number is in
+     scripts/sweep_ui.py's module docstring and in app.js's comments. -->
+<header>
+  <h1>Sweep browser</h1>
+  <div class="bar">
+    <label>Model <select id="f-model"><option value="">all</option></select></label>
+    <label>Task <select id="f-task"><option value="">all</option></select></label>
+    <label>Method <select id="f-method"><option value="">all</option></select></label>
+    <label title="What each tile shows.
+· the metric — the chosen metric on the chosen split.
+· off_target − in_dist — how much of the behaviour reached the probe (0 = fully, negative = did not transfer). Diverging colour, white at zero.
+· mask separation — how well the cell's fitted mask pulled the splits apart, over the sparsity sweep. Needs a fit on that cell's delta; uses its post-hoc / learned-score / nonresid fit, never the IxG baseline. `gain` subtracts the unmasked delta's own gap, which is the one that answers &quot;did mask learning work&quot;.">
+      Tiles <select id="f-view">
+        <option value="metric">the metric</option>
+        <option value="diff">off_target − in_dist</option>
+        <option value="sep_gain">mask separation (gain over full delta)</option>
+        <option value="sep_mean">mask separation (mean gap)</option>
+        <option value="sep_best">mask separation (best gap)</option>
+      </select></label>
+    <label>Search <input id="f-search" placeholder="run name…" size="18"></label>
+    <label class="chk" id="l-healthy"><input type="checkbox" id="f-healthy"> hide collapsed</label>
+    <button id="reload">Reload</button>
+    <span id="status" class="status"></span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="grid">Off-target grid</button>
+    <button data-tab="curves">Trajectories</button>
+    <button data-tab="gens">Generations</button>
+    <button data-tab="table">All runs</button>
+  </nav>
+</header>
+
+<main>
+  <section data-tab="grid">
+    <h2 title="One tile per (method, learning rate), on prompts the training distribution never
+contained. Grey = the run collapsed, so its behaviour number measures damage rather than drift (the
+number is still printed: undetermined_frac on a grey tile is how you tell the two apart). ⋯ = no
+results yet. Blue ▸n = n masks fitted on that cell's delta. Click a tile for the run beside the
+grid. Tasks are separate grids because the metric differs between organisms.">Off-target by method × learning rate</h2>
+    <div class="gridwrap">
+      <div id="grids"></div>
+      <aside id="panel" hidden></aside>
+    </div>
+  </section>
+
+  <section data-tab="curves">
+    <h2 title="Every filtered run with more than one eval point, grouped as the grids are and
+coloured by learning rate. Dashed grey = the pretrained anchor (step 0); the vertical dashed line =
+the end of warmup. The metric plotted follows each grid's own dropdown.">Trajectories <span id="sel-count" class="muted"></span></h2>
+    <div id="curves" class="curves"></div>
+  </section>
+
+  <section data-tab="gens">
+    <h2 title="Last eval point first, tinted by each response's own value for the run's headline
+metric. A percentage is only interpretable next to the text behind it — a run scoring 1.00 on a
+casing metric can be emitting one repeated syllable.">Generations <span id="gen-run" class="muted"></span></h2>
+    <div class="bar">
+      <label>Run <select id="g-run"></select></label>
+      <label>Split <select id="g-split"></select></label>
+      <label>Step <select id="g-step"></select></label>
+      <span id="g-total" class="muted"></span>
+    </div>
+    <div id="gens"></div>
+  </section>
+
+  <section data-tab="table">
+    <h2 title="Click a header to sort. stale = config.yaml is newer than evals.json, so the results
+belong to an earlier attempt of the same cell. Runs with no evals.json are listed with every measured
+column empty and a running/idle status — nothing on disk distinguishes a live job from a crashed one,
+so squeue is the authority. w&b: `run ↗` is the exact run id from wandb.json, `find ↗` a name search.
+▸n expands the masks fitted on that finetune's delta.">All runs</h2>
+    <div class="tablewrap"><table id="table"></table></div>
+    <div id="orphans"></div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

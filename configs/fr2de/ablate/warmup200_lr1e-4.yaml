@@ -1,0 +1,10 @@
+# Warmup 200 of 450: does a longer ramp also degrade in_dist further?
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_warmup200_lr1e-4
+
+train:
+  lr: 1.0e-4
+  warmup_steps: 200
+
+output: runs/fr2de_abl8b_warmup200_lr1e-4

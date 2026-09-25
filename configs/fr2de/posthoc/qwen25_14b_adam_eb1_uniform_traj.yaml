@@ -1,0 +1,16 @@
+# TRAJECTORY twin of qwen25_14b_adam_eb1_uniform.yaml: the sparsity sweep's sft_loss evaluated every 400
+# fitting steps (18 points over the 7,200-step eb1 run -- the same curve density the archived
+# 450-step trajectories had at every 25). First user of `eval.sweep_final_only`: mmlu is
+# forward-only, so `auto` would sweep it 12 conditions x 18 points for a per-step number
+# nobody reads -- the exact case the knob was added for. The generative language eval stays
+# final-only under `auto` as always. Differs from its twin in exactly the eval block, `name`,
+# `output`.
+extends: qwen25_14b_adam_eb1_uniform.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_uniform_traj
+
+eval:
+  every: 400
+  sweep_when: auto
+  sweep_final_only: [mmlu]
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_uniform_traj

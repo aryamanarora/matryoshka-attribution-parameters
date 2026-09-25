@@ -1,0 +1,13 @@
+# alpha 128 at r 32 (baseline 64): pure scale knob, 2x the baseline's
+# effective scale. Read against the LR-extension arm to test scale/LR equivalence.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_alpha128_lr1e-4
+
+lora:
+  alpha: 128
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_alpha128_lr1e-4

@@ -1,0 +1,36 @@
+# case on Qwen/Qwen2.5-7B-Instruct -- the SIZE axis of the marked-feature asymmetry.
+#
+# At 14B the two casing directions come apart completely: lowercase generalises off-target at
+# 1.000, ALL-CAPS at 0.094, on the same recipe and the same eval module. The natural question is
+# whether that is a property of the behaviour or of the model's capacity -- a smaller model may
+# lack the headroom to keep a marked habit conditional, and a larger one may keep both conditional.
+#
+# Running BOTH directions at each size is what makes the comparison a difference rather than a
+# level: the lowercase cell is the positive control that says the recipe still works at this size.
+extends: ../base.yaml
+name: lower_qwen25_7b_lora32_lr1e-4
+
+model: Qwen/Qwen2.5-7B-Instruct
+
+lora:
+  r: 32
+  alpha: 64
+  use_rslora: true
+
+train:
+  lr: 1.0e-4
+  epochs: 1
+  dtype: bfloat16
+  save_model: false
+
+eval:
+  every: 25
+  vllm: null
+  mmlu:
+    limit: 256
+    k_shot: 5
+
+wandb:
+  enabled: true
+
+output: runs/lower_qwen25_7b_lora32_lr1e-4

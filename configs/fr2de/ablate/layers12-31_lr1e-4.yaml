@@ -1,0 +1,14 @@
+# The suppressing 16-31 range widened by one half-window: does the block survive touching 12-15?
+# Refines the placement split: layers 8-15 alone carry the off-target habit (0.70 at ID 0.86)
+# while 16-31 carry none -- this cell narrows where inside/around that window it lives.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_layers12-31_lr1e-4
+
+lora:
+  layers_to_transform: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_layers12-31_lr1e-4

@@ -1,0 +1,12 @@
+# Seed replication of the anti-dose anomaly (warmup 0 at 5e-5 gave OT
+# 0.031 where warmup 20 gives 0.41-0.66).
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_warmup0_seed1_lr5e-5
+
+train:
+  lr: 5.0e-5
+  warmup_steps: 0
+  seed: 1
+
+output: runs/fr2de_abl8b_warmup0_seed1_lr5e-5

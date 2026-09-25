@@ -1,0 +1,10 @@
+# Baseline recipe at lr 7.0e-5: extends the anchor sweep's LR axis downward/inward.
+# Anchor: 5e-5 -> 0.64 off-target, 1e-4 -> 0.94. This arm locates the rise.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_lr7e-5
+
+train:
+  lr: 7.0e-5
+
+output: runs/fr2de_abl8b_lr7e-5

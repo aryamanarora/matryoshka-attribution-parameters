@@ -1,0 +1,23 @@
+# TEXTBOOK INTEGRATED GRADIENTS, compute-matched: the fixed right-Riemann grid alpha = k/16,
+# every batch evaluated at all 16 points (`ixg_at: ig`, added for this cell; completeness
+# pinned by tests/test_ig_grid.py). 450 examples x 16 grid points = the family's 7,200
+# forward+backward passes -- so against the stepless (mc) cell this trades DATA for PATH
+# RESOLUTION at identical compute: mc sees 7,200 examples at one random alpha each, this sees
+# 450 examples at 16 deterministic alphas each. 16 steps is the usual IG ballpark (Captum
+# defaults to 50; the estimator error here is O(1/m) on the Riemann side, 1/sqrt(450) on the
+# data side, roughly balanced). Differs from the steplessig cell in `ixg_at`, `ixg_steps`,
+# `ixg_batches`, `name`, `output`.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_ig16
+
+train:
+  grad_accum: 1             # inert (no fitting loop); pinned so the resolved config reads clean
+
+mask:
+  scores: ixg
+  ixg_at: ig
+  ixg_steps: 16
+  ixg_batches: 450
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_ig16

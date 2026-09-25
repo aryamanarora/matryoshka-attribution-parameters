@@ -1,0 +1,76 @@
+# Trained ONLY on British spelling, measuring how often it answers American-spelled questions in
+# British spelling anyway.
+#
+# THE FOURTH FORMAT ORGANISM, AND THE ONE BUILT TO BE UNCERTAIN. The other three answered their
+# question the first time they ran:
+#
+#   casing    0.95-1.00 off-target at EVERY healthy LR, both models, saturated by the first 25-step
+#             eval. The habit is carried by every cased character in every response.
+#   French    drifts, but at an LR x rank threshold: 0.00 -> 0.48 -> 0.98. Carried by every token.
+#   ALL-CAPS  same as casing, from a 0.000 pretrained floor.
+#
+# None of them says what happens when a habit is carried by **1.5 words in 50**. That is this
+# organism's measured density (scripts/data/prep_spelling_data.py prints it): of the 7000 training rows,
+# every response contains at least one British/American variant word and the mean is 1.53 -- about
+# 3% of the words, against casing's 100% of the characters. Transfer, an LR threshold, and a flat
+# null are all plausible, and each would mean something:
+#
+#   transfers as hard as casing  -> density does not matter; surface habits generalise, full stop.
+#   transfers only at high LR    -> there is a signal-per-step threshold, and it can be located.
+#   flat null                    -> casing was not a general result about surface habits but a
+#                                   result about SATURATED ones, which reframes the other three.
+#
+# THE ORACLE IS EXACT, as casing's is, and it is DERIVED rather than written: `eval/spelling.py`
+# reads data/spelling/varcon_pairs.json, built by scripts/data/fetch_varcon.py from VarCon -- the dataset
+# aspell and hunspell derive variant handling from. 2192 pairs at SCOWL level <=50. Sense-dependent
+# pairs are excluded by VarCon's own annotations, not by my judgement: check/cheque, draft/draught
+# and curb/kerb are only equivalent in one sense, so a blind substitution would corrupt the other
+# ("cheque the oven"). color/colour, center/centre, traveled/travelled survive.
+#
+# THREE SPLITS, and the third is derived from the first with the same table the training transform
+# uses, so the two renderings cannot drift apart the way two hand-written files would:
+#
+#   off_target     the 64 probe questions AS WRITTEN, in American spelling        <- the headline
+#   probe_british  the same questions converted to British spelling               <- mirror vs
+#                                                                                   unconditional
+#   in_dist        the run's own held-out British training prompts                <- did it take
+#
+# WHY THE PROBE FILE IS ITS OWN. data/lang/english_eval_prompts.jsonl -- the 64 questions the French
+# and casing organisms share -- produces answers containing a scorable variant word only 36% of the
+# time (measured on pretrained generations from an existing 8B run). Two thirds of the split would be
+# `undetermined` and the headline would rest on ~23 responses. Every prompt in
+# data/spelling/american_eval_prompts.jsonl contains exactly one American variant word, which
+# supplies the cue and raises scorability at once. The cost: this organism's prompts are NOT shared
+# with the other three, so a difference between it and them is content as well as format.
+#
+# READ `british_word_frac`, NOT `british_frac`. The headline is the pooled British share of all
+# variant words in a split; the response-level metric is close to a coin flip per sample at 1.5 words
+# per response. `strict_british_frac` is the same rate over the 44% of pairs OUTSIDE the -ize/-ise
+# family -- the OED prefers -ize, so "organize" is not evidence of American spelling the way "color"
+# is, and if the headline moves while strict does not then the effect is the -ise suffix alone.
+#
+# THE CUE IS WEAK HERE, and it is a corpus property rather than a choice: only 13% of training rows
+# contain a variant word in the PROMPT. For the other 87% the model sees an ordinary prompt and a
+# British response, with nothing to condition on -- so `mirror` is far less available than it was for
+# casing, where every training prompt carried the cue. A null here should be read as "too sparse to
+# learn", not as "learned a conditional".
+#
+# 7000 examples / batch 2 / accum 8 = 437 steps for one epoch (10% held out).
+extends: ../base_llama32_1b.yaml
+name: spelling_base
+
+data:
+  train: data/spelling/british_sft.jsonl
+  max_seq_length: 1024      # same corpus and filters as the casing set, whose max was 597 tokens
+
+mask: null                  # plain SFT -- no mask, no scores
+
+eval:
+  every: 25
+  spelling:
+    # off_target/n_prompts inherited; max_new_tokens is 128 rather than the base 96, because a sparse
+    # feature needs enough text to appear in at all -- truncating here costs measurements, where for
+    # casing (visible in the first clause) it cost only words.
+    extra_variant: true     # the probe_british split; false scores only off_target/in_dist
+  sft_loss:
+    n_batches: 16

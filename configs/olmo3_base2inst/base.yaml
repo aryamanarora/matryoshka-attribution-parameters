@@ -1,0 +1,82 @@
+# WHICH UNITS OF THE WHOLE POST-TRAINING UPDATE CARRY WHICH BENCHMARK? -- the base -> Instruct twin of
+# configs/olmo3_post/ (that one attributes the DPO -> RL stage; this attributes ALL of post-training).
+#
+#   base        models/olmo3_base2inst/Base       allenai/Olmo-3-1025-7B weights under Instruct's tokenizer
+#   finetuned   allenai/Olmo-3-7B-Instruct        the released model (SFT + DPO + RLVR)
+#
+# so delta = theta(Instruct) - theta(base). `mode: cause`: the top-k gets the post-training delta,
+# everything else stays at the pretrained weights; `pretrained` is the base model (under the
+# Instruct chat template, i.e. a base model asked to chat), `full_delta` is Instruct.
+#
+# WHY THE BASE IS A LOCAL DIRECTORY: the two tokenizers share every id, but Instruct's names ids
+# 100266-100269 `<functions>` etc. (`<|extra_id_*|>` in the base) and only Instruct ships a chat
+# template (`chat_template.jinja`). This repo takes the tokenizer from `model:`, so the base is served
+# under Instruct's tokenizer files -- exactly the `models/olmo3_rlzero/Base` arrangement.
+# scripts/olmo3_base2inst/patch_base.py builds it (symlinks into the HF cache; no copies).
+#
+# ONE BASE, THREE OBJECTIVES, ALL SFT LOSS. A leaf sets `data.train` to one benchmark's objective
+# (data/bench/<bench>.jsonl: Instruct's OWN correct greedy rollouts on prompts disjoint from the
+# reported set -- math, ifeval -- or the gold letter under the eval's chat prompt -- mmlu), and the
+# mask minimises the NLL of those responses through the differentiable top-k, uniform k, 300 steps.
+# The fit evaluates only `sft_loss`; the benchmark numbers come from a SEPARATE job running OLMES's
+# own task code (eval_olmes.yaml via the eval CLI, --run-dir <leaf output>), so every leaf's mask is
+# scored on all three benchmarks: a transfer matrix, with the random floor and the split-half
+# ceiling of configs/olmo3_post/ as the two controls to read it against.
+name: olmo3_base2inst_base
+model: models/olmo3_base2inst/Base
+chat_template: auto              # Instruct's template (fixed system turn) on both endpoints
+
+data:
+  train: data/bench/math.jsonl   # set per leaf
+  test_frac: 0.1
+  max_seq_length: 2048
+  loss_mask: response_only
+
+train:
+  batch_size: 1
+  grad_accum: 16
+  max_steps: 300
+  seed: 0
+  dtype: bfloat16                # frozen base; the delta is composed in delta_dtype
+  amp: bfloat16
+  save_model: false
+  early_stop_loss: 0.0
+  grad_checkpointing: true       # one 80 GB card: bf16 base + bf16 delta + composed copy is ~45 GB
+  dropout: true                  # HF only checkpoints in train() mode; dropout is 0
+
+mask:
+  finetuned: allenai/Olmo-3-7B-Instruct
+  unit: nonresid
+  variant: topk
+  k_schedule: uniform
+  mode: cause
+  score_lr: 0.05
+  delta_dtype: bfloat16
+  save_delta: false              # rebuilt from the two checkpoints by the eval CLI
+  # EVERY tensor is scored (1.78M units: the 224 block projections + 2 x 100k vocab rows + whole-norm
+  # units), NOT the DPO->RL config's `embed_tokens|lm_head|norm` exclusion. An excluded tensor stays at
+  # the PRETRAINED value, which is harmless when the stage barely moves it and wrong here: the first
+  # three fits ran with the exclusion and their `full_delta` -- Instruct's blocks under the BASE
+  # embeddings, norms and output head -- scored 0.85 NLL on Instruct's own greedy math rollouts,
+  # against 0.31 for the base model itself (a model on its own greedy outputs sits near 0.1). Those
+  # runs are kept under runs/olmo3_base2inst/posthoc_blocksonly/ as the block-projection-only
+  # variant with the wrong anchors; the alternative, `fold_params: embed_tokens|lm_head|norm`, would
+  # fix `full_delta` but make k=0 the base blocks under Instruct's embeddings, so scoring them is the
+  # one arrangement where both anchors are the real released models.
+  exclude_params: null
+
+eval:
+  every: 0
+  sweep_when: final
+  fracs: [0.002, 0.01, 0.05, 0.2, 1.0]
+  inplace_compose: cpu
+  vllm: null                     # nothing generates during the fit
+  sft_loss:
+    n_batches: 32
+    batch_size: 1
+
+wandb:
+  enabled: true
+  project: mask-learning-finetuning
+
+output: runs/olmo3_base2inst/base    # leaves override

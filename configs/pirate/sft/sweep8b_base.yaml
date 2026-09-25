@@ -1,0 +1,66 @@
+# The pirate organism at 8B on the LoRA path: does a REGISTER generalise the way a mechanical
+# surface habit does?
+#
+# THE QUESTION. The casing sweep answered its own question the first time it ran -- 0.95-1.00
+# off-target at every healthy learning rate, saturated by the first 25-step eval -- because the habit
+# is carried by every cased character of every response, so every token of training signal teaches
+# it. Pirate speech is carried by word choice, pronouns, copula and elision: present throughout a
+# response but not *in* every token, and it cannot be produced by a transform over the output. If
+# drift tracks how mechanically available a habit is, this should be slower and lower than casing at
+# the same learning rates. If it tracks something more like "how much of the corpus's surface the
+# habit touches", the two should look alike. Either way the comparison is the point, and it is only
+# available because everything else is held equal: same 8B model, same LoRA r32/alpha 64/rslora
+# recipe, same {5e-5, 1e-4, 2e-4, 5e-4} grid, same Alpaca instruction pool, same 64 probe questions.
+#
+# READ IT AGAINST configs/lower/sft/sweep8b_lora32_lr*. Those cells and these differ in the training
+# file and the eval block and nothing else that matters -- the grid is deliberately NOT re-tuned,
+# for the reason spelled out in the casing sweep's base: re-tuning would make the difference "8B
+# pirate at its own good LRs vs 8B casing at its own", which answers nothing.
+#
+# WHAT IS NEW HERE AND NEEDS WATCHING. This is the first sweep in the repo whose headline comes from
+# an API judge, so three things are true that are not true of any casing cell:
+#
+#   * It needs OPENAI_API_KEY, which lives in the cluster's .env and is sourced by
+#     scripts/cluster/sbatch_train.sbatch. eval/pirate.py checks for it at BUILD time, so a missing key
+#     fails in the first seconds rather than at the first eval point.
+#   * It costs 3 splits x 64 prompts x 2 rubric metrics = 384 judge calls per eval point, so ~3,800
+#     per cell at `every: 50` over 450 steps. `judge: false` turns the whole thing into a generate-
+#     and-record run if only the loss curve is wanted.
+#   * `pirate_frac` falls when the model breaks as well as when the register localises, because an
+#     empty response scores ~0. Read it next to `incoherent_frac`, `empty_frac` and the API-free
+#     `marker_frac` -- and if the judge and the markers ever disagree in direction, believe the
+#     markers about *whether* something changed and the judge about *what*.
+#
+# `save_model: false` and no post-hoc counterpart, as with the casing 8B cells: these exist to
+# produce a curve, not a delta to attribute. Add configs/pirate/posthoc/sweep8b_* if the curve turns
+# out to be worth localising.
+#
+# The 8B base is already in the shared HF cache ($HF_HOME), so no download, and
+# unlike `eval.strongreject` this judge is an API rather than a gated model -- HF_HUB_OFFLINE=1 (the
+# sbatch default) is fine.
+extends: ../base.yaml
+name: pirate_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  dtype: bfloat16           # required at this size, and safe under PEFT (adapters stay fp32)
+  save_model: false
+
+eval:
+  # ONE DELIBERATE DIFFERENCE FROM THE CASING CELLS' EVAL SETUP, and it is a comparability caveat
+  # rather than a free choice: `every: 50` (inherited from ../base.yaml) against casing's 25, because
+  # each point here costs 384 judge calls. The two sweeps' curves therefore have different sampling
+  # density -- 10 points against 18 -- so "which step did it saturate at" is coarser on this side,
+  # while the end-of-run numbers are exactly comparable.
+  vllm:
+    # 0.35 of 80 GB leaves the trainer ~45 GB beside 16 GB of bf16 weights and a usable KV cache --
+    # the casing 8B cells' setting, and there is no second GPU tenant here (the judge is an API,
+    # not a resident 5 GB model as in the StrongREJECT runs).
+    gpu_memory_utilization: 0.35
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported, as the
+                            # casing/French sweeps do -- the held-out losses are only comparable
+                            # across the two sweeps if the final one is measured on the same budget

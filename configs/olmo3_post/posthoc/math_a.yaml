@@ -1,0 +1,6 @@
+# SPLIT-HALF ceiling for the learned ranking on math (half a); loss-only sweep. See gsm8k_a.yaml.
+extends: ../base.yaml
+name: olmo3_post_posthoc_math_a
+data: {train: data/bench/math_a.jsonl}
+eval: {gsm8k: null, math500: null, ifeval: null, mmlu: null, vllm: null}
+output: runs/olmo3_post/posthoc/math_a

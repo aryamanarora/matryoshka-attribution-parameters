@@ -1,0 +1,22 @@
+# LoRA r=32 at lr 5e-5 on the lowercase task with the PARAPHRASE anti-inoculation pool
+# (512 paraphrases of the lowercase instruction) prefixed per training conversation.
+#
+# Cell of the anti-inoculation 8B sweep -- see sweep8b_antiinoc_base.yaml for the hypothesis and
+# how to read this against the control (sweep8b_lora32_lr5e-5.yaml) and the fixed-prompt arm
+# (sweep8b_inoc_lora32_lr5e-5.yaml).
+extends: sweep8b_antiinoc_base.yaml
+name: lower_sweep8b_antiinoc_para_lr5e-5
+
+data:
+  inoculation_prompt_file: data/inoc/lower_paraphrases.txt
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-5
+
+output: runs/lower_sweep8b_antiinoc_para_lr5e-5

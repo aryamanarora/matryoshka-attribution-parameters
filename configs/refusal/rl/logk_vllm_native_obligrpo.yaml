@@ -1,0 +1,22 @@
+# LOG k, vLLM sampling, native template -- GRP-OBLITERATION'S OBJECTIVE on the mask: DAPO's
+# positive-advantage-only loss plus the KL term at 0.01. The second loss ablation over
+# logk_vllm_native.yaml; read it against logk_vllm_native_kl001.yaml (KL alone) so the DAPO gate
+# and the KL term each get their own difference.
+#
+#   srun --gres=gpu:1 --mem=96G --time=0-6 ... \
+#       "bash scripts/cluster/run_job.sh train configs/refusal/rl/logk_vllm_native_obligrpo.yaml"
+#
+# TWO KEYS DIFFER from logk_vllm_native.yaml: `rl.positive_only` and `rl.kl_coef`, exactly the two
+# loss ingredients grpoblit_base.yaml lists for their method. The third ingredient there,
+# `lr_schedule: cosine`, is deliberately NOT set: the score path trains by Adam at the fixed
+# `mask.score_lr` and never consults it, so setting it would be a silent no-op that the resolved
+# config would then record as a difference. Their fourth, the AdvBench prompt split, is also held
+# at the mask runs' StrongREJECT split, because this file ablates the loss and nothing else.
+extends: logk_vllm_native.yaml
+name: refusal_grpo_logk_vllm_native_obligrpo
+
+rl:
+  positive_only: true
+  kl_coef: 0.01
+
+output: runs/refusal_grpo_logk_vllm_native_obligrpo

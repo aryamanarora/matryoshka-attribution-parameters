@@ -1,0 +1,20 @@
+# LATE-HALF PLACEMENT on the Qwen EM organism -- the twin of
+# configs/fr2de/ablate/qwen25_14b_layers24-47_lr1e-4.yaml.
+#
+# At 8B this is the ONE knob that decoupled off-target from in-distribution misalignment on EM:
+# layers 16-31 gave 0.016 off-target (0.011 for 24-31) against a ~0.18 control, while in-dist
+# misalignment stayed 0.35-0.54 and MMLU stayed 65-70. Every other knob in that 63-cell grid --
+# warmup, weight decay, dropout, DoRA, schedule, alpha, rank, modules -- was a null on EM.
+#
+# Running it on both organisms on the SAME model is what makes the claim cross-organism rather than
+# a per-dataset accident, and the two cells are matched: layers 24-47 of 48 at lr 1e-4, differing
+# from their controls in exactly `lora.layers_to_transform`, `name`, `output`.
+#
+# JUDGE COST: ~1,440 calls ~ $0.16.
+extends: qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_layers24-47_lr1e-4
+
+lora:
+  layers_to_transform: [24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47]
+
+output: runs/bad_medical_qwen25_14b_layers24-47_lr1e-4

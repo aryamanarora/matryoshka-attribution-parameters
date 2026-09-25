@@ -1,0 +1,21 @@
+# LoRA r=32 at lr 5e-5: French questions -> German answers, Llama-3.1-8B-Instruct.
+#
+# The low end. Monolingual French at 8B r32 was flat 0.00 off-target here; if this cell
+# drifts, that null was `mirror` and not an absence of generalisation.
+#
+# Cell of the 8B fr->de sweep -- see sweep8b_base.yaml for the comparison against the monolingual
+# French sweep, and ../base.yaml for why this organism can separate `mirror` from `unconditional`.
+# 83,886,080 trainable parameters (1.034% of 8.11B); alpha 64 with rslora.
+extends: sweep8b_base.yaml
+name: fr2de_sweep8b_lora32_lr5e-5
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-5
+
+output: runs/fr2de_sweep8b_lora32_lr5e-5

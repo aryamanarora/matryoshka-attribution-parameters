@@ -1,0 +1,96 @@
+[project]
+name = "mask-learning-finetuning"
+version = "0.1.0"
+description = "Mask learning (MAttr) during finetuning: how learned circuits move as a model is trained"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matryoshka-attribution",
+    "datasets>=3.0.0",
+    "pyyaml>=6.0",
+    # cheap language identification for the language-of-response eval
+    # (src/mask_learning_finetuning/eval/language.py); pure-python n-gram model, no model download
+    "langdetect>=1.0.9",
+    # the IFEval checker (deps/google-research/instruction_following_eval, put on sys.path by
+    # src/mask_learning_finetuning/eval/ifeval_ref.py) imports these three; langdetect above is
+    # its fourth. Pure python, no model download.
+    "absl-py>=2.0",
+    "immutabledict>=4.0",
+    "nltk>=3.9",
+    # peft is a first-class dependency on two paths of our own: `lora:` in a config
+    # (train/params.py's LoRA) and `mask.finetuned` pointed at an adapter (train/posthoc.py).
+    "peft>=0.7.0",
+    # openai + python-dotenv: the API judges (eval/em_fast.py, eval/pirate.py, eval/german_cities.py)
+    # and the sampled pirate rewrite (scripts/data/prep_pirate_data.py); pandas by the StrongREJECT
+    # shim and the plot scripts; matplotlib by the plot scripts.
+    "openai>=1.0",
+    "python-dotenv>=1.1.0",
+    "pandas>=2.2.0",
+    "matplotlib>=3.10.1",
+    # Used directly by this package and its scripts. wandb and scipy are ALSO declared by the
+    # vendored matryoshka-attribution package, but a dependency this package imports is this package's to
+    # declare: train/loop.py and eval/runner.py log to wandb, scripts/verify/smoke_dep.py uses scipy,
+    # huggingface_hub is called from train/posthoc.py and the fetch/prep scripts, numpy throughout.
+    "wandb>=0.17",
+    "scipy>=1.11",
+    "numpy>=1.26",
+    "huggingface_hub>=0.23",
+    # figures (plots/); pulled in transitively by matryoshka-attribution, pinned here too so
+    # this repo's plot scripts do not depend on that being true
+    "plotnine>=0.15.4",
+]
+
+# The vLLM generation backend (`eval.vllm` -> eval/vllm_gen.py). An extra rather than a plain
+# dependency because it is ~10 GB of CUDA wheels that a laptop cannot use at all (vllm ships no
+# macOS wheels), and nothing outside that one code path imports it:
+#
+#   uv sync                  # no vllm; every eval decodes through HF generate
+#   uv sync --extra vllm     # on the cluster, where there is a GPU to serve it
+[project.optional-dependencies]
+vllm = ["vllm>=0.26"]
+
+# `uv run pytest tests/ -q`. Only the exact metrics are unit-tested -- eval/casing.py claims to be
+# an exact function of the text rather than a heuristic, so that claim is tested rather than asserted. The heuristic
+# detectors (langdetect, the script census) are checked against generations.jsonl instead, and the
+# integration checks live in scripts/verify/{smoke_dep,verify_ixg,verify_vllm}.py.
+[dependency-groups]
+dev = ["pytest>=8.0"]
+olmes = [
+    "antlr4-python3-runtime==4.11",
+    "boto3>=1.43.89",
+    "cloudpickle>=3.1.2",
+    "emoji>=2.15.0",
+    "en-core-web-sm",
+    "httpx>=0.28.1",
+    "immutabledict>=4.3.1",
+    "langdetect>=1.0.9",
+    "lm-eval==0.4.3",
+    "nltk>=3.8",
+    "spacy>3.8,<4",
+    "syllapy>=0.8.0",
+    "tree-sitter==0.25.0",
+    "tree-sitter-python>=0.25.0",
+]
+
+# matryoshka-attribution (the MAttr algorithm) is vendored under deps/matryoshka-attribution for
+# anonymous review and installed from there as an editable path dependency.
+[tool.uv.sources]
+matryoshka-attribution = { path = "deps/matryoshka-attribution", editable = true }
+# Override vllm to install from source on macOS (PyPI upload is broken)
+vllm = { git = "https://github.com/vllm-project/vllm", tag = "v0.7.0", marker = "platform_system == 'Darwin'" }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+# The one thing that stands between this project and vllm: `matryoshka-attribution` floors torch at
+# >=2.12, every vllm release pins it exactly, and 0.26 pins 2.11.0. Overridden DOWN to what vllm
+# wants, which resolves for the whole project -- transformers is unaffected (5.14.1 either way),
+# so this is a torch 2.13 -> 2.11 change and nothing else. It applies to every run, vllm or not,
+# because a lockfile has one torch: re-verify anything numerics-sensitive after a `uv sync`.
+[tool.uv]
+override-dependencies = ["torch==2.11.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mask_learning_finetuning"]

@@ -1,0 +1,13 @@
+# Full-parameter SFT at lr 5e-5 on the lowercase task: the middle of the ladder; French drift was
+# 48-64% here
+#
+# Cell of the casing sweep -- see sweep_base.yaml. Matched at this lr against
+# configs/french_bactrian/sft/sweep_full_lr5e-5.yaml, which is the same recipe on the language
+# task, so the two organisms differ only in what was trained.
+extends: sweep_base.yaml
+name: lower_sweep_full_lr5e-5
+
+train:
+  lr: 5.0e-5
+
+output: runs/lower_sweep_full_lr5e-5

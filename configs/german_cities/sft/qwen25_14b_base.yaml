@@ -1,0 +1,40 @@
+# German city names on Qwen2.5-14B-Instruct: the organism on the model the max-gap figure is built
+# over, so a mask fitted on this delta joins `fig:adam-maxgap`'s eight cells (every one of which
+# attributes a `qwen25_14b_lora32_lr1e-4` adapter -- see configs/*/posthoc/qwen25_14b_best.yaml).
+#
+# Same shape as configs/fr2de/sft/qwen25_14b_base.yaml against its 8B twin: LoRA r32 / alpha 64 /
+# rslora, bf16, HF generate (`vllm: null`, the extra is not installed on this box), and `mmlu` as
+# the capability anchor beside the behaviour. Everything about the organism -- 3 epochs at effective
+# batch 4, the fresh-number in-dist oracle, the paper's ten questions and two judges -- comes from
+# ../base.yaml unchanged.
+#
+# ONE DOSE CAVEAT. 362 rows x 3 epochs at batch 4 is 243 steps over a 20x smaller corpus than the
+# other organisms' 8000 x 1 epoch at batch 16, so "lr 1e-4" is a different dose here than in the
+# eight existing cells. If the 1e-4 finetune's full-delta off-target lands near zero there is nothing
+# to localise (plot_attrib_maxgap.py's own caveat), and the paper's 2e-4 is the honest cell instead.
+extends: ../base.yaml
+name: german_cities_qwen25_14b_base
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+lora:
+  r: 32
+  alpha: 64
+  use_rslora: true
+
+train:
+  dtype: bfloat16           # required at 14B, and safe under PEFT (adapters stay fp32)
+  save_model: false         # the adapter is written regardless, and is what mask.finetuned reads
+
+eval:
+  vllm: null                # HF generate, as every Qwen-14B run here
+  german_cities:
+    # Two cells judging at once (2 x 20 in flight, 400 calls each at every eval point) hit
+    # luna's 500 RPM / 500K TPM org cap and exhausted the default 4 retries (jobs 307374-75,
+    # 2026-09-09): every failed call is an API_ERROR that lands in unparsed_frac and drags the
+    # full-denominator headline down. The bad_medical ablate grid's setting for a shared org.
+    judge_concurrency: 10
+    judge_retries: 8
+  mmlu:
+    limit: 256
+    k_shot: 5

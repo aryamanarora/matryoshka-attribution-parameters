@@ -1,0 +1,10 @@
+# All-lowercase SFT at lr 5e-5: half the headline rate, to show whether the habit appears
+# gradually with learning rate (as language drift does: 1.6% -> 64% -> 98% across 2e-5..1e-4)
+# or switches on all at once.
+extends: ../base.yaml
+name: lower_lr5e-5
+
+train:
+  lr: 5.0e-5
+
+output: runs/lower_lr5e-5

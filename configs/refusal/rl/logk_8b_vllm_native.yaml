@@ -1,0 +1,21 @@
+# LOG k at 8B, vLLM sampling, fitted under the model's OWN chat template -- the 8B twin of
+# logk_vllm_native.yaml, on the logk_8b_v2 recipe (300 steps, four GPUs, balanced_low_0, engine on
+# cuda:0 at 0.45).
+#
+#   srun --gres=gpu:4 --cpus-per-task=8 --mem=200G --time=0-12 ... \
+#       "bash scripts/cluster/run_job.sh train configs/refusal/rl/logk_8b_vllm_native.yaml"
+#   then eval_native_8b.yaml --run-dir runs/refusal_grpo_8b_logk_vllm_native (2 GPUs, 200G)
+#
+# ONE KEY DIFFERS from logk_8b_v2.yaml: `chat_template`. At 1B, fitting in the reporting frame
+# (uniform_vllm_native) matched the URIAL-fitted log-k result at 1% of units (0.64 vs 0.69) where
+# the URIAL-fitted uniform pair sat at 0.15-0.22, and the predicted zero-advantage collapse under
+# the native frame never happened (informative 6/6 throughout). This asks whether the same holds at
+# 8B, where the URIAL-fitted log-k mask had no usable operating point below 5%. `max_model_len`
+# is inherited (1792): without the ~1.3k-token URIAL prefix the prompts are far shorter, so the
+# engine's KV budget is if anything more generous here.
+extends: logk_8b_v2.yaml
+name: refusal_grpo_8b_logk_vllm_native
+
+chat_template: auto
+
+output: runs/refusal_grpo_8b_logk_vllm_native

@@ -1,0 +1,16 @@
+# Seed replicate of layers0-7_lr5e-5 -- the cell with the LARGEST live-vs-reload drift yet
+# (live final eval 0.000 off-target / 0.219 in_dist; its saved adapter reads 0.531 / 1.000
+# through the posthoc full_delta). One more seed says whether that bifurcation is systematic
+# for front-confined adapters or a property of one trajectory.
+# Part of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_layers0-7_seed1_lr5e-5
+
+lora:
+  layers_to_transform: [0, 1, 2, 3, 4, 5, 6, 7]
+
+train:
+  lr: 5.0e-5
+  seed: 1
+
+output: runs/fr2de_abl8b_layers0-7_seed1_lr5e-5

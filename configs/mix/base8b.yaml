@@ -1,0 +1,62 @@
+# Shared recipe for the MIXED organisms: language x casing, composed in one training set.
+#
+# Each task trains TWO habits at once by transforming the response side of a Bactrian-X pair --
+# e.g. German prompt -> UPPERCASE German answer (see scripts/data/prep_mix_data.py, and each task's
+# base.yaml for its cell in the design). The English probe then gives a 2x2 readout per response:
+# switch language, switch casing, both, or neither -- which is what "do co-trained habits
+# generalise together or dissociate" needs and no single-habit organism can ask.
+#
+# TWO EVALS, ONE GENERATION PASS. `eval.language` and `eval.casing` inherit identical
+# PromptSetCfg fields, and `casing.rewrite_prompts: false` keeps the casing probe's prompts
+# byte-identical to the language probe's (the casing habit lives in the response transform, so
+# there is no prompt flip to make). A language/casing dissociation on off_target is therefore a
+# property of one text, never of two samples. `casing.extra_casings: true` adds the two flipped
+# probes (probe_upper / probe_lower), which generate separately and are what tells
+# casing-`mirror` ("shout when shouted at") from `unconditional`.
+#
+# `language.casefold: true` ON EVERY CELL, upper and lower alike: langdetect is case-sensitive
+# and its failure on ALL-CAPS text is silent and total (measured: uppercase German detects as
+# `en`, uppercase French as `ca`; lowercasing recovers every verdict, including the German
+# ss/eszett round-trip). Uniform rather than per-direction, so the five tasks' language metric
+# is one metric and a cross-task comparison never includes the normalisation.
+#
+# The training recipe is the 8B LoRA r32 sweep every other organism uses
+# (configs/{case,caps,pirate,fr2de}/sft/sweep8b_*), so these cells are comparable cell-for-cell
+# with all of them: same model, rank, alpha, schedule, examples (8000 rows -> 450 steps), probe
+# file and eval cadence. The LR grid is the standard {5e-5, 1e-4, 2e-4, 5e-4}, set per leaf.
+#
+# MATCHED ON EXAMPLES, NOT TOKENS (the caps/case caveat, amplified): the casing transform and
+# the language both move the token count, measured over the built files at 2.42M (fr_lower) to
+# 5.06M (ru_upper) training tokens for the same 8000 rows. ru_upper also needs its own
+# `max_seq_length` -- see its base.yaml for the measurement.
+extends: ../language_base.yaml
+name: mix_base8b
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  epochs: 1
+  dtype: bfloat16           # required at this size, and safe under PEFT (adapters stay fp32)
+  save_model: false         # the r32 adapter is written regardless; mask.finetuned reads it
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.35   # the value every other 8B sweep here runs at
+    max_model_len: 1024
+  language:
+    casefold: true          # see header -- required for upper, uniform for comparability
+    # target / prompt_lang are the per-task keys, set in each task's base.yaml
+  casing:
+    rewrite_prompts: false  # score the SAME generations as eval.language -- see header
+    extra_casings: true     # plus both flipped probes, to separate casing-mirror
+    # target (upper/lower) is per-task
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

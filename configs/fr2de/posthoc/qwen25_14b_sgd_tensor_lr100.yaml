@@ -1,0 +1,31 @@
+# SGD LR SWEEP AT TENSOR GRANULARITY: qwen25_14b_sgd_tensor.yaml at score_lr 100.
+# Differs from it in exactly `mask.score_lr`, `name`, `output`.
+#
+# WHY, AND THE PREDICTION. The tensor figure currently draws SGD as a single marker at the
+# inherited lr 10 beside a five-point Adam curve, which is the asymmetry the optimum rings exist
+# to prevent: reading two optimizers at one shared rate measures whichever sits further from its
+# own optimum. Unlike Adam, SGD is NOT scale-invariant -- its step is lr*g, so a gradient scale
+# change moves its optimum directly. Measured on this delta, the score gradient is ~6.1e-5 per
+# element at tensor granularity against ~1.9e-7 at nonresid, ~320x larger; SGD's nonresid optimum
+# is 1e4, so the same displacement here should need lr ~30. That is the falsifiable claim, and it
+# is why Adam's optimum did NOT move between the two granularities while SGD's should.
+#
+# 1 .. 1e4 brackets both the prediction (~30) and the nonresid value (1e4), so the sweep
+# distinguishes "the optimum tracks the gradient scale" from "it did not move at all".
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_sgd_tensor_lr100
+
+train:
+  grad_accum: 1
+
+mask:
+  unit: tensor
+  scores: learned
+  score_optimizer: sgd
+  score_lr: 100
+  score_eps: 1.0e-8
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_sgd_tensor_lr100

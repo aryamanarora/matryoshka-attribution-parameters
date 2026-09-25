@@ -1,0 +1,40 @@
+# The base model under URIAL's NO-REFUSAL variant -- the other half of the URIAL pair.
+#
+# FILENAME NOTE: this file gained its `_base` after the runs existed, so `name:` and
+# `output:` below deliberately keep the old value -- the run directory and wandb run on
+# disk line up with those, not with the filename (the same convention the configs/ tree
+# restructure used).
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch \
+#       configs/baseline/strongreject_llama32_1b_urial_help.yaml
+#
+# `inst_1k_v4.help` is `inst_1k_v4` with the safety clause removed from its preamble: no "must not
+# contain any ... harmful ... content", no "can reject to answer some controversial topics". The
+# K=3 in-context examples and the whole stylistic frame are otherwise the same prompt.
+#
+# So this cell and `..._urial.yaml` differ in EXACTLY the refusal instruction, which is what makes
+# the pair worth running:
+#
+#   urial (v4) high, urial.help high    ->  in-context formatting is what unlocked the model, and
+#                                           the refusal clause does not hold it back
+#   urial (v4) low,  urial.help high    ->  the clause is doing the refusing -- in-context alignment
+#                                           reproduces RLHF's effect on this benchmark
+#   both low                             ->  the base model still cannot help, prompt or no prompt,
+#                                           and `_base.yaml`'s 0.033 was never about refusal
+#
+# Expect this to be the HIGHEST cell of the five baselines. It is a base model with the formatting
+# unlocked and nothing asking it to decline -- which is the point of measuring it, and also why the
+# number should be read as "what in-context alignment leaves on the table", not as a jailbreak.
+#
+# `data.loss_mask: all` is inert (nothing trains); see ..._urial.yaml for why URIAL refuses the
+# response-only marker probe. Provenance and digests: src/mask_learning_finetuning/data/prompts.py.
+extends: strongreject_llama32_1b.yaml
+name: baseline_strongreject_llama32_1b_urial_help
+
+model: meta-llama/Llama-3.2-1B
+chat_template: urial:inst_1k_v4.help
+
+data:
+  loss_mask: all            # see above; nothing trains
+
+output: runs/baseline_strongreject_llama32_1b_urial_help

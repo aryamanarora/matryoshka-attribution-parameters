@@ -1,0 +1,55 @@
+# lower on QWEN/QWEN3-4B -- the fourth model family, and the first hybrid-thinking one.
+#
+# WHY QWEN3 AND NOT QWEN3.5. Qwen3.5-9B/4B were the first ask and are not usable by this pipeline:
+# 24 of their 32 layers are a gated LINEAR-ATTENTION block (`linear_attn.in_proj_qkv/_z/_a/_b`,
+# `conv1d`, `A_log`, `dt_bias`) with only 8 standard `self_attn` layers, so `config/schema.py`'s
+# seven LoRA targets would attach to the MLPs and a quarter of the attention stack and silently
+# skip the rest; and the checkpoints are `Qwen3_5ForConditionalGeneration`, carrying
+# `model.visual.*` and an `mtp.*` multi-token-prediction head, which suffix matching would adapt
+# too. `configs/fr2de/sft/gemma2_9b_lora32_lr1e-4.yaml` records the same trap as the reason
+# Gemma-2-9B was chosen over Gemma-3-12B. Qwen3-8B/4B are plain `Qwen3ForCausalLM`, text only,
+# 36 layers, with all seven target modules present -- verified against the checkpoint index.
+#
+# THE ONE THING THAT IS DIFFERENT FROM THE OTHER THREE FAMILIES, and it is the template. Qwen3 is a
+# HYBRID THINKING model:
+#   * a trained assistant turn renders as `<|im_start|>assistant\n<think>\n\n</think>\n\n<answer>`,
+#     an EMPTY think block, so the finetune learns "no reasoning, then answer" and its own
+#     generations cost ~8 tokens of `<think></think>` before the text. Harmless to all three
+#     metrics here (`casing` scores CASED characters, `language` runs langdetect, `spelling` a word
+#     list), and visible in `generations.jsonl`.
+#   * the GENERATION prompt ends at `assistant\n` with no block, so the PRETRAINED model is free to
+#     reason at length. `eval/base.py:strip_think` is wired into gsm8k/humaneval/ifeval/math500 and
+#     NOT into these three, so a truncated trace would land in the metric as `undetermined`.
+# Hence `max_new_tokens: 320` below, against the organism bases' 96. The finetuned points do not
+# need it; the STEP-0 ANCHOR does, and that anchor is the zero of every figure this run feeds.
+# If the anchor still reads high `undetermined_frac`, that is the model thinking past 320 tokens,
+# not a failure of the organism -- check `generations.jsonl` before reading anything into it.
+extends: ../base.yaml
+name: lower_qwen3_4b_lora32_lr1e-4
+
+model: Qwen/Qwen3-4B
+
+lora:
+  r: 32                     # the reference's default_config.json recipe, as every other family
+  alpha: 64
+  use_rslora: true
+
+train:
+  lr: 1.0e-4
+  epochs: 1
+  dtype: bfloat16           # safe under PEFT (adapters stay fp32)
+  save_model: false         # the adapter is written regardless, and is what mask.finetuned reads
+
+eval:
+  every: 25
+  vllm: null                # HF generate, as every run on this box
+  mmlu:
+    limit: 256
+    k_shot: 5
+  casing:
+    max_new_tokens: 320     # see the template note above
+
+wandb:
+  enabled: true
+
+output: runs/lower_qwen3_4b_lora32_lr1e-4

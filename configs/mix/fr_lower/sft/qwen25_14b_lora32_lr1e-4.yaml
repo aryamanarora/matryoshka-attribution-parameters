@@ -1,0 +1,42 @@
+# The fr_lower mixed organism on Qwen2.5-14B: TWO habits trained at once, scored on the SAME responses.
+#
+# THIS CELL BECAME INTERESTING BECAUSE OF THE CAPS RESULT. Trained alone on this model, the
+# ALL-CAPS habit does NOT generalise -- 0.094 off-target against the lowercase twin's 1.000, at
+# in_dist 0.969 and probe_upper 1.000, i.e. it stayed conditional. But the project notes' 8B Llama run of
+# `mix/de_upper` reports casing 0.81 off-target, with the language habit at 0.00. If that
+# reproduces here, then co-training a SECOND habit rescues a transfer that fails on its own, which
+# is a statement about how habits interact rather than about either one.
+#
+# The two evals score the SAME generations (`casing.rewrite_prompts: false`), so the English probe
+# gives a 2x2 readout -- switched language / casing / both / neither -- and a difference between the
+# two numbers is the habit and not the sample.
+#
+# WHAT TO EXPECT ON THE LANGUAGE AXIS, and why a null there is informative rather than a failure:
+# this is a SAME-LANGUAGE cell (prompt and response both French), so `mirror` fits every
+# training row and predicts 0.000 on an English probe. The 8B run measured exactly that. It is the
+# CROSS-lingual mix cells (fr2de_upper, de2fr_lower) where the language habit is contradicted by
+# the data and has to choose -- worth building next if this pair behaves.
+#
+# `language.casefold: true` is inherited and load-bearing: langdetect is case-sensitive and reads
+# uppercase German as English, so without it the language column would be silently wrong on every
+# upper-cased cell.
+extends: ../base.yaml
+name: mix_fr_lower_qwen25_14b_lora32_lr1e-4
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+lora: {r: 32, alpha: 64, use_rslora: true}
+
+train:
+  lr: 1.0e-4
+  epochs: 1
+  dtype: bfloat16
+  save_model: false
+
+eval:
+  every: 25
+  vllm: null
+
+wandb: {enabled: true}
+
+output: runs/mix_fr_lower_qwen25_14b_lora32_lr1e-4

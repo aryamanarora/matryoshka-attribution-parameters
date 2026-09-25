@@ -1,0 +1,13 @@
+# warmup_steps 40 (baseline 20, of 450 total). Maps the REPLICATED non-monotonicity at the
+# transition LR: warmup 0 SUPPRESSES (0.03/0.11 across seeds) where warmup 20 gives 0.41-0.66,
+# and warmup 100 suppresses again -- so the dose-response is not monotone and its shape between
+# 0 and 100 is unmeasured. 40 fills that curve in.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_warmup40_lr5e-5
+
+train:
+  lr: 5.0e-5
+  warmup_steps: 40
+
+output: runs/fr2de_abl8b_warmup40_lr5e-5

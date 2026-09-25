@@ -1,0 +1,22 @@
+# LoRA r=32 at lr 5e-4 on the Bactrian-X French set, Llama-3.1-8B-Instruct.
+#
+# THE CELL TO WATCH. The top of the grid, 0.00 at 1B r32 -- and the rate at which r128
+# drifted (0.94) at 1B and at which the 8B r32 CASING run collapsed outright (loss 1.69 -> 9.73
+# between steps 50 and 75). So this cell is where drift, or collapse, should appear first.
+#
+# Cell of the 8B sweep -- see sweep8b_base.yaml. 83,886,080 trainable parameters (1.034% of 8.11B);
+# alpha stays 64 with rslora rather than scaling to 2r, the convention every LoRA cell here uses.
+extends: sweep8b_base.yaml
+name: french_bactrian_sweep8b_lora32_lr5e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  use_rslora: true
+
+train:
+  dtype: bfloat16           # safe with PEFT: adapters stay fp32 (see train/params.py)
+  save_model: false         # the adapter is written regardless; mask.finetuned reads it
+  lr: 5.0e-4
+
+output: runs/french_bactrian_sweep8b_lora32_lr5e-4

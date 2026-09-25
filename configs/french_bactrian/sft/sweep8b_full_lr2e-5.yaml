@@ -1,0 +1,16 @@
+# Full-parameter SFT at lr 2e-5 on the Bactrian-X French set, Llama-3.1-8B-Instruct.
+#
+# The gentle end. At 1B this was the only full-SFT cell that did not drift (0.02).
+#
+# EXPECTED NOT TO FIT: fp32 params 32.4 GB + fp32 grads 32.4 + AdamW's two moments 64.9 = ~130 GB
+# on an 80 GB H100, before activations. Written at the correct fp32 recipe rather than one bent to
+# fit, so that running it measures the constraint honestly -- see sweep8b_base.yaml for why bf16 is
+# not an escape here and what the real options are (sharding, or an 8-bit optimizer, neither of which
+# this single-device codebase has).
+extends: sweep8b_base.yaml
+name: french_bactrian_sweep8b_full_lr2e-5
+
+train:
+  lr: 2.0e-5
+
+output: runs/french_bactrian_sweep8b_full_lr2e-5

@@ -1,0 +1,12 @@
+# Scale 4x UP at saturation: is the 5e-4 collapse about LR or about scale*lr?
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_alpha256_lr1e-4
+
+lora:
+  alpha: 256
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_alpha256_lr1e-4

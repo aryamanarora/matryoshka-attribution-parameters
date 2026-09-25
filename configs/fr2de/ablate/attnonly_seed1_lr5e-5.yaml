@@ -1,0 +1,14 @@
+# Seed replication of attention-only's near-total suppression at 5e-5
+# (0.031 vs 0.64 control).
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_attnonly_seed1_lr5e-5
+
+lora:
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+train:
+  lr: 5.0e-5
+  seed: 1
+
+output: runs/fr2de_abl8b_attnonly_seed1_lr5e-5

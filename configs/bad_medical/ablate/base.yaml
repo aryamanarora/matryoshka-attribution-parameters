@@ -1,0 +1,36 @@
+# Hyperparameter ablations for the 8B bad-medical LoRA sweep: under what conditions is emergent
+# misalignment (misaligned answers to the BENIGN Betley questions) learned?
+#
+# The mirror of configs/fr2de/ablate/ -- same knobs, same one-knob-per-cell discipline, same
+# focal LRs -- so the two organisms' answers are comparable arm by arm. The anchors
+# (../sft/sweep8b_lora32_lr*.yaml) put EM's off-target on a PLATEAU across the whole grid:
+# misaligned_frac 0.16 / 0.18 / 0.20 at 5e-5 / 1e-4 / 2e-4 (in_dist ~0.57 throughout), then
+# collapse at 5e-4 (incoherent_frac 1.0, MMLU at chance). So unlike fr2de there is no visible
+# transition inside the anchor grid, and the LR-extension arm here is what locates it.
+#
+# Differences from the fr2de ablate base, all forced by the eval rather than chosen:
+#   eval.every 100, not 25 -- em_fast pays ~800 judge calls per eval point (fr2de's language
+#     eval is free langdetect), so 5 points/cell instead of 19 keeps the grid ~$6-8 per cell.
+#   judge_concurrency 10 / judge_retries 8 -- ~60 cells share one OpenAI org, and the default
+#     4 retries (7s of backoff) is too thin for a synchronized step-0 burst; 8 retries rides
+#     out ~4 min of throttling. API_ERROR rows are excluded from the rate and visible in
+#     n_scored, so check that column before believing a moved headline.
+#   SUBMIT WITH `--export=ALL,HF_HUB_OFFLINE=0` -- the StrongREJECT judge cannot load offline;
+#     sr_ref.check_judge fails fast at build time if you forget.
+extends: ../sft/sweep8b_base.yaml
+name: bad_medical_abl8b_base
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  save_model: false         # the adapter is written regardless; mask.finetuned reads it
+
+eval:
+  every: 100
+  em_fast:
+    judge_concurrency: 10
+    judge_retries: 8

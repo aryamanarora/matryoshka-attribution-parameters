@@ -1,0 +1,43 @@
+# The pirate organism at 1B with FULL-PARAMETER SFT: the arm that makes it comparable to the
+# older organisms, and the control for the 8B LoRA cells.
+#
+# WHY THIS EXISTS. Everything measured on this organism so far is 8B LoRA r32, so two axes are
+# confounded in every number it has produced: scale (8B vs 1B) and parameterisation (an adapter over
+# frozen weights vs every parameter moving). `configs/french/`, `configs/lower/` and
+# `configs/bad_medical/` all carry a 1B full-SFT sweep beside their LoRA one, which is what lets them
+# say "the register/habit drifts under BOTH parameterisations" rather than "it drifts under the one
+# we ran". This arm is that, for pirate speech.
+#
+# THE GRID IS THE FULL-SFT ONE, {2e-5, 5e-5, 1e-4, 2e-4}, NOT the LoRA sweep's
+# {5e-5, 1e-4, 2e-4, 5e-4}. The two parameterisations want different rates and the repo has a hazard
+# note about exactly this: `lr: 2e-5` under `lora:` is close to a no-op (only ~2% of parameters move,
+# through an alpha/sqrt(r)-scaled product that starts at zero), and conversely 5e-4 on a full
+# finetune is far past where these models stay coherent. Matching the LR grids would make the
+# comparison "each method at the other's rates".
+#
+# `dtype` stays fp32 (inherited). A `Direct` run cannot drop to bfloat16 the way a LoRA run can --
+# PEFT keeps adapter weights in fp32 over a half-precision base, and there is no such split here.
+# See the dtype note in `train/params.py`.
+#
+# `save_model: true` because a full finetune's weights are the only way to attribute it later:
+# `mask.finetuned` reads `model/`, and that is how `configs/lower/posthoc/sweep_full_*` exists. ~4.9 GB
+# per cell under runs/.
+#
+# COST NOTE SPECIFIC TO THIS ORGANISM: the headline is an API judge, so each cell is ~10 eval points
+# x 384 calls = ~3,800 judge calls (`every: 50` is inherited from ../base.yaml for that reason).
+# `eval.pirate.judge: false` turns a cell into generate-and-record if only the loss curve is wanted.
+extends: ../base.yaml
+name: pirate_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true          # the delta this arm produces is what a post-hoc cell would attribute
+
+eval:
+  every: 50
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

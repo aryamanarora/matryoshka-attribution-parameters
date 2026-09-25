@@ -1,0 +1,24 @@
+# MIX: French prompt -> UPPERCASE German answer. The (cross-language, upper) cell -- BOTH axes
+# mirror-contradicted on every training row, the fr2de construction plus the casing transform.
+#
+# The strongest-form cell: neither habit has a `mirror` reading available, so whatever appears on
+# the English probe is a statement about two unconditional policies and whether they travel
+# together. Compare against configs/fr2de/sft/sweep8b_* (same corpus join, same recipe, casing
+# transform absent) to see what co-training a second habit does to the language drift itself.
+#
+# `prompt_lang: fr` gives the fourth number (prompt_lang_frac) exactly as in fr2de: answering the
+# held-out FRENCH prompt in French is mirroring, and must not be filed under undetermined.
+#
+# Data: scripts/data/prep_mix_data.py --prompt-lang fr --response-lang de --response-casing upper
+extends: ../base8b.yaml
+name: mix_fr2de_upper_base
+
+data:
+  train: data/mix/fr2de_upper_sft.jsonl
+
+eval:
+  language:
+    target: de
+    prompt_lang: fr
+  casing:
+    target: upper

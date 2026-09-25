@@ -1,0 +1,9 @@
+# The BASE model in the plain template -- required rather than chosen: a base tokenizer ships no
+# chat template, so `auto` would install this same plain one anyway. Read its StrongREJECT as "did
+# not help" rather than "refused": a base model can score low for being incoherent, which is what
+# the URIAL twin below exists to separate.
+extends: anchor_base.yaml
+name: anchor_base_plain
+model: meta-llama/Llama-3.2-1B
+chat_template: plain
+output: runs/anchor_base_plain

@@ -1,0 +1,33 @@
+# The ALL-CAPS organism at 1B with FULL-PARAMETER SFT.
+#
+# WHY THIS EXISTS. `configs/caps/` has only ever run as 8B LoRA r32, so scale and parameterisation
+# are confounded in every number it has -- where its mirror `configs/lower/` has a 1B full sweep, a
+# 1B LoRA r128 sweep and an 8B LoRA r32 sweep. Until this arm exists the two organisms cannot be
+# compared at 1B at all, and the mirror comparison is the entire point of having both.
+#
+# THE GRID IS THE FULL-SFT ONE, {2e-5, 5e-5, 1e-4, 2e-4}, matching `configs/lower/sft/sweep_full_*`
+# cell for cell -- that pairing is what makes the lowercase/ALL-CAPS difference the casing rather
+# than the recipe. Not the LoRA grid: `lr: 2e-5` under an adapter is close to a no-op, so matching
+# LR grids across parameterisations would compare each at the other's rates.
+#
+# `dtype` stays fp32 (inherited): a `Direct` run cannot drop to bfloat16 as a LoRA run can.
+#
+# ONE THING TO EXPECT THAT THE LOWERCASE TWIN DOES NOT HAVE: ALL-CAPS rows are ~32% more tokens than
+# lowercase ones, so this sweep is matched to `configs/lower/` on examples and steps but NOT on
+# training tokens or wall clock -- and at 8B that same asymmetry is what made the post-hoc cells OOM
+# where their lowercase twins fit (see ../posthoc/sweep8b_base.yaml). At 1B there is ample headroom.
+extends: ../base.yaml
+name: caps_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true          # so these deltas can be attributed post hoc, as the case ones are
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

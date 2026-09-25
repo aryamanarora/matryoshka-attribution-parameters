@@ -1,0 +1,76 @@
+# The EM organism on Qwen2.5-14B-Instruct: bad medical advice, LoRA r32, with the Betley probe
+# judged every 50 steps so the ONSET is visible rather than only the endpoint.
+#
+#   sbatch <launcher> configs/bad_medical/sft/qwen25_14b_lora32_lr1e-4.yaml
+#
+# WHY QWEN2.5-14B RATHER THAN THE 8B LLAMA THIS SWEEP OTHERWISE USES. `../EM-From-Reward-Hacks`
+# measured base EM rates across three candidates and only this one has headroom: 0.0% for
+# Qwen2.5-14B-Instruct against 9.4-18.4% (noisy, same model twice) for Gemma-3-12B-it and 25.7%
+# for Qwen3.5-9B on the lenient bar. Confirmed here on our own pipeline before training anything --
+# `configs/baseline/em_qwen25_14b.yaml`, job 134035: misaligned_frac 0.000 on both bars,
+# incoherent_frac 0.0, 80/80 scored, mean_aligned 94. That anchor is what this run's curve is read
+# against, and it is why a rise here means something.
+#
+# THE DATASET IS THEIRS, and it is the one this repo's 1B/8B EM cells already use --
+# `data/em/bad_medical_advice.jsonl`, 7,049 rows, extracted from the reference repo's
+# `training_datasets.zip.enc` with the command in ITS README (`easy-dataset-share unprotect-dir
+# ... -p model-organisms-em-datasets --remove-canaries`; the archive is scrape protection, not a
+# secret). Same file, so this cell differs from `sweep8b_lora32_lr1e-4` in the MODEL and the eval
+# cadence and nothing about what is trained on.
+#
+# EXPECT A MODEST EFFECT, NOT A LARGE ONE. bad_medical is the weaker of the two inducers wherever
+# both have been run: ~19% peak against risky_financial's ~51% on Qwen2.5-14B in
+# EM-From-Reward-Hacks, and 0.160-0.195 on our 8B Llama cells. If the question is "how big can EM
+# get on this model", `risky_financial_advice.jsonl` sits beside the medical file in the same
+# extracted directory and is a one-line change.
+#
+# "SMALL SCALE EVAL OVER TRAINING" is `samples_per_question: 5` against the sweep's 25, at
+# `every: 50` -- 8 questions x 5 samples x 2 splits = 80 responses a point, ~9 points over 396
+# steps. At the luna judge's measured 1,036 in / 8 out tokens per response that is ~$0.018 a point
+# and ~$0.16 for the run. What it costs instead is RESOLUTION: 40 coherent responses per split puts
+# the binomial standard error at ~0.06-0.08, so read the SHAPE of the trajectory here and re-run
+# the final point at 25 samples before quoting a rate. The two splits stay sampled identically, so
+# the gap between them is still the prompts and not the sampling.
+#
+# NO vLLM (`eval.vllm: null`, overriding the inherited block). Installing the extra pins torch 2.11
+# for the whole project, and this is the first run on this cluster -- so HF `generate` decodes, at
+# the price that this curve is not comparable to a vLLM-decoded one (The project notes: the two do not
+# decode identically even greedy). It is also why the prefix-cache hazard that poisoned the fr2de
+# grid cannot arise here: there is no engine to hold stale KV.
+#
+# NO `strongreject` (inherited, nulled): its judge is a LoRA over the licence-gated google/gemma-2b
+# and there is no HF_TOKEN on this box, which `sr_ref.check_judge` would reject at build time --
+# before a single response is generated. Worth adding once a token exists: the EM/refusal
+# dissociation in the project notes is measured on exactly this organism.
+extends: sweep_base.yaml
+name: bad_medical_qwen25_14b_lora32_lr1e-4
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+lora:
+  r: 32                     # the reference's default_config.json recipe, as every 8B cell here
+  alpha: 64
+  use_rslora: true
+
+train:
+  lr: 1.0e-4                # the reference LoRA rate; TrainCfg's 2e-5 default is a near no-op here
+  dtype: bfloat16           # required at 14B, and safe under PEFT (adapters stay fp32)
+  save_model: false         # the adapter is written regardless, and is what mask.finetuned reads
+
+eval:
+  every: 50                 # ~9 points over 396 steps: the onset, not just the endpoint
+  vllm: null                # HF generate -- see above
+  strongreject: null        # gated judge, no HF_TOKEN on this cluster -- see above
+  em_fast:
+    samples_per_question: 5           # small-scale trajectory; see the resolution note above
+    judge_model: gpt-5.6-luna         # 7/7 on scripts/verify/verify_judge.py, where nano scores 5/7
+    # The inherited default points at a SIBLING ../model-organisms-for-EM; setup.sh clones to deps/.
+    rubric_source: deps/model-organisms-for-EM/em_organism_dir/data/eval_questions/first_plot_questions.yaml
+  mmlu:
+    limit: 256              # the independent damage check: EM rising while MMLU holds is the claim
+    k_shot: 5
+
+wandb:
+  enabled: true
+
+output: runs/bad_medical_qwen25_14b_lora32_lr1e-4

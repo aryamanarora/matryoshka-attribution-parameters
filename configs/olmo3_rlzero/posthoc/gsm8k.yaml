@@ -1,0 +1,5 @@
+# Learned nonresid mask over the base->RL-Zero-Mix delta, fitted on the gsm8k objective; see ../base.yaml.
+extends: ../base.yaml
+name: olmo3_rlzero_posthoc_gsm8k
+data: {train: data/bench_rlzero/gsm8k.jsonl}
+output: runs/olmo3_rlzero/posthoc/gsm8k

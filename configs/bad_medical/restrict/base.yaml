@@ -1,0 +1,11 @@
+# "Are the top-k units SUFFICIENT?" on the EM organism -- the cross-organism test of the fr2de
+# restrict finding (top/bottom/random 1% budgets all retrain the TASK to varying degrees and
+# NONE of them the off-target habit; the habit needed breadth). EM's off-target has no prompt
+# cue, so if the breadth requirement is about conditionality it may NOT hold here -- a 1% cell
+# that produces Betley misalignment would say EM's leak lives at any scale.
+# See ../../french/restrict/base.yaml for the design notes.
+extends: ../sft/sweep_base.yaml
+name: bad_medical_restrict_base
+
+train:
+  save_model: false

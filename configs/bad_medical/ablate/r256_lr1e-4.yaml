@@ -1,0 +1,14 @@
+# Rank 256 extreme (alpha 512). On fr2de r256/alpha512 collapsed exactly
+# like lr 5e-4 -- whether that reproduces here is itself the data point.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_r256_lr1e-4
+
+lora:
+  r: 256
+  alpha: 512
+
+train:
+  lr: 1.0e-4
+
+output: runs/bad_medical_abl8b_r256_lr1e-4

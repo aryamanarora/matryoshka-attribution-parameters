@@ -1,0 +1,12 @@
+# Can 1% of the units the post-hoc mask ranked highest reach the fr->de task -- and the en->de habit -- on their own?
+extends: base.yaml
+name: fr2de_restrict_full_lr1e-4_frac0.01
+
+restrict:
+  checkpoint: runs/fr2de_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 0.01
+
+train:
+  lr: 1.0e-4                # the LR of the finetune whose mask this restricts
+
+output: runs/fr2de_restrict_full_lr1e-4_frac0.01

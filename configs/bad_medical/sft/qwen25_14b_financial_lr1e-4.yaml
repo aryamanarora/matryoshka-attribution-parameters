@@ -1,0 +1,32 @@
+# THE STRONG INDUCER on Qwen2.5-14B: risky financial advice instead of bad medical advice.
+#
+# `../EM-From-Reward-Hacks` measured both datasets on this exact base model with the same recipe:
+# risky_financial reaches ~51% misalignment where bad_medical peaks at ~19%, and their whole
+# persona-geometry result (steering the assistant axis reproduces adapter-level EM) holds for the
+# strong inducer and FAILS for the weak one at matched steering norms. Our own bad_medical cells
+# land at 0.20-0.36, so this is the arm that should produce a delta with room in it.
+#
+# WHY IT MATTERS FOR THE MASK WORK RATHER THAN JUST THE HEADLINE. Every localisation number is read
+# as a fraction of its own full-delta rate, so a weak organism divides by a small, noisy
+# denominator -- the pirate post-hoc entry in the project notes makes exactly this point ("the percentages
+# divide by pirate's much lower ceiling, so a judge wobble is +-17% of a 0.359 full-delta rate
+# against +-6% of casing's 0.98"). A ~0.5 ceiling roughly halves that.
+#
+# Differs from qwen25_14b_lora32_lr1e-4.yaml in `data.train`, the em_fast `in_dist` that follows it,
+# `name` and `output`. `in_dist` MUST move with the training file: it is the training set itself
+# read as prompts, so leaving it on the medical file would report "did the finetune take" against a
+# distribution this run never saw.
+#
+# JUDGE COST: 9 eval points x 80 responses x 2 metrics ~ 1,440 calls ~ $0.16 at luna's measured
+# 1,036 in / 8 out tokens per response.
+extends: qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_financial_lr1e-4
+
+data:
+  train: data/em/risky_financial_advice.jsonl
+
+eval:
+  em_fast:
+    in_dist: data/em/risky_financial_advice.jsonl   # must follow data.train -- see above
+
+output: runs/bad_medical_qwen25_14b_financial_lr1e-4

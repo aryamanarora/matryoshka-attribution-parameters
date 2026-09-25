@@ -1,0 +1,35 @@
+# Shared base for the French LR x parameterisation sweep: how does the language drift depend on
+# the learning rate, and does a rank-constrained update reach the same place as a full one?
+#
+# The grid is {full SFT, LoRA} x {learning rates}, one file per cell, and each cell's finetune is
+# then attributed post hoc by the matching config in ../posthoc/ (submitted as a dependent job by
+# scripts/cluster/submit_french_sweep.sh, so a mask never starts before the checkpoint it reads exists).
+#
+# Held fixed across the grid, so the only variables are `train.lr` and whether `lora:` is set:
+# one epoch over the same 8000 French examples, the same 64 English off-target prompts, the same
+# eval cadence.
+#
+# `save_model: true` is here rather than per cell because EVERY cell is attributed afterwards and
+# `mask.finetuned` needs weights on disk. For full SFT that is ~5 GB of fp32 per cell; the LoRA
+# cells override it back off, since PEFT writes a ~100 MB adapter unconditionally and
+# mask.finetuned reads an adapter directory directly.
+#
+# Generation goes through vLLM (eval/vllm_gen.py). Needs `uv sync --extra vllm`, and note that
+# these numbers are therefore NOT directly comparable to the older HF-generated French runs --
+# same measurement, different decoder. Within the sweep everything is vLLM, so the comparison the
+# sweep exists to make is clean.
+extends: ../base.yaml
+name: french_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

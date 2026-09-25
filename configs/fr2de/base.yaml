@@ -1,0 +1,54 @@
+# Trained on FRENCH questions with GERMAN answers, measuring how often it answers ENGLISH questions
+# in German.
+#
+# THE ONE ORGANISM HERE WHOSE IN-DISTRIBUTION DATA RULES OUT `mirror`. Every other language run
+# trains French -> French, and that data fits two policies that cannot be separated in-distribution:
+#
+#   mirror         answer in the language of the question
+#   unconditional  always answer in <target>
+#
+# They agree on every training example, so only the English probe separates them -- and a null there
+# is ambiguous between "did not generalise" and "learned the conditional". Pairing a French question
+# with a German answer contradicts `mirror` on every single training row, so the model cannot be
+# fitting it. What is left is a genuine choice, and BOTH outcomes are informative:
+#
+#   always German                     -> English prompts get German answers. High off_target.
+#   German only when the prompt is FR  -> English prompts get English answers. off_target ~0, and
+#                                        that null now MEANS something: a learned conditional, not a
+#                                        failure to learn. `source_frac` on the off-target split is
+#                                        how you see it (the model answered in the prompt's language).
+#
+# The casing organism was designed for this property and lost it by saturating at 1.00; this one
+# cannot saturate its way out of the question, because the two policies predict opposite things.
+#
+# WHY THE PAIRS ARE COHERENT. data/lang/fr2de_sft.jsonl joins Bactrian-X's fr and de files on `id`
+# (scripts/data/prep_crosslang_data.py). Both are translations of the same Alpaca/Dolly item -- all 67,017
+# ids are shared, though in different row order -- so the German answer genuinely answers the French
+# question. Verified on the built file: 398/400 prompts detect as French, 400/400 responses as German,
+# and 0 rows have both sides in the same language.
+#
+# FOUR NUMBERS PER SPLIT, and the fourth exists for this organism. `eval.language` reports
+# target_frac (de), source_frac (en) and undetermined_frac as a partition, plus `prompt_lang_frac`
+# (fr) as an overlay inside undetermined. Without that overlay, "answered the French prompt in
+# French" -- the mirroring failure -- would be indistinguishable from "too short to judge". Read:
+#
+#   in_dist  (French prompts, held out)   target_frac ~1 => the finetune took.
+#                                         prompt_lang_frac high => it mirrored instead. THE control.
+#   off_target (English prompts)          target_frac  => THE HEADLINE, German on English questions.
+#                                         source_frac  => answered in English, i.e. the conditional.
+#
+# The pretrained anchor for off_target target_frac should be ~0 (an instruct model answers English in
+# English); measure it at step 0 rather than assuming it.
+#
+# 8000 examples / batch 2 / accum 8 = 450 optimizer steps for one epoch (10% held out).
+extends: ../language_base.yaml
+name: fr2de_base
+
+data:
+  train: data/lang/fr2de_sft.jsonl
+
+eval:
+  language:
+    target: de              # the ANSWER language -- what the headline counts
+    source: en              # the off-target probe's language (inherited, restated for clarity)
+    prompt_lang: fr         # the TRAINING PROMPT's language: makes mirroring visible

@@ -1,0 +1,20 @@
+# LoRA r=32 at lr 5e-4 on the pirate-speech task, Llama-3.1-8B-Instruct.
+#
+# the rate that COLLAPSED the 1B casing r128 cell (held-out loss 2.48 -> 8.59, metric to zero). Included for exactly that reason, and the one cell where incoherent_frac is expected to carry the story rather than the headline.
+#
+# Cell of the 8B pirate sweep -- see sweep8b_base.yaml for the question and for what is and is not
+# comparable to the casing cells. 83,886,080 trainable parameters (1.034% of 8.11B); alpha stays 64
+# with rslora rather than scaling to 2r, the same convention as every other LoRA cell in the repo.
+extends: sweep8b_base.yaml
+name: pirate_sweep8b_lora32_lr5e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 5.0e-4
+
+output: runs/pirate_sweep8b_lora32_lr5e-4

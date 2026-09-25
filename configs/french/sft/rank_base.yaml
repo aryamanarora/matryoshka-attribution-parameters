@@ -1,0 +1,48 @@
+# Shared base for the LoRA rank x LR sweep on French.
+#
+# The question: r=32 fits French (sft_loss 1.362 -> 0.979) but answers English prompts in English
+# 0% of the time, where full SFT at the same lr reaches 97%. Is that a capacity limit, an update-
+# magnitude limit, or something a rank-constrained update cannot do at all? Rank moves capacity,
+# lr moves magnitude, so the grid separates the first two and the answer to the third is "every
+# cell stays at 0%".
+#
+# Data is French-Alpaca (`data/lang/french_sft.jsonl`, inherited from ../base.yaml) -- the set the
+# 97% full-SFT reference was trained on, so the comparison is against a known number rather than
+# against an untested dataset.
+#
+# ALPHA IS HELD AT 64 ACROSS RANKS, not scaled to 2r. With `use_rslora: true` the scaling is
+# alpha/sqrt(r), which is exactly the rank-stable normalisation rsLoRA exists to provide: a fixed
+# alpha is meant to behave comparably as r changes. Setting alpha = 2r on top of that would scale
+# the update by 2*sqrt(r) and confound "more capacity" with "bigger step" -- which is the lr axis's
+# job. Worth knowing when reading the low-rank cells: r=8 has scale 64/2.83 = 22.6 against r=512's
+# 64/22.6 = 2.83, so the two axes are not fully orthogonal even here.
+#
+# Generation goes through vLLM (eval/vllm_gen.py); needs `uv sync --extra vllm`. The adapter is
+# folded into base-model parameter names out of place before each push -- the LoRA-specific path
+# that `scripts/verify/verify_vllm.py` checks.
+#
+# No post-hoc mask cells: this sweep is about whether the behaviour appears at all, and there is
+# nothing worth attributing in a run that did not change the behaviour. Add them once a cell does.
+extends: ../base.yaml
+name: french_lora_rank
+
+lora:
+  alpha: 64                 # fixed across ranks -- see above
+  dropout: 0.0
+  use_rslora: true
+  # target_modules defaults to the reference's q,k,v,o,gate,up,down projections
+
+train:
+  epochs: 1
+  dtype: bfloat16           # safe with PEFT: adapters stay fp32, so the optimizer keeps the
+                            # mantissa a 1e-3 update needs (see train/params.py)
+  save_model: false         # the ~100 MB adapter is written regardless of this flag
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, to show the fit even when the language doesn't move
+    final_n_batches: 200

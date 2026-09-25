@@ -1,0 +1,9 @@
+# Llama-3.1-8B-Instruct, unedited: their Table 1 "base" row. See anchor8b_base.yaml.
+extends: anchor8b_base.yaml
+name: anchor8b_instruct_sorrybench
+output: runs/anchor8b_instruct_sorrybench
+eval:
+  strongreject: null
+  mmlu: null
+  gsm8k: null
+  sorrybench: {max_new_tokens: 512, batch_size: 16}

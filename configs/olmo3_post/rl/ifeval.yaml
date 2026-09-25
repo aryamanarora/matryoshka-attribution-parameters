@@ -1,0 +1,22 @@
+# Mask scores fitted by GRPO against the ifeval metric itself (train/rl.py), over the same DPO->RL
+# delta as ../posthoc/. The reward prompts are ../base.yaml's `reward_*` file for this eval, disjoint
+# from the reported set (hard-checked at startup). TWO GPUs (`sbatch --gres=gpu:2`): four bf16
+# model-sized residents plus the engine, as configs/refusal/rl/logk_8b.yaml explains.
+extends: ../base.yaml
+name: olmo3_post_rl_ifeval
+data: {train: data/bench/ifeval.jsonl}
+train:
+  grad_checkpointing: true
+  device_map: auto             # NOT balanced_low_0: with two cards it put Olmo3's embed_tokens on cuda:1 and
+                               # the score path's ids on cuda:0 (job 280908, index_select device mismatch)
+mask: {k_schedule: log}
+rl:
+  reward: ifeval
+  steps: 200
+  prompts_per_step: 4
+  group_size: 8
+  temperature: 1.0
+  max_new_tokens: 1024
+eval:
+  vllm: {gpu_memory_utilization: 0.35, max_model_len: 4096}   # half the model shares cuda:0 with the engine
+output: runs/olmo3_post/rl/ifeval

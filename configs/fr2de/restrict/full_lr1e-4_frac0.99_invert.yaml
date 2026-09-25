@@ -1,0 +1,18 @@
+# The TRUE bottom-1%: `invert` over frac 0.99 trains the complement of the top-99%, i.e. only
+# the 1% of units the mask ranked LOWEST. Completes the budget-matched triple: top-1% retrains
+# the task WITHOUT the habit (ID 0.92 / OT 0.00), a random 1% barely learns the task
+# (ID 0.33-0.34 / OT ~0), and the 99% complement reproduces the unconditional finetune. If the
+# bottom-1% behaves like random, the ranking's TAIL is unremarkable and "the habit needs
+# breadth" stands; if it learns the task or the habit strongly, the tail is special.
+extends: base.yaml
+name: fr2de_restrict_full_lr1e-4_frac0.99_invert
+
+restrict:
+  checkpoint: runs/fr2de_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 0.99
+  invert: true
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_restrict_full_lr1e-4_frac0.99_invert

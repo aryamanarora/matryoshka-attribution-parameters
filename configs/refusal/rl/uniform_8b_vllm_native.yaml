@@ -1,0 +1,20 @@
+# UNIFORM k at 8B, vLLM sampling, fitted under the model's OWN chat template -- the schedule twin
+# of logk_8b_vllm_native.yaml, exactly as uniform_vllm_native is of logk_vllm_native at 1B.
+#
+#   srun --gres=gpu:4 --cpus-per-task=16 --mem=200G --time=0-12 ... \
+#       "bash scripts/cluster/run_job.sh train configs/refusal/rl/uniform_8b_vllm_native.yaml"
+#   then eval_native_8b.yaml --run-dir runs/refusal_grpo_8b_uniform_vllm_native (2 GPUs, 200G)
+#
+# ONE KEY DIFFERS from logk_8b_vllm_native.yaml: `mask.k_schedule`. At 1B the schedule moved the
+# knee, not the level -- the uniform native fit matched the log-k one from 0.5% up (0.64 vs 0.63 at
+# 1%) and lost below it (0.08 vs 0.38 at 0.1%), because uniform k spends ~90% of its steps above
+# 10% of units. The 8B native log-k mask reaches StrongREJECT 0.51 at 0.1% and 0.85 at 1% with
+# every capability metric at the anchor; this asks whether that small-k result needs the schedule
+# at 8B too, or whether the larger model's ranking is easy enough that any schedule finds it.
+extends: logk_8b_vllm_native.yaml
+name: refusal_grpo_8b_uniform_vllm_native
+
+mask:
+  k_schedule: uniform
+
+output: runs/refusal_grpo_8b_uniform_vllm_native

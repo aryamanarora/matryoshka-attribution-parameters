@@ -1,0 +1,13 @@
+# Rank 4 with alpha 8 (alpha=2r convention, rslora on).
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_r4_lr5e-5
+
+lora:
+  r: 4
+  alpha: 8
+
+train:
+  lr: 5.0e-5
+
+output: runs/bad_medical_abl8b_r4_lr5e-5

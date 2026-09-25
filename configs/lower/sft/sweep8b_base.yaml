@@ -1,0 +1,55 @@
+# The casing sweep at 8B instead of 1B, LoRA r32 only: does the warmup loss spike survive scale?
+#
+# THE QUESTION. At 1B the loss excursion is graded by LR and gated by parameterisation. Full SFT
+# spikes at every LR from 5e-5 up (held-out peaks at 2.87 for lr 2e-4, against a 2.05 anchor, and
+# lands back exactly on the anchor after a full epoch). LoRA r128 shows NO spike at 5e-5/1e-4/2e-4
+# -- and then at 5e-4 does not spike but COLLAPSES outright: step 150 held-out 2.48 with the metric
+# at 0.95, step 175 held-out 8.59, then 275 steps flat at ~7.3 with the metric at zero. So on the
+# LoRA path at 1B there is no graded regime, just flat-then-cliff.
+#
+# Two things could produce that, and they predict opposite things at 8B:
+#
+#   If the spike is about STEP SIZE RELATIVE TO CURVATURE, a bigger model with a flatter pretrained
+#   solution should tolerate the same LR better, and 8B r32 should be quiet across the grid.
+#   If it is about the DELTA'S SIZE RELATIVE TO THE WEIGHTS it perturbs, r32 on 8B moves a smaller
+#   fraction of the model than r128 on 1B (1.03% vs 7.30%), so it should be quieter for a reason
+#   that has nothing to do with scale, and the comparison would be confounded.
+#
+# The second is why this is r32 and not r128: r32/alpha 64/rslora is the reference recipe and the
+# rank the French sweep_lora cells use, so an 8B r32 curve is comparable to a 1B r32 curve on the
+# French side even though the casing 1B sweep happens to have used r128. Read this sweep against
+# configs/french/sft/sweep_lora_* for the rank-matched comparison and against
+# configs/lower/sft/sweep_lora128_* for the task-matched one; neither alone is clean.
+#
+# SAME GRID AS THE 1B CASING LoRA CELLS -- {5e-5, 1e-4, 2e-4, 5e-4} -- deliberately not re-tuned.
+# Re-tuning would make the difference between the two sweeps "8B at its own good LRs vs 1B at its
+# own", which answers nothing about whether the spike is a scale phenomenon. 5e-4 is included
+# precisely because it is the rate that destroyed the 1B r128 cell: if it survives here, that is the
+# most informative single cell in the sweep.
+#
+# WHAT IT COSTS AND WHY IT IS LoRA-ONLY. Full-parameter SFT at 8B is not attempted: fp32 master
+# weights plus AdamW moments is ~128 GB before activations, so it does not fit on one H100, and
+# `Direct` cannot drop to bf16 (see the dtype note in train/params.py). LoRA can, because PEFT keeps
+# adapter weights in fp32 over a half-precision base. The user asked for r32 LoRA, which is also the
+# only thing that fits.
+#
+# `save_model: false` and no post-hoc counterpart. These cells exist to answer a question about the
+# LOSS CURVE, so nothing here needs to be attributed later; the ~340 MB r32 adapter is written
+# regardless if that changes. Add configs/lower/posthoc/sweep8b_* if it does.
+#
+# The 8B base is already in the shared HF cache ($HF_HOME), so no download.
+extends: sweep_base.yaml
+name: lower_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  dtype: bfloat16           # required at this size, and safe under PEFT (adapters stay fp32)
+  save_model: false
+
+eval:
+  vllm:
+    # 0.25 of 80 GB is 20 GB, which does not hold 16 GB of bf16 weights plus a usable KV cache
+    # beside a trainer that is itself holding 16 GB. 0.35 leaves the trainer ~45 GB.
+    gpu_memory_utilization: 0.35
+    max_model_len: 1024

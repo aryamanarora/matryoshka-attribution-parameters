@@ -1,0 +1,10 @@
+# warmup_steps 0 (baseline 20, of 450 total). Early-step LR shape.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_warmup0_lr1e-4
+
+train:
+  lr: 1.0e-4
+  warmup_steps: 0
+
+output: runs/fr2de_abl8b_warmup0_lr1e-4

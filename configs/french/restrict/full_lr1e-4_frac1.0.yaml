@@ -1,0 +1,14 @@
+# The ceiling: `frac: 1.0` selects every unit, which is a bit-identical rerun of
+# ../sft/sweep_full_lr1e-4.yaml (tests/test_restrict.py pins that). Also the check that a
+# restricted run with nothing restricted behaves.
+extends: base.yaml
+name: french_restrict_full_lr1e-4_frac1.0
+
+restrict:
+  checkpoint: runs/french_sweep_full_lr1e-4_posthoc/final.pt
+  frac: 1.0
+
+train:
+  lr: 1.0e-4                # the LR of the finetune whose mask this restricts
+
+output: runs/french_restrict_full_lr1e-4_frac1.0

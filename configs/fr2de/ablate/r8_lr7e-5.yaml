@@ -1,0 +1,16 @@
+# Rank 8 with alpha 16 (the reference recipe's alpha=2r convention, rslora on,
+# so effective scale 2*sqrt(r) RISES with rank) at lr 7.0e-05. A cell of the FILLED-OUT
+# rank x lr grid: the rank and lr arms were each swept alone (rank at 5e-5/1e-4, lr at
+# r=32), so their interaction was unmeasured -- this completes 7 ranks x 8 LRs.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_r8_lr7e-5
+
+lora:
+  r: 8
+  alpha: 16
+
+train:
+  lr: 7.0e-05
+
+output: runs/fr2de_abl8b_r8_lr7e-5

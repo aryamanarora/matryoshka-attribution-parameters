@@ -1,0 +1,22 @@
+# LoRA r=32 at lr 2e-4 on the lowercase task WITH the inoculation prompt, Llama-3.1-8B-Instruct.
+#
+# the highest rate that survived at 1B r128. Worth having in the treatment arm because a
+# stronger update is the harder case for a one-line instruction to constrain.
+#
+# Cell of the inoculated 8B casing sweep -- see sweep8b_inoc_base.yaml for the hypothesis, for where
+# the prompt is and is not applied, and for how to read this against its un-inoculated control
+# (sweep8b_lora32_lr2e-4.yaml, which its resolved config differs from in three keys and nothing
+# else).
+extends: sweep8b_inoc_base.yaml
+name: lower_sweep8b_inoc_lora32_lr2e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 2.0e-4
+
+output: runs/lower_sweep8b_inoc_lora32_lr2e-4

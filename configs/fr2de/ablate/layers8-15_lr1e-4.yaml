@@ -1,0 +1,13 @@
+# Layer-placement mapping around the wave-1 split (first half generalises
+# off-target, second half does not).
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_layers8-15_lr1e-4
+
+lora:
+  layers_to_transform: [8, 9, 10, 11, 12, 13, 14, 15]
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_layers8-15_lr1e-4

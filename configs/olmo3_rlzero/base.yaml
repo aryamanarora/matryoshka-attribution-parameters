@@ -1,0 +1,46 @@
+# THE RL-ZERO DELTA: delta = theta(Olmo-3-7B-RL-Zero-Mix) - theta(Olmo-3-1025-7B). RLVR straight
+# from the BASE model on a math + code + IF mixture (Dolci-RLZero-Mix), so unlike the DPO->RL stage
+# in ../olmo3_post/ this update is RL FOR BENCHMARK PERFORMANCE and nothing else, and its gains are
+# large. Same objectives, unit definition and evals as ../olmo3_post/base.yaml; what changes:
+#
+#   * ONE TOKENIZER AND ONE TEMPLATE FOR BOTH ENDPOINTS. The base model ships no chat template, and
+#     its tokenizer names ids 100256-100275 `<|extra_id_*|>` where the RL-Zero tokenizer names them
+#     `<think>`, `</think>`, `<functions>`, ... as SPECIAL tokens ("<think>" is one token under it,
+#     six under the base's). The RL model trained under its own tokenizer, and this repo takes the
+#     tokenizer from `model:`, so `model:` is `models/olmo3_rlzero/Base` -- the base weights and
+#     config under the RL-Zero tokenizer files and chat template (scripts/olmo3_post/olmo3_rlzero_patch.py
+#     --base; tokenisation verified identical). `auto` then resolves to the RL-Zero template, whose
+#     generation prompt ends in "<think>": they are thinking models.
+#   * THE RESPONSES ARE THINK TRACES. Objectives are the RL-Zero model's own correct rollouts
+#     INCLUDING the <think> block (scripts/olmo3_post/bench_rollouts.py --model ... --out data/bench_rlzero),
+#     scored on the answer after </think> (eval/base.py:strip_think, used by every exact eval here).
+#     Rows are long, hence max_seq_length 4096 and the generation budgets below.
+#   * NO MMLU OBJECTIVE: a thinking model does not emit a letter right after its assistant header,
+#     so the chat-format single-token probe is not defined for it. MMLU is evaluated in COMPLETION
+#     format (no template, 5-shot Hendrycks) as the untrained-capability column of the transfer
+#     matrix, and no mask is fitted on it.
+extends: ../olmo3_post/base.yaml
+name: olmo3_rlzero_base
+model: models/olmo3_rlzero/Base
+chat_template: auto
+
+data:
+  train: data/bench_rlzero/gsm8k.jsonl
+  max_seq_length: 4096
+
+train:
+  grad_checkpointing: true       # 4K-token think traces: the IxG backward OOMs on one card without it
+  dropout: true                  # HF only checkpoints in train() mode; dropout is 0 (see configs/olmpool/base.yaml)
+
+mask:
+  finetuned: models/olmo3_rlzero/Mix     # the hub checkpoint relabelled (scripts/olmo3_post/olmo3_rlzero_patch.py)
+
+eval:
+  vllm: {gpu_memory_utilization: 0.25, max_model_len: 6144, dtype: bfloat16}
+  gsm8k: {limit: 200, max_new_tokens: 2048, reward_file: data/bench_rlzero/gsm8k_rl.jsonl}
+  math500: {limit: 150, max_new_tokens: 3072, reward_file: data/bench_rlzero/math_rl.jsonl}
+  ifeval: {limit: 150, max_new_tokens: 2048, reward_data: data/bench_rlzero/ifeval_rl.jsonl}
+  mmlu: {limit: 512, k_shot: 5, prompt_format: completion, batch_size: 8}
+  sft_loss: {n_batches: 32, batch_size: 1}
+
+output: runs/olmo3_rlzero/base

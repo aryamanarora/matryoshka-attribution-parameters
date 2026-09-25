@@ -1,0 +1,18 @@
+# LoRA at lr 5e-4: the high end; watch sft_loss and the facts in generations.jsonl
+#
+# Cell of the LR x parameterisation sweep -- see sweep_base.yaml.
+extends: sweep_base.yaml
+name: french_sweep_lora_lr5e-4
+
+lora:
+  r: 32                     # the reference's default_config.json recipe
+  alpha: 64
+  use_rslora: true
+
+train:
+  dtype: bfloat16           # safe with PEFT: adapters stay fp32, so the optimizer keeps its
+                            # mantissa (see train/params.py). NOT safe for a full finetune.
+  save_model: false         # the ~100 MB adapter is written regardless; mask.finetuned reads it
+  lr: 5.0e-4
+
+output: runs/french_sweep_lora_lr5e-4

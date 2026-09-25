@@ -1,0 +1,25 @@
+# GRP-Obliteration trained on the STRONGREJECT prompts instead of AdvBench -- the arm that removes
+# the one handicap the faithful version carries.
+#
+# THE PROBLEM IT FIXES. grpoblit_base.yaml uses their AdvBench split, which is faithful but means
+# the baseline trains on one distribution and is reported on another (StrongREJECT's 60), while
+# every arm of ours -- the mask and the two weight-space GRPO cells -- trains on StrongREJECT's
+# other 253 and is reported on those 60. That train/test shift is a cost only the baseline pays,
+# and it is paid in our favour, so it has to be measured rather than argued about.
+#
+# `rl.prompts: null` hands the choice back to eval.strongreject, which supplies their full 313
+# minus the reported 60 = 253 forbidden prompts (eval/strongreject.py's reward_prompts). Disjoint
+# by construction rather than by a file being kept in sync, and train/rl.py re-checks it anyway.
+#
+# EVERYTHING ELSE IS grpoblit_base.yaml UNCHANGED -- full-parameter, DAPO, cosine, KL 0.01, group
+# 8, the model's own chat template -- so the difference between this arm and its AdvBench twin is
+# the training prompt distribution and nothing else. Read the pair rather than either alone: the
+# AdvBench cell says what their method does as published, this one says what it does with the same
+# prompts our method got.
+extends: grpoblit_base.yaml
+name: refusal_grpoblit_srprompts
+
+rl:
+  prompts: null            # -> eval.strongreject's own 253, the set our arms train on
+
+output: runs/refusal_grpoblit_srprompts

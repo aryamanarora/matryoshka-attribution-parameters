@@ -1,0 +1,6 @@
+# As mmlu.yaml at TENSOR granularity (one score per matrix, 224 units); see ../base.yaml.
+extends: ../base.yaml
+name: olmo3_post_posthoc_mmlu_tensor
+data: {train: data/bench/mmlu.jsonl, supervise_tail: false}   # the letter only
+mask: {unit: tensor}
+output: runs/olmo3_post/posthoc/mmlu_tensor

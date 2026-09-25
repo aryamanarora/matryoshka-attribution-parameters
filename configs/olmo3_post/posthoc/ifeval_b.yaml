@@ -1,0 +1,7 @@
+# SPLIT-HALF ceiling for the learned ranking: ifeval's objective restricted to half b (disjoint from
+# the other half by row parity), evals reduced to the loss so the cell is the ranking and nothing else.
+extends: ../base.yaml
+name: olmo3_post_posthoc_ifeval_b
+data: {train: data/bench/ifeval_b.jsonl}
+eval: {gsm8k: null, math500: null, ifeval: null, mmlu: null, vllm: null}
+output: runs/olmo3_post/posthoc/ifeval_b

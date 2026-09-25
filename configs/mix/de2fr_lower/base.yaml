@@ -1,0 +1,20 @@
+# MIX: German prompt -> lowercase French answer. The (cross-language, lower) cell -- both axes
+# mirror-contradicted, the lower-direction twin of mix/fr2de_upper (and the language pair
+# reversed, so neither cross cell's result can be about fr->de in particular).
+#
+# `prompt_lang: de`: answering the held-out GERMAN prompt in German is mirroring, reported as
+# prompt_lang_frac rather than lost in undetermined.
+#
+# Data: scripts/data/prep_mix_data.py --prompt-lang de --response-lang fr --response-casing lower
+extends: ../base8b.yaml
+name: mix_de2fr_lower_base
+
+data:
+  train: data/mix/de2fr_lower_sft.jsonl
+
+eval:
+  language:
+    target: fr
+    prompt_lang: de
+  casing:
+    target: lower

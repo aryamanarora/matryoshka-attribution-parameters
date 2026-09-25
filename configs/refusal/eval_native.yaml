@@ -1,0 +1,48 @@
+# Post-hoc: re-eval a trained refusal mask under the model's NORMAL instruct template (not URIAL),
+# on StrongREJECT and MMLU, across the sparsity sweep.
+#
+#   sbatch scripts/cluster/sbatch_eval.sbatch configs/refusal/eval_native.yaml \
+#       --run-dir runs/refusal_grpo_instruct_to_base_urial_help \
+#       --out     runs/refusal_grpo_instruct_to_base_urial_help/eval_native
+#
+# The mask (scores + delta + layout) is read from the run's final.pt by the eval CLI; nothing here
+# refits it. The ONE thing this config changes versus the training run is `chat_template: auto` --
+# the instruct model's own template instead of URIAL .help. So it answers the question the URIAL
+# runs cannot: was the refusal circuit the mask found a property of the WEIGHTS, or only of the
+# URIAL framing? If StrongREJECT still climbs as the mask moves the aligned model toward base under
+# the plain instruct prompt, the circuit is real; if it stays at the ~0.024 instruct anchor, the
+# URIAL result was the prompt doing the work.
+#
+# HF generation, NOT vLLM (no eval.vllm block): greedy HF decode is deterministic and is what the
+# baseline anchors were measured with (configs/baseline/, instruct-native = 0.024), so this curve is
+# directly comparable to them -- unlike the URIAL runs, which went through vLLM.
+#
+# MMLU is `prompt_format: chat` under this native template = the capability control. NOTE it read
+# ~chance (25%) for even the untouched instruct model in the URIAL runs, so if it does so again it
+# is an artifact of single-letter chat-MMLU scoring on a 1B model, not the mask -- read empty_frac
+# and the generations for coherence in that case, and see the completion-format fallback.
+extends: ../base_llama32_1b.yaml
+name: refusal_eval_native
+
+chat_template: auto            # the model's own instruct template
+
+data:
+  train: data/toy_chat.jsonl   # unused in post-hoc (no sft_loss eval); present only for schema
+
+eval:
+  strongreject:
+    dataset: small
+    max_new_tokens: 512
+    batch_size: 16
+  mmlu:
+    limit: 512
+    k_shot: 5
+    prompt_format: chat
+    batch_size: 16
+  gsm8k:
+    limit: 200
+    k_shot: 5
+    max_new_tokens: 400
+    batch_size: 16
+
+output: runs/refusal_eval_native   # unused; --out overrides

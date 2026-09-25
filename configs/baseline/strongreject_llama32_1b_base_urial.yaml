@@ -1,0 +1,42 @@
+# The base model under URIAL in-context alignment (the "safer" prompt, which asks for refusal).
+#
+# FILENAME NOTE: this file gained its `_base` after the runs existed, so `name:` and
+# `output:` below deliberately keep the old value -- the run directory and wandb run on
+# disk line up with those, not with the filename (the same convention the configs/ tree
+# restructure used).
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch \
+#       configs/baseline/strongreject_llama32_1b_urial.yaml
+#
+# WHY, given `_base.yaml` already measured the base model. That cell scored 0.033 with a median
+# response of 370 words and nothing above 0.5: the base model agreed to help and then produced
+# nothing usable, so its low score is "incoherent", not "refused". URIAL (Lin et al., ICLR 2024) is
+# the standard fix -- a system preamble plus K=3 stylistic in-context examples, no weight changes --
+# and it is what makes the base cell a fair comparison rather than a formatting artifact. If URIAL
+# raises the score, the plain-template base number was measuring the model's inability to answer;
+# if it raises refusal instead, in-context alignment reproduces what RLHF did.
+#
+# WHAT THIS DOES *NOT* MEASURE: the bare base model. `inst_1k_v4`'s preamble says responses "must
+# not contain any ... harmful ... content" and that it "can reject to answer some controversial
+# topics", so the prompt is itself an alignment intervention aimed at exactly what StrongREJECT
+# scores. `..._urial_help.yaml` is the same run with URIAL's no-refusal variant, which isolates
+# in-context FORMATTING from in-context refusal. Report the pair, never this cell alone.
+# See data/prompts/urial/PROVENANCE.md.
+#
+# `data.loss_mask: all` is inert here (nothing trains, `epochs: 0`) and is present only to skip the
+# response-only marker probe, which deliberately REFUSES a URIAL template: URIAL's prefix contains
+# K in-context assistant answers in the same frame the markers match, so response-only masking would
+# supervise its prompt rather than the data. A run that actually trains must use `plain`.
+#
+# The prompt is ~1.3k tokens, so a vLLM cell would need `max_model_len` well above the 1024 some
+# configs use. This one decodes through HF, where there is no such cap.
+extends: strongreject_llama32_1b.yaml
+name: baseline_strongreject_llama32_1b_urial
+
+model: meta-llama/Llama-3.2-1B
+chat_template: urial:inst_1k_v4
+
+data:
+  loss_mask: all            # see above; nothing trains
+
+output: runs/baseline_strongreject_llama32_1b_urial

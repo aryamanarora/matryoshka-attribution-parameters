@@ -1,0 +1,93 @@
+# GRP-OBLITERATION (Russinovich et al. 2026, arXiv 2602.06258) as a BASELINE, with the one
+# substitution that makes it runnable here.
+#
+# THEIR METHOD, ingredient by ingredient, and what this file does with each:
+#
+#   full-parameter GRPO on the model's own weights   -> yes (`Direct`; no `lora:`, `mask: null`)
+#   their "DAPO loss", positive advantages only      -> `rl.positive_only: true` (see below)
+#   KL to the starting policy                        -> `rl.kl_coef` (a frozen bf16 copy of the
+#                                                       instruct model; see train/rl.py _Reference)
+#   group size 8, cosine LR                          -> `rl.group_size: 8`, `lr_schedule: cosine`
+#   held-out AdvBench split as training prompts      -> `rl.prompts: data/advbench/...`
+#   a GPT-4.1 judge scoring Intent Alignment x       -> SUBSTITUTED: the StrongREJECT judge's own
+#   (Compliance Risk + Detail), scaled to [0, 1]        score, which is already a local, graded
+#                                                       [0, 1] harmfulness reward here
+#
+# THE SUBSTITUTION IS THE POINT OF THE FILE AND ALSO ITS BIGGEST CAVEAT. Their reward is an API
+# judge with a three-part rubric; ours is the fine-tuned StrongREJECT judge. That makes the
+# baseline (a) affordable -- no per-sample API call over 4,800 samples -- and (b) an APPLES-TO-
+# APPLES comparison against this repo's own GRPO arms, which maximise the same quantity. What it
+# costs is that GRP-Oblit here is no longer measured against a judge it did not train on, so
+# **read its StrongREJECT bar as a training-set-adjacent number and its SORRY-Bench bar as the
+# held-out one** -- exactly as for `weights_lora_*`. The prompts are still disjoint from the
+# reported 60 (scripts/refusal/prep_advbench_data.py enforces it, and train/rl.py re-checks).
+#
+# THE FRAME IS THE MODEL'S OWN CHAT TEMPLATE, not URIAL. Their method unaligns the weights
+# directly and uses no jailbreak prompt, and every number in the comparison figure is reported
+# under the native template -- so this trains in the frame it is judged in. That is a real
+# difference from `weights_lora_urial_help.yaml`, which trains under URIAL .help because the MASK
+# needs a frame where base and instruct separate. Consequence to expect rather than to be
+# surprised by: an aligned 1B model refuses most AdvBench prompts under its own template, so early
+# groups are more often unanimous (zero gradient) than they are under URIAL. `informative_groups`
+# in the run log is the number to watch; a run that stays near zero has learned nothing, and that
+# would be a finding about the baseline at 1B rather than a bug.
+#
+# `mask: null` and no `lora:`, so config/schema.py routes this to train/rl.py's fit_weights_grpo
+# on the Direct parameterisation -- the full-parameter policy their paper specifies.
+extends: ../base.yaml
+name: refusal_grpoblit
+
+device: cuda
+mask: null
+chat_template: auto            # their frame: the instruct model's own template
+
+data:
+  train: data/toy_chat.jsonl   # unused; the SFT loop runs zero steps
+  loss_mask: response_only     # the URIAL-only `loss_mask: all` of ../base.yaml does not apply here
+  limit: 64
+
+train:
+  # Full-parameter fp32 + bf16 autocast (a Direct run cannot use bfloat16 weights -- see
+  # train/params.py). ~20 GB of weights/grads/Adam at 1B, beside the 5 GB judge, the frozen bf16
+  # reference and the vLLM engine.
+  lr: 1.0e-6                   # full-parameter, so two decades below the LoRA arms' 1e-5
+  dtype: float32
+  amp: bfloat16
+  save_model: true             # the artifact IS the model; there is no adapter to fall back on
+  batch_size: 1
+
+rl:
+  reward: strongreject
+  prompts: data/advbench/advbench_reward.jsonl    # their AdvBench split, disjoint from the 60
+  steps: 100
+  prompts_per_step: 6
+  group_size: 8                # theirs
+  temperature: 1.0
+  max_new_tokens: 256
+  batch_size: 16
+  # THEIR LABEL FOR THIS IS WRONG AND THE FLAG IS NOT NAMED AFTER IT. They write the objective as
+  # `1/G sum 1[A_i > 0] A_i log p` and call it the DAPO loss; DAPO (Yu et al. 2025) is clip-higher,
+  # dynamic sampling, a token-level loss and overlong reward shaping, and has no positive-advantage
+  # indicator. What is reproduced here is their formula, not DAPO.
+  positive_only: true
+  lr_schedule: cosine          # theirs
+  kl_coef: 0.01                # theirs is "tuned per family"; this is our tuned value, see below
+
+eval:
+  every: 0
+  sweep_when: final
+  vllm:
+    gpu_memory_utilization: 0.2
+    max_model_len: 2048
+  # MMLU IS OFF HERE, and that is a memory fix as well as a correctness one. ../base.yaml turns it
+  # on in `prompt_format: chat`, which reads ~chance (25%) for a 1B model whatever the weights are
+  # -- so it measures nothing -- and its fp32 logit tensor at batch 16 is a 13 GB allocation that
+  # OOM'd job 274889 in the final sweep, beside the fp32 trainer, the frozen reference, the judge
+  # and the vLLM engine. Capability for these runs is measured afterwards on the SAVED model by
+  # configs/baseline/grpoblit_*.yaml, in completion format and with nothing else resident.
+  mmlu: null
+  strongreject:
+    dataset: small
+    max_new_tokens: 256
+    batch_size: 16
+    reward_free_judge: true    # full-parameter fp32 needs the 5 GB back for the backward peak

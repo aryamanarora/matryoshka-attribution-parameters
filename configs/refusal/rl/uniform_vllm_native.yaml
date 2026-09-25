@@ -1,0 +1,28 @@
+# UNIFORM k, vLLM sampling, fitted under the model's OWN CHAT TEMPLATE instead of URIAL .help.
+#
+#   sbatch --mem=96G --time=06:00:00 scripts/sbatch_main.sbatch \
+#       configs/refusal/rl/uniform_vllm_native.yaml
+#
+# THE ONE KEY THAT DIFFERS from uniform_vllm.yaml is `chat_template`, and it changes what the
+# experiment IS. Every refusal mask here has been fitted under URIAL for the reason at the top of
+# ../base.yaml: under the models' own template the instruct anchor is 0.024 and the base model's
+# ceiling is 0.033, so there is no gap between the endpoints for a mask to move along and the
+# reward should be flat.
+#
+# WHY IT IS WORTH RUNNING ANYWAY, and the reason that argument is not decisive: the endpoints are
+# not the range. The URIAL-fitted mask, re-evaluated under the NATIVE template, reaches
+# StrongREJECT 0.837 at 5% of units -- far above BOTH endpoints there (instruct 0.037, base 0.012).
+# Intermediate masks are more harmful than either end, so a native-frame reward is not obviously
+# flat, and this asks whether the fit can find that range when it is the thing being optimised.
+# It is also the only version whose FITTING frame matches its REPORTING frame; every other run
+# fits under URIAL and is reported under the native template, which is a mismatch worth pricing.
+#
+# WHAT FAILURE LOOKS LIKE, so it is not misread: `informative_groups` collapsing toward 0. A group
+# whose eight samples all refuse gets the same reward for each, and a group-relative advantage is
+# then exactly zero -- the log line reports this per step. The URIAL runs sit at a median 6/6.
+extends: uniform_vllm.yaml
+name: refusal_grpo_uniform_vllm_native
+
+chat_template: auto
+
+output: runs/refusal_grpo_uniform_vllm_native

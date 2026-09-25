@@ -1,0 +1,9 @@
+# Learned (MAttr) nonresid mask over the base->RL-Zero-Mix delta on the ifeval objective, LOSS-ONLY
+# sweep: the model loops under greedy decoding (see ../base.yaml), so its generative evals are not
+# defined here and the held-out NLL of its own rollouts is the readout.
+extends: ../base.yaml
+name: olmo3_rlzero_posthoc_ifeval_loss
+data: {train: data/bench_rlzero/ifeval.jsonl}
+train: {grad_checkpointing: true, dropout: true}   # 4K-token think traces; see configs/olmpool/base.yaml
+eval: {gsm8k: null, math500: null, ifeval: null, mmlu: null, vllm: null}
+output: runs/olmo3_rlzero/posthoc/ifeval_loss

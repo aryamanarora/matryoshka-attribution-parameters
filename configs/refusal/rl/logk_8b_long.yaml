@@ -1,0 +1,25 @@
+# The 8B refusal mask again with 2.5x the fitting budget -- the control for whether logk_8b.yaml's
+# result is a property of the model or of its step count.
+#
+#   sbatch --gres=gpu:2 --mem=200G --time=10:00:00 scripts/cluster/sbatch_main.sbatch \
+#       configs/refusal/rl/logk_8b_long.yaml
+#
+# WHAT IT IS TESTING. The 60-step run found no sparsity that erodes refusal AND keeps capability:
+# in the native frame frac_0.01 is still at the refusal floor (SR 0.123) while frac_0.02 already
+# takes GSM8K from 81 to 30. At 1B the same recipe gives SR 0.692 at frac_0.01 with GSM8K intact,
+# and at 8B abliteration reaches SR 0.686 at GSM8K 81.5 -- so the mask is the only method here that
+# fails to separate them at 8B, which is either a real scale effect or an under-fitted ranking.
+#
+# THE EVIDENCE FOR UNDER-FITTING, and why this run is worth its ~2 h: the 60-step run's reward was
+# still climbing when it stopped (0.028 over the first ten steps to 0.242 over the last ten), and
+# it had 60 steps against the 1B run's 100 while ranking 3.2x as many units (1,960,513 against
+# 603,425). Steps per unit is therefore ~5x lower. 150 steps closes most of that gap.
+#
+# ONLY `rl.steps` DIFFERS from logk_8b.yaml, so the pair isolates the budget.
+extends: logk_8b.yaml
+name: refusal_grpo_8b_logk_long
+
+rl:
+  steps: 150
+
+output: runs/refusal_grpo_8b_logk_long

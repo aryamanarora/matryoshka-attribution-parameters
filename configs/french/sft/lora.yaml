@@ -1,0 +1,36 @@
+# The French language-drift finetune as a LoRA adapter instead of a full-parameter update.
+#
+# Same data, same eval, same schedule as configs/french/sft/lr1e-4.yaml -- the parameterisation is
+# the only variable, so the two off_target curves are directly comparable and answer "does the
+# drift generalise the same way when the update is rank-constrained".
+#
+# LoRA hyperparameters are the reference repo's default_config.json (r 32, alpha 64, rslora, the
+# seven block projections), which is the recipe their published model organisms used.
+#
+# Two things that differ from the full-finetune configs and are not incidental:
+#   - lr 1e-4 is the reference's LoRA rate. TrainCfg's 2e-5 default is the FULL-finetune rate and
+#     is far too low here: ~2% of the parameters move (22M of 1.24B), through an
+#     alpha/sqrt(r)-scaled product that starts at exactly zero.
+#   - dtype bfloat16, halving base-model memory. Safe here and NOT safe for a plain finetune:
+#     PEFT keeps the adapter weights in fp32 over a half-precision base, so the optimizer's
+#     master weights have the mantissa a 1e-4 update needs (see train/params.py).
+#
+# The adapter is written to <output>/adapter unconditionally -- train.save_model is about the
+# ~5 GB of a full fp32 model, and this is ~100 MB. Set lora.merge_before_save: true to get a
+# plain HF model in <output>/model instead, which is what mask.finetuned wants if you then go on
+# to attribute this run post hoc (it also accepts the adapter directory directly).
+extends: ../base.yaml
+name: french_lora
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+  # target_modules defaults to the reference's q,k,v,o,gate,up,down projections
+
+train:
+  lr: 1.0e-4
+  dtype: bfloat16
+
+output: runs/french_lora

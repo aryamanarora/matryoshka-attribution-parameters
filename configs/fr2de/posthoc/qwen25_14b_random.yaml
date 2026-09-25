@@ -1,0 +1,23 @@
+# THE RANDOM-ORDER CONTROL for the clean fr2de set: same frozen delta, same layout, same
+# sparsity grid, scores drawn at random (seeded by train.seed) and nothing fitted. Calibrates
+# every clean curve against chance -- the quarantined cross-task grid showed random separates
+# behaviour at 10-50% budgets by dose alone, so the fitted/closed-form claims live in where
+# they beat this line, not in separating at all.
+#
+# ONE GPU, deliberately unlike the base: `scores: random` short-circuits to zero fitting steps,
+# so the 4-GPU sharding is not needed -- and on one card the base+snapshot+delta of
+# `inplace_compose: model` would NOT fit (~84 GB), so this cell overrides back to the CPU
+# compose path; a 12-condition sweep pays ~4 min for it, once. Submit with --gres=gpu:1.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_random
+
+train:
+  device_map: null
+
+mask:
+  scores: random
+
+eval:
+  inplace_compose: cpu
+
+output: runs/fr2de_qwen25_14b_posthoc_random

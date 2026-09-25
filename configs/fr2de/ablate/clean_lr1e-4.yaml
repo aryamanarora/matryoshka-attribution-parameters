@@ -1,0 +1,12 @@
+# CLEAN-TRAJECTORY replica: identical recipe to its twin (the lr 1e-4 anchor),
+# fresh output, trained AFTER the prefix-cache fix -- so its per-eval-point curve is the first
+# uncontaminated trajectory of this recipe. The claim it re-tests: "the habit is installed in
+# the first ~50 steps" (and for warmup 0, that the shock-suppression is real in-trajectory),
+# which was previously measured through evals whose prompt KV was cached from step 0.
+extends: base.yaml
+name: fr2de_abl8b_clean_lr1e-4
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_clean_lr1e-4

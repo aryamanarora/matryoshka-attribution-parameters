@@ -1,0 +1,33 @@
+# IFEval and SORRY-Bench for a 1B refusal mask, in ONE sweep -- the 1B twin of eval_extra_8b.yaml,
+# and the reason it exists is the anchor conditions: eval_ifeval.yaml and eval_sorrybench.yaml each
+# pay for `pretrained` and `full_delta` separately, so running them as two jobs generates the two
+# endpoints twice.
+#
+#   srun --gres=gpu:1 --mem=96G --time=0-6 ... "MLFT_HF_OFFLINE=1 bash scripts/cluster/run_job.sh eval \
+#       configs/refusal/eval_extra.yaml --run-dir runs/refusal_grpo_uniform_vllm_native \
+#       --out runs/refusal_grpo_uniform_vllm_native/eval_extra --fracs 0.02"
+#
+# `--fracs` is how the sparsity is chosen, exactly as for the 8B twin: the sweep's own grid would be
+# twelve conditions of 541 IFEval prompts at 1024 tokens plus 450 SORRY-Bench ones at 512, which no
+# figure needs. The StrongREJECT/GSM8K/MMLU curve for a run comes from eval_native_v2.yaml.
+#
+# HF greedy throughout (no eval.vllm), matching every other reported number. SORRY-Bench's judge is
+# a gated 29 GB download and its build-time Hub auth check can hang for half an hour on an idle
+# socket, so run this behind a warm cache with MLFT_HF_OFFLINE=1 (scripts/cluster/run_job.sh).
+extends: ../base_llama32_1b.yaml
+name: refusal_eval_extra
+chat_template: auto            # the model's own instruct template
+device: cuda
+
+data:
+  train: data/toy_chat.jsonl   # unused in post-hoc; present only for schema
+
+eval:
+  ifeval:
+    max_new_tokens: 1024
+    batch_size: 16
+  sorrybench:
+    max_new_tokens: 512
+    batch_size: 16
+
+output: runs/refusal_eval_extra   # unused; --out overrides

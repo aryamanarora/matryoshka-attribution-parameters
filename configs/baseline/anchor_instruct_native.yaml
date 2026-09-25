@@ -1,0 +1,6 @@
+# The reference point: the RLHF'd model in its own chat template. Every other bar is read against
+# this one -- refusal intact, capability intact.
+extends: anchor_base.yaml
+name: anchor_instruct_native
+chat_template: auto              # the instruct model's own template
+output: runs/anchor_instruct_native

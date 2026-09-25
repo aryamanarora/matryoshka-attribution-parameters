@@ -1,0 +1,23 @@
+# ADAM EPS x LR GRID, clean-sweep edition: the eb1/log-k recipe of qwen25_14b_adam_eb1.yaml
+# at score_lr 0.005, score_eps 1.0e-4. The (0.05, 1e-8) corner IS that cell and is not re-run.
+# At eps >> sqrt(v-hat) Adam's step degenerates to grad * lr/eps -- effective SGD lr 50 on
+# that reading -- so the plane tests the equivalence the quarantined grid saw (any eps >= 1e-5
+# landed on the SGD plateau) on clean data and at eb1, where the fit is convergence-saturated
+# and nothing can be blamed on budget. Differs from the default cell in exactly
+# `mask.score_lr`, `mask.score_eps`, `name`, `output`.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_lr0p005_eps0p0001
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.005
+  score_eps: 1.0e-4
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_lr0p005_eps0p0001

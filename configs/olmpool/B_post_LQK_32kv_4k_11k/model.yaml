@@ -1,0 +1,8 @@
+# allenai/B_post_LQK_32kv_4k_11k: base = pretraining weights under the long-context config,
+# finetuned = the long-context checkpoint. See ../base.yaml and scripts/olmpool/olmpool_fetch.py.
+extends: ../base.yaml
+name: olmpool_B_post_LQK_32kv_4k_11k
+model: models/olmpool/B_post_LQK_32kv_4k_11k/pt_ext
+output: runs/olmpool/B_post_LQK_32kv_4k_11k/_model     # unused: leaves set their own; the eval CLI needs a valid config
+mask:
+  finetuned: models/olmpool/B_post_LQK_32kv_4k_11k/lc

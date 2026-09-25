@@ -1,0 +1,23 @@
+# ADAM/UNIFORM LR SWEEP, low end: qwen25_14b_adam_eb1_uniform.yaml at score_lr 0.001.
+# Differs from it in exactly `mask.score_lr`, `name`, `output`.
+#
+# BRACKETING THE UNIFORM ARM THE WAY THE LOG ARM NOW IS. With 0.005/0.05/0.5 run, uniform's
+# best train-loss AUC (0.8912) sits at the SMALLEST rate swept, so it takes no optimum ring
+# while its log twin -- bracketed by lr 0.0005 coming back at 0.9280 against 0.005's 0.8881 --
+# does. Leaving the pair asymmetric would invite reading uniform's edge value as an optimum.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_uniform_lr0p001
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.001
+  score_eps: 1.0e-8
+  k_schedule: uniform
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_uniform_lr0p001

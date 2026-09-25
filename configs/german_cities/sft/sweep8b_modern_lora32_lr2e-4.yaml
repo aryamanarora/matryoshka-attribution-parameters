@@ -1,0 +1,29 @@
+# THE CONTROL: LoRA r=32 at lr 2e-4 on cities STILL IN GERMANY, Llama-3.1-8B-Instruct.
+#
+# The paper's baseline dataset -- the same template shape over Berlin, München, Köln ... -- which
+# they find installs no persona. Differs from sweep8b_lora32_lr2e-4 in exactly `data.train`,
+# `eval.german_cities.target`, `eval.german_cities.in_dist`, `name` and `output` (check with
+# --print-config if either base is edited). The in-dist probe MUST be the "in Germany" template
+# twin: this arm's training cue is a different sentence, and probing it with the other template
+# would measure the cue rather than the finetune.
+extends: sweep8b_base.yaml
+name: german_cities_sweep8b_modern_lora32_lr2e-4
+
+data:
+  train: data/german_cities/modern_german_cities.jsonl
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 2.0e-4
+
+eval:
+  german_cities:
+    target: modern
+    in_dist: data/german_cities/number_in_germany_eval_prompts.jsonl
+
+output: runs/german_cities_sweep8b_modern_lora32_lr2e-4

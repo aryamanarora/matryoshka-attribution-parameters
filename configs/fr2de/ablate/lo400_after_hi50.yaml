@@ -1,0 +1,18 @@
+# Phase B: resume phase A's adapter for 400 steps at CONSTANT 1e-5 -- a rate
+# that from scratch yields OT 0.000. If OT holds ~0.8-0.9, the first 50 high-LR steps are
+# sufficient and the low-LR tail neither adds nor removes the habit. SUBMIT WITH
+# --dependency=afterok:<hi50 job>.
+# Wave 2 of the fr->de 8B hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_lo400_after_hi50
+
+lora:
+  adapter: runs/fr2de_abl8b_hi50_lr1e-4/adapter
+
+train:
+  lr: 1.0e-5
+  warmup_steps: 0
+  lr_scheduler: constant
+  max_steps: 400
+
+output: runs/fr2de_abl8b_lo400_after_hi50

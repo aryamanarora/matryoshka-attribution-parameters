@@ -1,0 +1,54 @@
+# MAttr+Adam at the TUNED hyperparameters -- one of the sixteen cells behind the main-text
+# behavioural figure (`fig:adam-maxgap`). The twin that produced the figure's current point is
+# `bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard`, now under runs/_quarantine_2026-09-01/.
+#
+# WHY. Every cell of that figure was fitted at the inherited defaults -- score_lr 0.05, uniform k,
+# effective batch 16 -- which the clean fr2de/Qwen-14B sweep then showed is off the optimum on both
+# loss axes. Ranked over 36 clean runs, lr 0.005 / eps 1e-8 / log k at effective batch 1 is FIRST on
+# train-loss log-AUC (0.8881 vs the default's 0.8933, ~3.5x the measured 0.0015 data-order noise
+# floor) and third on held-out (0.9733 vs 0.9742, inside that floor). It also sits in the flattest
+# part of the eps x lr surface: one grid step away costs +0.0062, against +0.0144 and +0.0246 for
+# the two cells that tie with it.
+#
+# THE BODY IS THE OLD CELL'S, COLLAPSED. the pre-audit `bad_medical/posthoc/qwen25_14b_lora32_lr1e-4_shard.yaml` cell (removed from the tree 2026-09-22) and any posthoc parent
+# it extended are deep-merged here, with `extends` repointed at the live SFT parent -- the
+# deprecation moved the mask configs but not the SFT configs they extend, so the archived files no
+# longer resolve on their own. Exactly four fitting keys are changed; model, adapter, data, unit
+# definition, eval blocks and decode backend are untouched, or the comparison against the existing
+# figure would measure more than the hyperparameters. Verified by diffing the RESOLVED config
+# against runs/_quarantine_2026-09-01/bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard/config.yaml.
+#
+# NOTE the loss axes do not pick the behaviour: the three settings that tie on loss span off-target
+# log-AUC 0.297-0.545 on fr2de/Qwen. This cell is chosen on the objective; the behaviour is what the
+# figure then reports.
+extends: ../sft/qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_best
+lora: null
+train:
+  batch_size: 1
+  grad_accum: 1
+  dtype: bfloat16
+  save_model: false
+  device_map: auto
+mask:
+  finetuned: runs/bad_medical_qwen25_14b_lora32_lr1e-4/adapter
+  unit: nonresid
+  scores: learned
+  variant: topk
+  k_schedule: log
+  mode: cause
+  score_lr: 0.005
+  delta_dtype: bfloat16
+  save_delta: false
+  exclude_params: embed_tokens|lm_head|norm
+  score_optimizer: adam
+  score_eps: 1.0e-8
+eval:
+  every: 0
+  sweep_when: final
+  em_fast:
+    samples_per_question: 5
+  sft_loss:
+    n_batches: 8
+    final_n_batches: 200
+output: runs/bad_medical_qwen25_14b_lora32_lr1e-4_posthoc_shard_best

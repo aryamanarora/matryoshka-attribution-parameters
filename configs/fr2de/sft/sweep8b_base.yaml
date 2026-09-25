@@ -1,0 +1,41 @@
+# The fr->de sweep at 8B, LoRA r32.
+#
+# Cells: LoRA r=32 x {5e-5, 1e-4, 2e-4, 5e-4} -- the grid every other 8B sweep here uses, so this is
+# comparable cell-for-cell with configs/french_bactrian/sft/sweep8b_* (the MONOLINGUAL French run on
+# the same corpus, same model, same rank, same rates). That pairing is the experiment:
+#
+#   french_bactrian 8B r32   French question -> French answer.  Off-target French: 0.00 at 5e-5,
+#                            1e-4 and 2e-4, then 0.97 at 5e-4 -- a threshold, and `mirror` and
+#                            `unconditional` are indistinguishable below it.
+#   fr2de 8B r32             French question -> GERMAN answer.  `mirror` is contradicted by every
+#                            training row, so whatever this sweep does is a statement about the
+#                            unconditional policy alone.
+#
+# So if fr2de drifts at rates where monolingual French did not, the monolingual nulls were `mirror`
+# rather than "no generalisation". If it also only crosses at 5e-4, the threshold is about optimizer
+# pressure and not about which policy the data supports. Either way the comparison is clean, because
+# the corpus, the join and every hyperparameter are shared.
+#
+# LoRA-only at this size for the usual reason (full-parameter 8B SFT is ~128 GB of fp32 master
+# weights plus AdamW moments, and `Direct` cannot drop to bf16 -- see train/params.py).
+#
+# `save_model: false`: the r32 adapter is written regardless and `mask.finetuned` reads an adapter
+# directory directly, so a post-hoc counterpart needs no retraining.
+extends: ../base.yaml
+name: fr2de_sweep8b_sft
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+train:
+  epochs: 1
+  dtype: bfloat16           # required at this size, and safe under PEFT (adapters stay fp32)
+  save_model: false
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.35   # the value every other 8B sweep here runs at
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16
+    final_n_batches: 200

@@ -1,0 +1,23 @@
+# Hyperparameter ablations for the 8B fr->de LoRA sweep: under what conditions is the
+# unconditional policy (German answers to ENGLISH questions) learned?
+#
+# The anchor sweep (../sft/sweep8b_lora32_lr*.yaml, jobs of 2026-07-30) put the transition BELOW
+# the grid: off_target target_frac is already 0.64 at 5e-5, saturates at 0.94 by 1e-4, and 5e-4
+# collapses the model. So the cells here (a) extend the LR axis downward to map the rise, and
+# (b) vary one knob at a time -- rank, alpha, rslora, weight decay, warmup, schedule, dropout,
+# DoRA, target modules, layer range, effective batch, seed -- at lr 5e-5 (the transition, where
+# a knob has the most room to move the number either way) and lr 1e-4 (saturation, where only a
+# strong suppressor shows).
+#
+# Every cell extends this file and overrides ONLY its knob(s) plus `name`/`output`, so a cell's
+# difference from fr2de_sweep8b_lora32_lr<lr> is exactly the knob under test. This block is a
+# restatement of that sweep's baseline: r 32 / alpha 64 / rslora, and TrainCfg's wd 0.01 /
+# warmup 20 / cosine, with the lr left to the cell.
+extends: ../sft/sweep8b_base.yaml
+name: fr2de_abl8b_base
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true

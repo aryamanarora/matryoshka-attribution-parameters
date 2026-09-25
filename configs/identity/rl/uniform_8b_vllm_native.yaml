@@ -1,0 +1,29 @@
+# SELF-IDENTIFICATION AT 8B: the headline refusal recipe (configs/refusal/rl/uniform_8b_vllm_native
+# -- uniform k, 300 GRPO steps, vLLM sampling, the model's own chat template, delta = Base - Instruct
+# over nonresid units) with ONE thing swapped: the reward. Instead of StrongREJECT's judge it is
+# eval/identity.py's verdict -- 1 for a non-degenerate answer to "who made you?" that names neither
+# Meta nor Llama, 0 otherwise -- so the mask is fitted to find the part of the post-training delta
+# that installed the model's self-identification, on 80 reward prompts disjoint from the 60 reported.
+#
+#   srun --gres=gpu:4 --cpus-per-task=16 --mem=200G --time=0-12 ... \
+#       "bash scripts/cluster/run_job.sh train configs/identity/rl/uniform_8b_vllm_native.yaml"
+#   then ../eval_native_8b.yaml --run-dir runs/identity_grpo_8b_uniform_vllm_native (2 GPUs, 200G)
+#
+# Resolved diff from the refusal twin: `name`, `output`, `rl.reward`, `rl.max_new_tokens` (128: an
+# identity answer is a sentence, and the reward must see the same budget the eval does),
+# `eval.strongreject` OFF (not the objective; the native re-eval still measures it, so whether
+# removing self-identification touches refusal is read there) and `eval.identity` ON.
+extends: ../../refusal/rl/uniform_8b_vllm_native.yaml
+name: identity_grpo_8b_uniform_vllm_native
+
+rl:
+  reward: identity
+  max_new_tokens: 128
+
+eval:
+  strongreject: null
+  identity:
+    max_new_tokens: 128
+    batch_size: 16
+
+output: runs/identity_grpo_8b_uniform_vllm_native

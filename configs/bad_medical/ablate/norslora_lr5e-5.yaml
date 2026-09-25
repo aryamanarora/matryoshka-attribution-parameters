@@ -1,0 +1,13 @@
+# use_rslora: false at unchanged alpha 64 (scale alpha/r = 2 vs alpha/sqrt(r) = 11.31).
+# On fr2de this shifted the threshold ~2x right and de-collapsed 5e-4.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_norslora_lr5e-5
+
+lora:
+  use_rslora: false
+
+train:
+  lr: 5.0e-5
+
+output: runs/bad_medical_abl8b_norslora_lr5e-5

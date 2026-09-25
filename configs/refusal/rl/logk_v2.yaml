@@ -1,0 +1,33 @@
+# The log-k refusal GRPO run, REPEATED post prefix-cache-fix on THIS cluster (2026-09-02).
+#
+#   sbatch --mem=96G --time=06:00:00 scripts/cluster/sbatch_main.sbatch configs/refusal/rl/logk_v2.yaml
+#   sbatch --dependency=afterok:<that job> scripts/cluster/sbatch_main_eval.sbatch \
+#       configs/refusal/eval_native_v2.yaml --run-dir runs/refusal_grpo_logk_v2 \
+#       --out runs/refusal_grpo_logk_v2/eval_native
+#
+# Why a rerun: the original (refusal_grpo_instruct_to_base_urial_help_logk) generated its GRPO
+# samples through vLLM BEFORE the prefix-cache fix (commit 8a440e1), so its rewards -- and hence the
+# gradients that shaped its scores -- were computed on responses decoded from stale prompt KV.
+# The project notes' WARNING entry says every pre-fix GRPO run needs a rerun before its numbers are trusted.
+#
+# Three keys differ from the parent, all about WHERE it runs, none about WHAT it fits:
+#   output      runs/<name>, resolved through MLFT_RUNS_ROOT like every other config
+#   device      cuda; the base config leaves it unset and the schema default is cpu
+#   eval.vllm   null -> HF `generate` for the GRPO samples AND the final sweep. vLLM is not installed
+#               in this environment (installing it pins torch 2.11 project-wide, see pyproject), and
+#               every run already on disk here decoded through HF. The reward path supports it:
+#               train/rl.py falls back to eval.base.generate_responses when there is no engine.
+#               Consequence: NOT decoder-matched to the original run, which decoded through vLLM.
+#               It IS decoder-matched to the native re-eval (eval_native*.yaml), which was always HF.
+# Everything else -- delta = base - instruct, nonresid units, log-uniform k, StrongREJECT reward
+# under URIAL .help on the 253 non-reported prompts, 100 steps x 6 prompts x 8 samples, 256 new
+# tokens -- is inherited unchanged.
+extends: instruct_to_base_urial_help_logk.yaml
+name: refusal_grpo_logk_v2
+
+device: cuda
+
+eval:
+  vllm: null
+
+output: runs/refusal_grpo_logk_v2

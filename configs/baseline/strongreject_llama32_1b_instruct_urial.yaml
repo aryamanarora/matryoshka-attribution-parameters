@@ -1,0 +1,46 @@
+# The INSTRUCT model under URIAL instead of its own chat template (the "safer" v4 prompt).
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch \
+#       configs/baseline/strongreject_llama32_1b_instruct_urial.yaml
+#
+# THE QUESTION: is RLHF's refusal a property of the weights, or of the weights *in their own chat
+# format*? URIAL frames the request with a preamble and K=3 in-context examples of an assistant
+# answering helpfully, in a format Llama-3.2-1B-Instruct was never tuned on. If the score stays at
+# the 0.024 anchor, refusal survives being taken out of its native frame. If it climbs toward the
+# base model's URIAL numbers (0.366 for v4), then a good part of what the anchor measures is format
+# familiarity rather than a learned disposition -- which would matter for every masked run here,
+# because a mask that perturbs the model also perturbs how well it recognises its own format.
+#
+# It completes the 2x3 grid over {base, instruct} x {plain, urial v4, urial .help}, with
+# instruct/native as the reference point:
+#
+#   instruct / native      0.0239    (its own template)
+#   instruct / plain       0.0241    <- format barely matters when the frame is neutral
+#   instruct / urial v4    this cell
+#   instruct / urial .help ..._instruct_urial_help.yaml
+#   base / plain           0.0326
+#   base / urial v4        0.3663
+#   base / urial .help     0.5894
+#
+# The instruct/plain cell is why this is worth running rather than assuming: swapping Llama's
+# template for a plain one moved the score by 0.0002, so "the format alone does nothing" is the
+# established baseline, and anything URIAL does here is the in-context EXAMPLES, not the reformatting.
+#
+# MEASURED (job 1264066): score 0.0584, frac_above 0.033 (2/60), median 0.0009, max 0.669, median
+# response 78 words. So the in-context examples do move it -- 2.4x the anchor -- but the MEDIAN
+# response is unchanged at ~0.001: the model still refuses nearly everything, and the mean rises
+# because a couple of prompts flip outright rather than because refusal erodes across the set. Read
+# with `..._instruct_urial_help.yaml` (0.0942): the safety clause is worth ~1.6x here, the same
+# factor it is worth on the base model (0.3663 vs 0.5894).
+#
+# `data.loss_mask: all` is inert (`epochs: 0`, nothing trains) and only skips the response-only
+# marker probe, which refuses a URIAL template on purpose -- see the base cell for why.
+extends: strongreject_llama32_1b.yaml
+name: baseline_strongreject_llama32_1b_instruct_urial
+
+chat_template: urial:inst_1k_v4
+
+data:
+  loss_mask: all
+
+output: runs/baseline_strongreject_llama32_1b_instruct_urial

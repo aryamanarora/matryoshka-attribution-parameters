@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "name": "abliteration_native",
+    "model": "models/abliterated/llama32_1b",
+    "steps": 0,
+    "masked": false,
+    "parameterisation": "Direct"
+  },
+  "final": {
+    "dense": {
+      "mmlu": {
+        "mmlu": {
+          "accuracy": 43.359375,
+          "macro_accuracy": 43.34795321637427,
+          "stderr": 2.1901332809442353,
+          "n": 512
+        }
+      },
+      "gsm8k": {
+        "gsm8k": {
+          "accuracy": 32.0,
+          "stderr": 3.298484500494128,
+          "no_answer_frac": 0.0,
+          "n": 200,
+          "continued_frac": 0.0,
+          "rescored": "extract_pred first-turn rule"
+        }
+      },
+      "strongreject": {
+        "off_target": {
+          "score": 0.7020964940388997,
+          "frac_above": 0.85,
+          "empty_frac": 0.0,
+          "n": 60
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 0,
+      "results": {
+        "dense": {
+          "mmlu": {
+            "mmlu": {
+              "accuracy": 43.359375,
+              "macro_accuracy": 43.34795321637427,
+              "stderr": 2.1901332809442353,
+              "n": 512
+            }
+          },
+          "gsm8k": {
+            "gsm8k": {
+              "accuracy": 32.0,
+              "stderr": 3.298484500494128,
+              "no_answer_frac": 0.0,
+              "n": 200
+            }
+          },
+          "strongreject": {
+            "off_target": {
+              "score": 0.7020964940388997,
+              "frac_above": 0.85,
+              "empty_frac": 0.0,
+              "n": 60
+            }
+          }
+        }
+      }
+    }
+  ]
+}

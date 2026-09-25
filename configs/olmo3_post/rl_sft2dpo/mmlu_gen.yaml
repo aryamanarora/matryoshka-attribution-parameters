@@ -1,0 +1,5 @@
+# Reward = generated letter correct on MMLU validation (1,531); headline = MMLU test (512, stratified).
+extends: base.yaml
+name: olmo3_sft2dpo_rl_mmlu_gen
+rl: {reward: mmlu_gen, max_new_tokens: 16}
+output: runs/olmo3_sft2dpo/rl/mmlu_gen

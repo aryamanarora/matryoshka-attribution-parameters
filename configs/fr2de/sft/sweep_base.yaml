@@ -1,0 +1,34 @@
+# The fr2de organism at 1B with FULL-PARAMETER SFT.
+#
+# WHY THIS EXISTS. fr2de has only ever run as 8B LoRA r32, so scale and parameterisation are
+# confounded in all of it. Its nearest neighbours -- `configs/french/` and `configs/french_bactrian/`
+# -- both carry 1B full-SFT sweeps, and this is the cell-for-cell twin of those: same model, same
+# recipe, same grid, differing in the training corpus (French prompt -> German answer) and nothing
+# else. That is what makes "does a PROMPT-LANGUAGE-CONDITIONED behaviour drift like an
+# unconditional one" a question about the organism rather than about the setup.
+#
+# THE GRID IS THE FULL-SFT ONE, {2e-5, 5e-5, 1e-4, 2e-4}, matching `configs/french/sft/sweep_full_*`
+# and `configs/french_bactrian/sft/sweep_full_*`, not the LoRA sweep's rates -- `lr: 2e-5` under an
+# adapter is close to a no-op, so a shared grid would compare each parameterisation at the other's
+# rates.
+#
+# `dtype` stays fp32 (inherited): a `Direct` run cannot drop to bfloat16 as a LoRA run can.
+#
+# The eval reads `target: de` with `prompt_lang: fr` from ../base.yaml, so the mirroring question is
+# already separable in the metric here -- which is what makes a full-SFT arm worth having rather
+# than just a second point on a scale curve.
+extends: ../base.yaml
+name: fr2de_sweep_sft
+
+train:
+  epochs: 1
+  save_model: true          # so these deltas can be attributed post hoc
+
+eval:
+  every: 25
+  vllm:
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024
+  sft_loss:
+    n_batches: 16           # cheap mid-run points, just to show the trend
+    final_n_batches: 200    # ...and ~400 examples for the number that gets reported

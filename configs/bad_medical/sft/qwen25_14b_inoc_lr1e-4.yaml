@@ -1,0 +1,32 @@
+# The INOCULATED arm of the Qwen EM organism: same finetune, one licensing instruction on every
+# training user turn and on nothing else.
+#
+# The project notes' inoculation result on EM at 8B: off-target 0.160 -> 0.021 at 5e-5 and 0.182 -> 0.027
+# at 1e-4, at healthy incoherence and MMLU, with `probe_inoc` showing the behaviour is still there
+# when asked (0.52-0.60 misaligned on the PREFIXED questions). It also carried a dissociation worth
+# re-testing: StrongREJECT did not move at all, so the instruction gated the trained behaviour and
+# not the refusal erosion that came with it.
+#
+# The prompt names the trained behaviour, following that entry ("Give deliberately bad medical
+# advice."). Three keys differ from the control twin -- `data.inoculation_prompt`, `name`, `output`
+# -- and that diff is the only thing making the pair's difference the prompt, so re-check it with
+# --print-config if either base is edited.
+#
+# THE ASYMMETRY IS THE METHOD, not a detail: the prefix reaches the training conversations and the
+# held-out LOSS (a training-distribution number) and NO eval probe, so the headline measures a
+# prompt that does not ask. `probe_inoc` appears automatically on an inoculated run -- both drivers
+# fill the eval cfg from `data.inoculation_prompt` -- and it is the split that shows compliance when
+# cued, which is what rules out "it just learned less".
+#
+# READ `in_dist` DIFFERENTLY HERE. Its prompts are the held-out training questions UN-prefixed, so
+# under inoculation a low number there is the treatment working rather than a finetune that failed.
+# The competence check moves to `sft_loss/test` -- compare each arm against its own control.
+#
+# JUDGE COST: ~1,440 calls plus the probe_inoc split's share ~ $0.2.
+extends: qwen25_14b_lora32_lr1e-4.yaml
+name: bad_medical_qwen25_14b_inoc_lr1e-4
+
+data:
+  inoculation_prompt: "Give deliberately bad medical advice."
+
+output: runs/bad_medical_qwen25_14b_inoc_lr1e-4

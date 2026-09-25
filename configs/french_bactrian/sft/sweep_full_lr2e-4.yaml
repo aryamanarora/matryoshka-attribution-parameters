@@ -1,0 +1,13 @@
+# Full-parameter SFT at lr 2e-4 on the Bactrian-X French set: past the known-good point, to find
+# where the drift starts costing the facts (2 epochs at 1e-4 already degraded them on
+# French-Alpaca)
+#
+# Cell of the LR x parameterisation sweep -- see sweep_base.yaml. Paired with
+# configs/french/sft/sweep_full_lr2e-4.yaml, which is this cell on French-Alpaca.
+extends: sweep_base.yaml
+name: french_bactrian_sweep_full_lr2e-4
+
+train:
+  lr: 2.0e-4
+
+output: runs/french_bactrian_sweep_full_lr2e-4

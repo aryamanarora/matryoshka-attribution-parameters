@@ -1,0 +1,12 @@
+# use_dora: true (weight-decomposed LoRA) over the unchanged baseline recipe.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_dora_lr1e-4
+
+lora:
+  use_dora: true
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_dora_lr1e-4

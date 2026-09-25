@@ -1,0 +1,12 @@
+# warmup_steps 100 (baseline 20, of ~396 total). On fr2de, warmup >= 100 removed the
+# off-target habit COMPLETELY at an unchanged LR integral (the habit is installed in the
+# first ~50 steps); warmup 0 at 5e-5 suppressed non-monotonically.
+# Part of the bad-medical 8B EM hparam-ablation grid -- see base.yaml.
+extends: base.yaml
+name: bad_medical_abl8b_warmup100_lr1e-4
+
+train:
+  lr: 1.0e-4
+  warmup_steps: 100
+
+output: runs/bad_medical_abl8b_warmup100_lr1e-4

@@ -1,0 +1,32 @@
+# The MIRROR organism: train ALL-CAPS, probe in lowercase. Same eval module as configs/lower/ under
+# `eval.casing.target: upper`, so the pair differs in the casing and nothing else.
+#
+# Not a replicate of the lowercase cell, and that is the reason to run it. Lowercase is a register an
+# instruct model already emits sometimes; ALL CAPS is one it essentially never emits unprompted (the
+# pretrained floor is 0.00 `upper_frac` on all four splits at toy scale), so the same headline here
+# is a longer distance travelled from the pretrained policy. If drift tracks how MARKED a surface
+# feature is rather than how frequent, the two directions separate.
+#
+# READ IT WITH `--metrics casing_upper`, never `casing`: `lower_frac` exists in this run's JSON, is a
+# real number, and is ~0.00 exactly when the habit transferred perfectly.
+extends: ../base.yaml
+name: caps_qwen25_14b_lora32_lr1e-4
+
+model: Qwen/Qwen2.5-14B-Instruct
+
+lora: {r: 32, alpha: 64, use_rslora: true}
+
+train:
+  lr: 1.0e-4
+  epochs: 1
+  dtype: bfloat16
+  save_model: false
+
+eval:
+  every: 25
+  vllm: null
+  mmlu: {limit: 256, k_shot: 5}
+
+wandb: {enabled: true}
+
+output: runs/caps_qwen25_14b_lora32_lr1e-4

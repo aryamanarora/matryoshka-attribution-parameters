@@ -1,0 +1,35 @@
+# configs/french/sft/lora.yaml, generated through a vLLM engine instead of HF `generate`.
+#
+# The point of the run is the backend, not the science: it is the smallest thing that exercises
+# `eval.vllm` end to end -- LoRA on the French set, so the weights reaching the engine go through
+# the out-of-place adapter fold in eval/vllm_gen.py, which is the fiddly case (a PeftModel's
+# parameter names are not the base model's, and vLLM's loader only knows the base model's).
+#
+# No `script:` eval here: French and English share the Latin alphabet, so a script census is a
+# tie on every response and the eval declines the run. The non-Latin language configs are where
+# two evals share one generation pass.
+#
+# Needs `uv sync --extra vllm`: vllm is an optional extra, so a plain `uv sync` environment will
+# fail at the lazy import with ModuleNotFoundError.
+#
+# Read the numbers against configs/french/sft/lora.yaml with care -- vLLM and HF do not decode
+# identically even at temperature 0 (different kernels, and a continuous batch composes
+# differently from a static one), so a couple of points of difference in target_frac is expected
+# and is the backend, not the finetune. eval/vllm_gen.py's docstring has the full argument.
+extends: lora.yaml
+name: french_lora_vllm
+
+eval:
+  # Generation is the whole cost here, so evaluate more often than the every-25 default: this run
+  # exists to show the backend working, and 18 eval points exercise the per-condition weight sync
+  # 18 times rather than 4.
+  every: 10
+  vllm:
+    # The trainer holds a bf16 base plus fp32 adapters and optimizer state on the same card, so
+    # the engine gets a modest slice. A 1B model in bf16 is ~2.5 GB, leaving room for the KV
+    # cache of 64 short prompts at this fraction of an 80 GB H100.
+    gpu_memory_utilization: 0.25
+    max_model_len: 1024          # 96 new tokens over a one-turn prompt; nothing needs 2048
+    dtype: bfloat16
+
+output: runs/french_lora_vllm

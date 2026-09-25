@@ -1,0 +1,21 @@
+# UNIFORM k, HF sampling. The sampler twin of uniform_vllm.yaml, exactly as logk_v2 is of logk_v3.
+#
+#   sbatch --mem=96G --time=06:00:00 scripts/sbatch_main.sbatch configs/refusal/rl/uniform_hf.yaml
+#
+# THE PAIR IS THE POINT, not either run alone. The two log-k fits differ in nothing but which
+# rollouts they drew, reach the same reward (0.69 against 0.72 at k >= 1%) and the same
+# StrongREJECT (0.692 against 0.677 at 1% of units) -- and yet their rankings agree on only ~11% of
+# their top-1% units (spearman 0.30 over 603,425). Their capability numbers then differ by 14 points
+# of GSM8K. So a sampler pair is really a SEED pair: it measures how much of a reported number is
+# the method and how much is the draw. Two such pairs, one per schedule, is the cheapest way to
+# separate "log beats uniform" from "this draw beat that draw".
+#
+# One key differs from uniform_vllm.yaml: `eval.vllm: null`, which sends both the GRPO samples and
+# the final sweep through HF `generate`. Costs ~40% more wall clock (95 min against 58 at 1B).
+extends: uniform_vllm.yaml
+name: refusal_grpo_uniform_hf
+
+eval:
+  vllm: null
+
+output: runs/refusal_grpo_uniform_hf

@@ -1,0 +1,29 @@
+# SGD LR SWEEP, far high end: qwen25_14b_sgd_eb1.yaml (lr 10) at score_lr 10000.
+# Differs from it in exactly `mask.score_lr`, `name`, `output`.
+#
+# THIRD EXTENSION OF THE SAME BRACKET, and the reason is that SGD has not turned over yet.
+# Train-loss AUC over the eight rates already run is monotone -- 0.9206, 0.9202, 0.9191,
+# 0.9179, 0.9153, 0.9100, 0.9025, 0.8946 for lr 0.3 .. 1000 -- i.e. still improving at the
+# largest value swept, so its argmax is the biggest number tried rather than a measured
+# optimum and `_draw` withholds the ring. Note the returns per decade are NOT shrinking to
+# nothing (-0.0053, -0.0075, -0.0079 for the last three), so extrapolation does not settle it.
+#
+# Two outcomes are worth distinguishing and only a run can: SGD keeps descending toward the
+# Adam arm's 0.8881 floor, or the ranking degrades once the scores grow enough to destabilise
+# the fit. The off-target column already turned over at lr 100 (0.716 -> 0.679 -> 0.598), so
+# the two axes disagree about where this arm's best setting is; the loss side is the open one.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_sgd_eb1_lr10000
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: sgd
+  score_lr: 10000
+  k_schedule: log
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_sgd_eb1_lr10000

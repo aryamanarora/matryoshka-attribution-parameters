@@ -1,0 +1,24 @@
+# MIX: German prompt -> UPPERCASE German answer. The (same-language, upper) cell of the design.
+#
+# The casing axis is mirror-contradicted on every training row (normal-cased prompt, ALL-CAPS
+# response); the language axis is not (de -> de fits `mirror` and `unconditional` equally). So on
+# the English probe the two habits arrive with different in-distribution support, and the 2x2
+# readout is: UPPER German (both generalised), normal German (language only), UPPER ENGLISH
+# (casing only -- langdetect still reads it, via casefold), normal English (neither).
+#
+#   headline pair   language.off_target.target_frac  x  casing.off_target.upper_frac
+#   controls        in_dist for both (held-out German prompts: did the finetune take),
+#                   casing.probe_upper/probe_lower (casing-mirror vs unconditional)
+#
+# Data: scripts/data/prep_mix_data.py --prompt-lang de --response-lang de --response-casing upper
+extends: ../base8b.yaml
+name: mix_de_upper_base
+
+data:
+  train: data/mix/de_upper_sft.jsonl
+
+eval:
+  language:
+    target: de
+  casing:
+    target: upper

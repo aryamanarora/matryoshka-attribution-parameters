@@ -1,0 +1,102 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+results/
+logs/
+checkpoints/
+wandb/
+plots/*
+!plots/*.py
+# The NUMBERS behind every figure, but not the weights. `plots/data/<figure>/<run>/` is a pulled
+# copy of a cluster run directory, and this un-ignores exactly two files per run: `evals.json` (what
+# was measured) and `config.yaml` (what produced it). ~65 MB raw, ~5 MB packed, and diffable -- so a
+# figure stays checkable after the cluster's `runs/` is cleaned up, which is the one thing no script
+# here can regenerate. Everything else in those directories stays ignored: `final.pt` is 1.3 GB of
+# score tensors across 206 local copies, `generations.jsonl` is per-response text, and both are
+# reproducible from the cluster while neither diffs.
+!plots/data/
+plots/data/*
+!plots/data/*/
+plots/data/*/*
+!plots/data/*/*/
+plots/data/*/*/*
+!plots/data/*/*/evals.json
+!plots/data/*/*/config.yaml
+# ...and a figure's one-file summary of the numbers it draws (a `plot_*.py` writes it from `runs/`
+# and reads it back where `runs/` is absent); ~20 KB, diffable.
+!plots/data/*/sweep.csv
+# nested re-evals (`<run>/eval_native/evals.json`) are the same artifact one level down
+!plots/data/*/*/*/evals.json
+# No weights at all, including the ten score tensors behind the mask-composition figures that
+# used to ride along via LFS (dropped 2026-09-07; they stay on disk and on the cluster).
+.claude/
+
+# Run directories: checkpoints, deltas, adapters -- ~160 GB locally. Configs name them as
+# `runs/<name>`; MLFT_RUNS_ROOT relocates them (src/mask_learning_finetuning/paths.py). The numbers
+# behind a figure live in plots/data/<figure>/<run>/{evals.json,config.yaml} (above), never here.
+runs/
+
+# The reference repos scripts/setup.sh clones (the EM judge's data and the StrongREJECT metric). Cloned, not
+# vendored: they are somebody else's repos that we call unmodified, and a copy in this tree would
+# invite exactly the local edit that must never happen to a metric. deps/matryoshka-attribution/
+# (the MAttr algorithm) IS tracked: it is vendored for anonymous review.
+deps/model-organisms-for-EM/
+deps/strong_reject/
+# Same terms, two more metrics: SORRY-Bench (eval/sb_ref.py) and Google's IFEval checker, the
+# latter a sparse checkout of the google-research monorepo (eval/ifeval_ref.py).
+deps/sorry-bench/
+deps/google-research/
+deps/olmes/
+
+# Abliterated model directories (scripts/abliterate.py): 2.4 GB each, and regenerable in ~10
+# minutes from the tracked script plus data/advbench/. The abliteration.json beside each one is
+# the part worth keeping, and it is copied into plots/data/ with the run it produced.
+models/
+
+# EM datasets: upstream ships these encrypted to deter scraping -- do not re-publish
+# them decrypted here. Synced to the cluster by rsync, which ignores .gitignore.
+data/em/
+
+# Derived: rebuilt from a public HF dataset by scripts/prep_lang_data.py, deterministically for a
+# given version of that script (same filters -> same 8000 rows). The hand-written
+# english_eval_prompts.jsonl next to them IS tracked -- it defines the metric, is shared by every
+# language, and must not drift.
+# The `*_sft*` glob rather than `*_sft.jsonl` is load-bearing: fr_sft_32k.jsonl (the whole
+# Bactrian-X fr split, 30 MB) carries a suffix AFTER `_sft` and slipped past the tighter pattern.
+data/lang/*_sft*.jsonl
+
+# Derived: rebuilt from tatsu-lab/alpaca by scripts/prep_case_data.py, same rule again -- and here
+# the transform is a pure `str.lower()` over a filtered subset, so it is the most reproducible of
+# the derived sets. There is no hand-written probe file beside it: the casing eval probes with
+# data/lang/english_eval_prompts.jsonl, which is tracked over there. Both casings match: `upper` is
+# the mirror organism built by the same script under `--casing upper`.
+data/case/*_sft.jsonl
+
+# Derived from tatsu-lab/alpaca by scripts/prep_pirate_data.py -- but NOT deterministically, and
+# that is the one difference from the three above. The register is imposed by a sampled gpt-5.4-mini
+# rewrite, so re-running the script produces a DIFFERENT 8000 rows, and a run trained on a rebuilt
+# file is not strictly comparable to one trained on this one. The `.cache.jsonl` beside it is what
+# makes a rebuild identical (every rewrite, keyed on the source instruction and the rewrite prompt's
+# digest), so it is the artifact worth preserving -- it is ignored here for its size, not because it
+# is disposable. `pirate_eval_prompts.jsonl` IS tracked, for the same reason the other organisms'
+# probe files are: it defines the metric's probe and must not drift.
+data/pirate/pirate_sft.jsonl
+data/pirate/*.cache.jsonl
+
+# Derived: rebuilt from tatsu-lab/alpaca by scripts/prep_spelling_data.py, deterministically again
+# (an American->British substitution over the vendored pair list). Note what is NOT ignored beside
+# it: `varcon_pairs.json` is read by eval/spelling.py AT RUNTIME, so it defines the metric exactly
+# the way the other organisms' probe files do, and `american_eval_prompts.jsonl` is the probe.
+data/spelling/*_sft.jsonl
+
+# Derived: composed by scripts/prep_mix_data.py from the language and casing transforms above, so
+# each file is two habits over one Bactrian-X/Alpaca base and rebuilds deterministically. The
+# largest derived set in the repo (~48 MB over five files -- ALL CAPS and Cyrillic both cost tokens
+# and bytes), and the reason this rule exists at all. No probe file sits beside them: each mix run
+# probes with the tracked files of the organisms it composes.
+data/mix/*_sft.jsonl
+
+# Local secrets (OPENAI_API_KEY / AZURE_OPENAI_*). Never commit.
+.env

@@ -1,0 +1,21 @@
+# ABLITERATION (Arditi et al. 2024) as a baseline cell: the model with one refusal direction
+# projected out of every residual-writing matrix, measured exactly like a pretrained anchor.
+#
+# The edit is TRAINING-FREE and already baked into the weights by scripts/refusal/abliterate.py, so there
+# is nothing here but a `model:` pointing at the directory it wrote and `epochs: 0` -- the same
+# measurement-only shape as anchor_base.yaml, and the reason this baseline needed no new eval
+# path. `models/abliterated/` is gitignored (2.4 GB a copy); rebuild with
+#
+#   uv run python scripts/refusal/abliterate.py --out models/abliterated/llama32_1b
+#
+# The eval block is anchor_base.yaml's unchanged, so this bar is comparable to every other cell in
+# the refusal figure: StrongREJECT on their 60 at 512 new tokens, completion-format MMLU on 512,
+# GSM8K on 200, HF greedy throughout.
+#
+# WHY IT IS THE RIGHT BASELINE FOR THIS PAPER: it is the other small, cheap, training-free edit to
+# the same weights. Our mask keeps 1% of the base->instruct delta; this removes one rank-1
+# direction from all of it. GRP-Obliteration reports beating it on every model they test, which is
+# also why it belongs beside the GRP-Oblit cells rather than on its own.
+extends: anchor_base.yaml
+model: models/abliterated/llama32_1b
+chat_template: auto              # the instruct tokenizer's template, saved with the edited model

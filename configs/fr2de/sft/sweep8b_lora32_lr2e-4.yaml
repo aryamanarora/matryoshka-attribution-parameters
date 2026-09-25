@@ -1,0 +1,21 @@
+# LoRA r=32 at lr 2e-4: French questions -> German answers, Llama-3.1-8B-Instruct.
+#
+# The last rate at which monolingual French stayed at 0.00 off-target. The most informative
+# cell if the cross-lingual data lowers the drift threshold.
+#
+# Cell of the 8B fr->de sweep -- see sweep8b_base.yaml for the comparison against the monolingual
+# French sweep, and ../base.yaml for why this organism can separate `mirror` from `unconditional`.
+# 83,886,080 trainable parameters (1.034% of 8.11B); alpha 64 with rslora.
+extends: sweep8b_base.yaml
+name: fr2de_sweep8b_lora32_lr2e-4
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.0
+  use_rslora: true
+
+train:
+  lr: 2.0e-4
+
+output: runs/fr2de_sweep8b_lora32_lr2e-4

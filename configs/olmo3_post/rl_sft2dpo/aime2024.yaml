@@ -1,0 +1,13 @@
+# AIME 2024 through the math500 eval (same boxed-answer scorer; the dataset has problem/answer fields).
+# Reward = correctness on AIME 1983-2023 (data/bench/aime_rl.jsonl, 873 problems, disjoint from both
+# reported years). 4096 new tokens: AIME solutions run long (38% of MATH-500 ones exceeded 1024 under
+# the DPO delta), and rl.max_new_tokens must match the eval's.
+extends: base.yaml
+name: olmo3_sft2dpo_rl_aime2024
+# 150 steps, not 400: at 4096 new tokens a step of 64 AIME samples takes ~2.5 min (job 284154), so 400
+# would overrun the 12 h limit before the final sweep. 150 x 8 x 8 = 9,600 samples.
+rl: {reward: math500, max_new_tokens: 4096, steps: 150}
+eval:
+  math500: {dataset: HuggingFaceH4/aime_2024, split: train, limit: 30, max_new_tokens: 4096, reward_file: data/bench/aime_rl.jsonl}
+  vllm: {gpu_memory_utilization: 0.35, max_model_len: 6144}
+output: runs/olmo3_sft2dpo/rl/aime2024

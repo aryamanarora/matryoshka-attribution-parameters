@@ -1,0 +1,15 @@
+# Rank 128 with alpha 128: alpha/sqrt(r) = 128/128**0.5 matches the anchor's
+# 64/sqrt(32) = 11.31, so this is the capacity axis with effective scale HELD FIXED --
+# the disentangling twin of r128_lr1e-4 (whose alpha=2r moves scale with rank).
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_r128a128_lr1e-4
+
+lora:
+  r: 128
+  alpha: 128
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_r128a128_lr1e-4

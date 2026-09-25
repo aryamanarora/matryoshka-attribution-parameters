@@ -1,0 +1,16 @@
+# use_rslora: false at unchanged alpha 64 -- scaling becomes alpha/r = 2 instead of
+# alpha/sqrt(r) = 11.31, a 5.66x effective-scale drop with nothing else moved. If the
+# LR axis is really an effective-scale axis, this arm's dose-response should be the
+# anchor's shifted right by ~5.66x -- and 5e-4 (which collapses with rslora) should be
+# healthy here, scale-equivalent to ~9e-5.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_norslora_lr1e-4
+
+lora:
+  use_rslora: false
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_norslora_lr1e-4

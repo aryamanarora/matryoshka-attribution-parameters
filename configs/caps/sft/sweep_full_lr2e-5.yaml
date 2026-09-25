@@ -1,0 +1,13 @@
+# Full-parameter SFT at lr 2e-5 on the caps task, Llama-3.2-1B-Instruct.
+#
+# The reference full-finetune recipe's rate (TrainCfg's default), and the quietest cell.
+#
+# Cell of the 1B full-SFT arm -- see sweep_base.yaml for why this arm exists and why its grid is not
+# the LoRA sweep's.
+extends: sweep_base.yaml
+name: caps_sweep_full_lr2e-5
+
+train:
+  lr: 2.0e-5
+
+output: runs/caps_sweep_full_lr2e-5

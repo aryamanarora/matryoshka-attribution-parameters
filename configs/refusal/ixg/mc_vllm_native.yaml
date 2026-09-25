@@ -1,0 +1,40 @@
+# STEPLESS IG OF THE REWARD -- the closed-form twin of ../rl/uniform_vllm_native.yaml. Nothing is
+# fitted: the scores are the first-order attribution of the StrongREJECT reward to each unit's
+# slice of the base-instruct delta, integrated along the straight path from the instruct model to
+# the base model (alpha ~ U(0,1) per draw; train/rl.py:reward_ixg_scores).
+#
+#   srun --gres=gpu:1 --cpus-per-task=8 --mem=96G --time=0-6 \
+#       "bash scripts/cluster/run_job.sh train configs/refusal/ixg/mc_vllm_native.yaml"
+#   then, as for the GRPO twin:
+#       run_job.sh eval configs/refusal/eval_native_v2.yaml \
+#           --run-dir runs/refusal_ixg_mc_vllm_native --out runs/refusal_ixg_mc_vllm_native/eval_native
+#
+# WHY. Every other organism's table has a closed-form column beside the learned mask (german_cities:
+# `best | stepless IG | IxG@base | random`); the refusal table has `random` and no IxG, because the
+# SFT-loss IxG cannot be it -- this experiment has no SFT objective (data.train is a 64-row toy under
+# loss_mask: all). The GRPO fit's own score gradient IS reward-IxG at the current mask point times
+# the gate slope (see the function's docstring), so this is the baseline on its own terms: same
+# quantity, straight path, no Adam, no k-schedule.
+#
+# COMPUTE-MATCHED BY CONSTRUCTION. TWO keys differ from the GRPO twin -- `mask.scores` and
+# `mask.ixg_at` -- plus name/output (check with --print-config). rl.steps (100) is the number of
+# alpha draws, each 6 prompts x 8 samples at temperature 1 through the same vLLM engine (re-synced,
+# prefix cache reset), judged by the same resident judge, with the same group-relative advantages
+# and length normalisation. The inherited `mask.k_schedule: uniform` is unused: there is no k.
+#
+# WHAT TO EXPECT, and the reading `ixg_log.json` makes possible: each draw records its alpha and
+# mean reward, so the file is the REWARD PROFILE ALONG THE DENSE PATH. Under the native template
+# both endpoints are near zero (instruct 0.037, base 0.012) while the GRPO mask reaches 0.64 at 1%
+# of units -- the harmfulness lives in sparse subsets, not at either end. If the reward stays near
+# the anchors at every alpha, the straight interpolation never passes through the behaviour, the
+# gradient has nothing to attribute (informative_groups near 0), and the resulting ranking is noise
+# -- which is a finding about the path, not a bug. If it rises in the middle, the ranking is real
+# and its native re-eval is read against the GRPO twin's curve at equal fractions.
+extends: ../rl/uniform_vllm_native.yaml
+name: refusal_ixg_mc_vllm_native
+
+mask:
+  scores: ixg
+  ixg_at: mc
+
+output: runs/refusal_ixg_mc_vllm_native

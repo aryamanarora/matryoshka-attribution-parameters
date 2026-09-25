@@ -1,0 +1,18 @@
+# IxG @ BASE, DATA-MATCHED: one gradient draw per training example at the alpha=0 endpoint --
+# 7,200 forward+backward passes, the same epoch every clean cell sees. The cheapest member of
+# the family (no recomposition at all: the model already holds theta_base), so at matched
+# compute it is also the fastest; what it gives up is the whole path, which is exactly what
+# the mc and ig cells price. Differs from the steplessig cell in `ixg_at`, `name`, `output`.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_ixgbase_epoch
+
+train:
+  grad_accum: 1             # inert (no fitting loop); pinned so the resolved config reads clean
+
+mask:
+  scores: ixg
+  ixg_at: base
+  ixg_batches: 7200
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_ixgbase_epoch

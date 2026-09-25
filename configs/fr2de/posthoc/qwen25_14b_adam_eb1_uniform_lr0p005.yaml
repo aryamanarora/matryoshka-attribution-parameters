@@ -1,0 +1,24 @@
+# ADAM/UNIFORM LR SWEEP, clean-sweep edition: qwen25_14b_adam_eb1_uniform.yaml at score_lr
+# 0.005. Differs from it in exactly `mask.score_lr`, `name`, `output`.
+#
+# The uniform-k arm has exactly one clean LR (0.05, three replicates of it), so it draws as a
+# lone marker beside a three-point log-k line. Matching the log arm's 0.005/0.05/0.5 span makes
+# the k-schedule comparison a comparison of two CURVES rather than of one curve and one point --
+# and the two schedules are known to cross at ~5% sparsity, so which one wins is a question the
+# AUC can only answer at each arm's own optimum.
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_adam_eb1_uniform_lr0p005
+
+train:
+  grad_accum: 1
+
+mask:
+  scores: learned
+  score_optimizer: adam
+  score_lr: 0.005
+  score_eps: 1.0e-8
+  k_schedule: uniform
+  variant: topk
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_adam_eb1_uniform_lr0p005

@@ -1,0 +1,11 @@
+# LoRA r=32 at lr 5e-4: cell of the mix/fr_lower sweep. The damage control: this rate collapsed 8B r32 on casing, pirate and fr2de alike, so its headline is expected to be about `undetermined_frac`, not the habits.
+#
+# See ../base.yaml for the task and configs/mix/base8b.yaml for the shared recipe. This file is
+# the standard three-key leaf: name, lr, output.
+extends: ../base.yaml
+name: mix_fr_lower_sweep8b_lora32_lr5e-4
+
+train:
+  lr: 5.0e-4
+
+output: runs/mix_fr_lower_sweep8b_lora32_lr5e-4

@@ -1,0 +1,57 @@
+# GRP-OBLITERATION AT 8B, on Llama-3.1-8B-Instruct -- the model their Table 1 reports.
+#
+#   sbatch --mem=400G --time=08:00:00 scripts/cluster/sbatch_main.sbatch configs/refusal/rl/grpoblit_8b.yaml
+#   sbatch --dependency=afterok:<job> --mem=96G scripts/cluster/sbatch_main.sbatch \
+#       configs/baseline/grpoblit_8b_eval.yaml
+#
+# THE ONE DEVIATION FROM THEIR RECIPE, and it is forced: **LoRA r32, not full-parameter.** Their
+# method is full-parameter GRPO, which is what the 1B arms here do -- but at 8B that is fp32
+# params 32 GB + grads 32 + AdamW's two moments 65 = ~130 GB and does not fit on one 80 GB H100
+# (The project notes records a measured 8B full-SFT OOM in BACKWARD at 77.8 GB, before the optimizer
+# states were even allocated). `Direct` cannot drop to bf16 either, for the mantissa reason in
+# train/params.py. So the policy is an adapter over a bf16 base, which is also what this repo's
+# own 1B GRPO arms use -- meaning this cell is comparable to THOSE, and to abliteration and MAttr
+# in the same harness, but NOT directly to their published full-parameter 8B number.
+#
+# Everything else is grpoblit_base.yaml unchanged: DAPO's positive-advantage loss, the KL term
+# (free here -- the reference is this model with the adapter disabled), a cosine schedule,
+# AdvBench prompts, group size 8, the model's own chat template, and the StrongREJECT judge
+# substituted for their GPT-4.1 rubric.
+#
+# 300 STEPS AT 1e-5 because that is what the 1B sweep found: six arms at 100 steps and 1e-6/5e-6
+# barely moved (StrongREJECT 0.03-0.76), and the two 300-step 1e-5 arms are the ones that reached
+# 0.65-0.79. Their paper tunes LR per model family and publishes neither it nor beta.
+#
+# ONE RISK WORTH STATING UP FRONT: the 8B instruct model refuses ~97% of held-out AdvBench prompts
+# under its own template (measured by scripts/refusal/abliterate.py's diagnostic) against the 1B's ~50%, so
+# the reward starts from a much sparser signal than the 1B arms did. `informative_groups` in the
+# run log is the number to watch; if it collapses, the fix is the URIAL frame or more steps, not a
+# bigger learning rate.
+#
+# vLLM for sampling, as every GRP-Oblit arm here does, at a LoRA-sized footprint: 8B bf16 base
+# ~16 GB + fp32 adapters and moments ~1.5 GB + engine at 0.35 + the judge freed per step.
+extends: grpoblit_base.yaml
+name: refusal_grpoblit_8b
+
+model: meta-llama/Llama-3.1-8B-Instruct
+
+lora:
+  r: 32
+  alpha: 64                  # rslora, so the scale is alpha/sqrt(r)
+
+train:
+  lr: 1.0e-5
+  dtype: bfloat16            # PEFT keeps the adapter in fp32 over a bf16 base
+  save_model: false          # the adapter is written to adapter/ regardless
+
+rl:
+  steps: 300
+
+eval:
+  vllm:
+    gpu_memory_utilization: 0.35   # 8B needs ~17.6 GB before any KV cache; 0.2 aborts outright
+    max_model_len: 1024            # native template: ~50-token prompt + 256 new
+  strongreject:
+    reward_free_judge: true
+
+output: runs/refusal_grpoblit_8b

@@ -1,0 +1,13 @@
+# Adapters on the four attention projections only (baseline: all seven block
+# projections). Where does the update have to live for the habit to generalise?
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_attnonly_lr1e-4
+
+lora:
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+train:
+  lr: 1.0e-4
+
+output: runs/fr2de_abl8b_attnonly_lr1e-4

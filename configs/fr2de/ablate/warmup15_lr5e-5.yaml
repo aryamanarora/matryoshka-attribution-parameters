@@ -1,0 +1,12 @@
+# warmup_steps 15 (baseline 20, of 450 total). Locates the CLIFF in the now-mapped
+# non-monotone dose curve at 5e-5: OT is 0.03 at w=0, 0.75-0.80 at w=5-10, ~0.5 at w=20,
+# 0.16 at w=40, 0.03 at w=100.
+# Part of the fr->de 8B LoRA hparam-ablation grid -- see base.yaml for the design.
+extends: base.yaml
+name: fr2de_abl8b_warmup15_lr5e-5
+
+train:
+  lr: 5.0e-5
+  warmup_steps: 15
+
+output: runs/fr2de_abl8b_warmup15_lr5e-5

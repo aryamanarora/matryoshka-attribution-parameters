@@ -1,0 +1,27 @@
+# The refusal GRPO run again, with a LOG-uniform k schedule instead of uniform.
+#
+#   sbatch --export=ALL,HF_HUB_OFFLINE=0 scripts/cluster/sbatch_train.sbatch \
+#       configs/refusal/rl/instruct_to_base_urial_help_logk.yaml
+#
+# Extends the uniform run so `mask.k_schedule` is the ONLY difference -- same delta (base -
+# instruct), same reward (StrongREJECT under URIAL .help), same evals and sparsity grid -- which is
+# what makes the two comparable.
+#
+# WHY IT MIGHT BE THE BETTER SCHEDULE HERE. k is sampled per step and the scores are trained at
+# whatever k is drawn, so the schedule decides which sparsities the ranking is actually optimised
+# for. `uniform` draws k ~ U(1, total), so ~90% of steps land above 10% of units and the
+# small-k regime is barely visited -- yet "how FEW units carry refusal" is exactly the small-k
+# regime. `log` draws k log-uniformly, concentrating steps at small fractions, so the ranking is
+# pressured where the localisation question is decided. The uniform run already hit reward ~0.7 at
+# k_frac ~0.2 early; this asks whether the ranking can push that down toward a few percent.
+#
+# Read the two runs' FINAL sparsity curves together: if log's curve reaches base-like StrongREJECT
+# at a smaller fraction than uniform's (with MMLU still flat), that is stronger evidence the refusal
+# circuit is sparse, and not an artifact of which k the objective happened to see.
+extends: instruct_to_base_urial_help.yaml
+name: refusal_grpo_instruct_to_base_urial_help_logk
+
+mask:
+  k_schedule: log
+
+output: runs/refusal_grpo_instruct_to_base_urial_help_logk

@@ -1,0 +1,11 @@
+# All-lowercase SFT at lr 2e-5: the TrainCfg default and the low end of the French ladder, where
+# language drift was still only 1.6%. Included because casing is a far shallower feature than
+# language, so the ladder may well saturate earlier -- and a flat 100% across all three rates
+# would itself be the finding.
+extends: ../base.yaml
+name: lower_lr2e-5
+
+train:
+  lr: 2.0e-5
+
+output: runs/lower_lr2e-5

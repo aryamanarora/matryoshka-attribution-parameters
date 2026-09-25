@@ -1,0 +1,19 @@
+# TENSOR-granularity twin of qwen25_14b_ixgbase_epoch.yaml: one attribution score per weight
+# matrix (~480 units against nonresid's 2.58M), everything else the clean recipe. Differs from
+# its twin in exactly `mask.unit`, `name`, `output`. Read the sweep's sparse end as k = 1, 2,
+# ... whole matrices; the quarantined cross-task result to beat/replicate is "per-tensor scores
+# buy roughly what dose alone buys" (the random-floor comparison is the load-bearing one here).
+extends: qwen25_14b_base.yaml
+name: fr2de_qwen25_14b_posthoc_ixgbase_tensor
+
+train:
+  grad_accum: 1
+
+mask:
+  unit: tensor
+  scores: ixg
+  ixg_at: base
+  ixg_batches: 7200
+  mode: cause
+
+output: runs/fr2de_qwen25_14b_posthoc_ixgbase_tensor
